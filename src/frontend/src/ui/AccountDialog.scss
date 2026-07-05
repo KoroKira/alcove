@@ -38,14 +38,14 @@
   }
 
   &__error {
-    color: #e74c3c;
+    color: var(--ap-red);
   }
 
   &__profile {
     display: flex;
     align-items: flex-start;
     padding: 1.25rem;
-    border-radius: 8px;
+    border-radius: var(--ap-radius-md);
     background-color: var(--dialog-bg-color);
   }
 
@@ -85,7 +85,7 @@
   &__user-id {
     margin: 0;
     font-size: 0.75rem;
-    font-family: monospace;
+    font-family: var(--ap-font-mono);
     color: var(--text-secondary-color);
     opacity: 0.7;
   }

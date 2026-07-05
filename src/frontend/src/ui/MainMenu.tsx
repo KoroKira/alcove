@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import type { ExcalidrawImperativeAPI } from '@atyrode/excalidraw/types';
 import type { MainMenu as MainMenuType } from '@atyrode/excalidraw';
 
-import { LogOut, SquarePlus, LayoutDashboard, User, Text, Settings, Terminal, FileText, FlaskConical } from 'lucide-react';
+import { LogOut, SquarePlus, LayoutDashboard, User, Text, Settings, Terminal, FileText, FlaskConical, FileCode, MonitorPlay, Grid3X3, BookOpen, PenLine, CalendarDays, Network, Command, Archive } from 'lucide-react';
 import md5 from 'crypto-js/md5';
 
 // Components
@@ -28,11 +28,21 @@ const getGravatarUrl = (email: string, size = 32) => {
 interface MainMenuConfigProps {
   MainMenu: typeof MainMenuType;
   excalidrawAPI: ExcalidrawImperativeAPI | null;
+  onOpenDashboard?: () => void;
+  onNewDocument?: () => void;
+  onCommandPalette?: () => void;
+  onDailyNote?: () => void;
+  onGraph?: () => void;
 }
 
 export const MainMenuConfig: React.FC<MainMenuConfigProps> = ({
   MainMenu,
   excalidrawAPI,
+  onOpenDashboard,
+  onNewDocument,
+  onCommandPalette,
+  onDailyNote,
+  onGraph,
 }) => {
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -101,18 +111,42 @@ export const MainMenuConfig: React.FC<MainMenuConfigProps> = ({
   
   const handleTerminalClick = () => {
     if (!excalidrawAPI) return;
-    
+
     const terminalElement = ExcalidrawElementFactory.createEmbeddableElement({
       link: "!terminal",
       width: 800,
       height: 500
     });
-    
+
     ExcalidrawElementFactory.placeInScene(terminalElement, excalidrawAPI, {
       mode: PlacementMode.NEAR_VIEWPORT_CENTER,
       bufferPercentage: 10,
       scrollToView: true
     });
+  };
+
+  const handleLocalTerminalClick = () => {
+    if (!excalidrawAPI) return;
+    ExcalidrawElementFactory.placeInScene(
+      ExcalidrawElementFactory.createEmbeddableElement({ link: "!terminal-local", width: 800, height: 500 }),
+      excalidrawAPI,
+      { mode: PlacementMode.NEAR_VIEWPORT_CENTER, bufferPercentage: 10, scrollToView: true }
+    );
+  };
+
+  const handleMarkdownClick = () => {
+    if (!excalidrawAPI) return;
+    ExcalidrawElementFactory.placeInScene(
+      ExcalidrawElementFactory.createEmbeddableElement({ link: "!markdown", width: 700, height: 500 }),
+      excalidrawAPI,
+      { mode: PlacementMode.NEAR_VIEWPORT_CENTER, bufferPercentage: 10, scrollToView: true }
+    );
+  };
+
+  const handleToggleGrid = () => {
+    if (!excalidrawAPI) return;
+    const current = excalidrawAPI.getAppState() as any;
+    excalidrawAPI.updateScene({ appState: { gridModeEnabled: !current.gridModeEnabled } } as any);
   };
 
   const handleSettingsClick = () => {
@@ -217,6 +251,12 @@ export const MainMenuConfig: React.FC<MainMenuConfigProps> = ({
         <MainMenu.DefaultItems.Export />
         <MainMenu.DefaultItems.SaveAsImage />
         <MainMenu.DefaultItems.ClearCanvas />
+        <MainMenu.Item
+          icon={<Archive />}
+          onClick={() => { const a = document.createElement('a'); a.href = '/api/pad/export/zip'; a.download = 'pad-ws-export.zip'; a.click(); }}
+        >
+          Export all (ZIP)
+        </MainMenu.Item>
       </MainMenu.Group>
       
       <MainMenu.Separator />
@@ -246,8 +286,47 @@ export const MainMenuConfig: React.FC<MainMenuConfigProps> = ({
         >
           Action Button
         </MainMenu.Item>
+        <MainMenu.Item
+          icon={<MonitorPlay />}
+          onClick={handleLocalTerminalClick}
+        >
+          Local Terminal
+        </MainMenu.Item>
+        <MainMenu.Item
+          icon={<FileCode />}
+          onClick={handleMarkdownClick}
+        >
+          Markdown
+        </MainMenu.Item>
       </MainMenu.Group>
-      
+
+      <MainMenu.Group title="Knowledge">
+        <MainMenu.Item icon={<Command />} onClick={() => onCommandPalette?.()}>
+          Command Palette (⌘P)
+        </MainMenu.Item>
+        <MainMenu.Item icon={<BookOpen />} onClick={() => onOpenDashboard?.()}>
+          Knowledge Hub (⌘D)
+        </MainMenu.Item>
+        <MainMenu.Item icon={<Network />} onClick={() => onGraph?.()}>
+          Knowledge Graph (⌘⇧G)
+        </MainMenu.Item>
+        <MainMenu.Item icon={<CalendarDays />} onClick={() => onDailyNote?.()}>
+          Daily Note (⌘T)
+        </MainMenu.Item>
+        <MainMenu.Item icon={<PenLine />} onClick={() => onNewDocument?.()}>
+          New Document
+        </MainMenu.Item>
+      </MainMenu.Group>
+
+      <MainMenu.Group title="View">
+        <MainMenu.Item
+          icon={<Grid3X3 />}
+          onClick={handleToggleGrid}
+        >
+          Toggle Grid (⌘G)
+        </MainMenu.Item>
+      </MainMenu.Group>
+
       <MainMenu.Separator />
       
       <MainMenu.Item

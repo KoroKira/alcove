@@ -1,0 +1,167 @@
+.latex-pad {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-surface-lowest, var(--ap-bg0));
+}
+
+/* ── Toolbar ── */
+.latex-pad__toolbar {
+  align-items: center;
+  background: var(--color-surface-mid, var(--ap-bg2));
+  border-bottom: 1px solid var(--color-surface-high, var(--ap-bg3));
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 7px 14px;
+}
+
+.latex-pad__toolbar-left {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.latex-pad__toolbar-right {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.latex-pad__title {
+  color: var(--color-on-surface-low, var(--ap-text2));
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.latex-pad__compile-btn {
+  align-items: center;
+  background: rgba(var(--ap-accent-rgb, 203,166,247), 0.12);
+  border: 1px solid rgba(var(--ap-accent-rgb, 203,166,247), 0.3);
+  border-radius: var(--ap-radius-sm);
+  color: var(--ap-accent, var(--ap-accent));
+  cursor: pointer;
+  display: flex;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  gap: 5px;
+  padding: 5px 12px;
+  transition: all 0.15s;
+
+  &:hover { background: rgba(var(--ap-accent-rgb, 203,166,247), 0.22); }
+  &:disabled { cursor: not-allowed; opacity: 0.5; }
+}
+
+.latex-pad__auto-label {
+  align-items: center;
+  color: var(--color-on-surface-low, var(--ap-text2));
+  cursor: pointer;
+  display: flex;
+  font-size: 11px;
+  gap: 5px;
+  input { accent-color: var(--ap-accent, var(--ap-accent)); cursor: pointer; }
+}
+
+.latex-pad__status {
+  font-size: 11px;
+
+  &--ok { color: var(--ap-green, var(--ap-green)); }
+  &--err { color: var(--ap-red, var(--ap-red)); }
+  &--compiling { color: var(--ap-accent2, var(--ap-accent2)); }
+}
+
+/* ── Body ── */
+.latex-pad__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Editor pane ── */
+.latex-pad__editor {
+  border-right: 1px solid var(--color-surface-high, var(--ap-bg3));
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* ── Preview pane ── */
+.latex-pad__preview {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.latex-pad__pdf-frame {
+  background: #fff;
+  border: none;
+  flex: 1;
+  width: 100%;
+}
+
+/* ── Error / log panel ── */
+.latex-pad__log {
+  background: var(--color-surface-mid, var(--ap-bg2));
+  border-top: 1px solid rgba(var(--ap-red-rgb, 243,139,168), 0.25);
+  display: flex;
+  flex-direction: column;
+  max-height: 200px;
+}
+
+.latex-pad__log-header {
+  align-items: center;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  color: var(--ap-red, var(--ap-red));
+  display: flex;
+  font-size: 11px;
+  font-weight: 700;
+  gap: 6px;
+  justify-content: space-between;
+  letter-spacing: 0.06em;
+  padding: 6px 12px;
+  text-transform: uppercase;
+}
+
+.latex-pad__log-close {
+  background: none;
+  border: none;
+  color: var(--color-on-surface-low, var(--ap-text2));
+  cursor: pointer;
+  display: flex;
+  padding: 2px;
+}
+
+.latex-pad__log-body {
+  color: var(--color-on-surface, var(--ap-text0));
+  font-family: var(--ap-font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+  overflow-y: auto;
+  padding: 8px 12px;
+  white-space: pre-wrap;
+
+  &::-webkit-scrollbar { width: 4px; }
+  &::-webkit-scrollbar-thumb { background: var(--color-surface-high, var(--ap-bg3)); border-radius: 2px; }
+}
+
+/* ── No-PDF placeholder ── */
+.latex-pad__placeholder {
+  align-items: center;
+  color: var(--color-on-surface-low, var(--ap-text2));
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  font-size: 13px;
+  gap: 8px;
+  justify-content: center;
+  opacity: 0.7;
+
+  svg { opacity: 0.4; }
+}

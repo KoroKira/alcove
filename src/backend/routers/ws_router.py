@@ -14,6 +14,7 @@ from dependencies import UserSession, get_session_domain, PadAccess
 from cache import RedisClient
 from domain.pad import Pad
 from database.database import async_session
+from workers.canvas_worker import CanvasWorker
 ws_router = APIRouter()
 
 STREAM_EXPIRY = 3600
@@ -368,6 +369,12 @@ async def websocket_endpoint(
             stream_key = f"pad:stream:{pad_id}"
             redis_client = await RedisClient.get_instance()
 
+            # Ensure the canvas worker is processing this pad's stream.
+            # This is critical after server restarts: stale worker_id in Redis cache
+            # tricks ensure_worker() into returning True, so we must start directly.
+            canvas_worker = await CanvasWorker.get_instance()
+            await canvas_worker.start_processing_pad(pad_id)
+
             await add_connection(redis_client, pad_id, str(user.id), user.username, connection_id)
 
             # Send connected message to client with connected users info
@@ -382,7 +389,24 @@ async def websocket_endpoint(
                 }
             )
             await websocket.send_text(connected_msg.model_dump_json())
-            
+
+            # Send saved scene data so the client can load the correct pad state.
+            # This is the authoritative SCENE_INIT — client will replace (not reconcile) its canvas.
+            if getattr(pad, 'pad_type', 'canvas') != 'document':
+                pad_elements = (pad.data or {}).get("elements", [])
+                if pad_elements:
+                    scene_init_msg = WebSocketMessage(
+                        type="scene_update",
+                        pad_id=str(pad_id),
+                        user_id=str(user.id),
+                        connection_id=connection_id,
+                        data={
+                            "update_subtype": "SCENE_INIT",
+                            "elements": pad_elements,
+                        }
+                    )
+                    await websocket.send_text(scene_init_msg.model_dump_json())
+
             # Broadcast user joined message
             join_event_data = {"username": user.username}
             join_message = WebSocketMessage(
@@ -445,7 +469,13 @@ async def websocket_endpoint(
         
     finally:
         if connection_id:  # Only try to clean up if connection_id was set
-            
+            # Flush pad to DB immediately so no data is lost on disconnect
+            try:
+                worker = await CanvasWorker.get_instance()
+                await worker.save_pad(pad_id)
+            except Exception as e:
+                print(f"Error saving pad {pad_id} on disconnect: {e}")
+
             # Remove the connection from Redis
             if redis_client:
                 try:

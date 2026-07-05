@@ -22,7 +22,7 @@
         border: none;
         border-radius: var(--border-radius-lg);
         background: var(--island-bg-color);
-        color: #bdbdbd;
+        color: var(--ap-text2);
         font-size: 14px;
         font-weight: 500;
         cursor: pointer;
@@ -31,7 +31,7 @@
         outline: none;
 
         &:hover {
-            background: #4a4a54;
+            background: var(--ap-bg3);
             color: #ffffff;
         }
 
@@ -47,11 +47,11 @@
             width: var(--lg-button-size) !important;
             padding: 0;
             background: var(--island-bg-color);
-            color: #bdbdbd;
+            color: var(--ap-text2);
 
             &:hover {
                 color: #ffffff;
-                background: #4a4a54;
+                background: var(--ap-bg3);
             }
         }
     }

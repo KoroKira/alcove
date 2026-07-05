@@ -1,30 +1,81 @@
 import secrets
 import jwt
 import httpx
+import logging
 from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import RedirectResponse, FileResponse, JSONResponse
 import os
 from typing import Optional
 import time
 
-from config import (FRONTEND_URL, STATIC_DIR)
+logger = logging.getLogger(__name__)
+
+from config import (FRONTEND_URL, STATIC_DIR, PAD_DEV_MODE)
 from dependencies import get_coder_api, get_session_domain
 from coder import CoderAPI
 from dependencies import optional_auth, UserSession
 from domain.session import Session
 from database.database import async_session
 from domain.user import User
+from domain.pad import Pad
+
+DEV_USER_ID = "00000000-0000-0000-0000-000000000001"
+DEV_USER_INFO = {
+    "sub": DEV_USER_ID,
+    "preferred_username": "local",
+    "email": "local@localhost",
+    "name": "Local User",
+    "email_verified": True,
+}
 
 auth_router = APIRouter()
 
+async def _ensure_scratch_pad(user_id_str: str) -> None:
+    """Create the scratch pad for this user if one doesn't already exist."""
+    from uuid import UUID
+    from sqlalchemy import select as sa_select
+    from database.models.pad_model import PadStore as _PadStore
+    try:
+        owner_id = UUID(user_id_str)
+        async with async_session() as db_session:
+            stmt = sa_select(_PadStore).where(_PadStore.owner_id == owner_id, _PadStore.is_scratch == True)
+            result = await db_session.execute(stmt)
+            if result.scalars().first() is None:
+                pad = await Pad.create(db_session, owner_id=owner_id, display_name="Scratch")
+                pad.is_scratch = True
+                await pad.save(db_session)
+    except Exception as e:
+        logger.warning("Could not ensure scratch pad for %s: %s", user_id_str, e)
+
 @auth_router.get("/login")
 async def login(
-    request: Request, 
+    request: Request,
     session_domain: Session = Depends(get_session_domain),
-    kc_idp_hint: str = None, 
+    kc_idp_hint: str = None,
     popup: str = None
 ):
-    
+    if PAD_DEV_MODE:
+        session_id = secrets.token_urlsafe(32)
+        dev_session = {
+            "dev_session": True,
+            "sub": DEV_USER_ID,
+            "username": DEV_USER_INFO["preferred_username"],
+            "email": DEV_USER_INFO["email"],
+            "name": DEV_USER_INFO["name"],
+        }
+        await session_domain.set(session_id, dev_session, 86400 * 30)
+        async with async_session() as db_session:
+            try:
+                await User.ensure_exists(db_session, DEV_USER_INFO)
+                await db_session.commit()
+            except Exception as e:
+                if "duplicate key" not in str(e) and "already exists" not in str(e):
+                    raise
+        await _ensure_scratch_pad(DEV_USER_ID)
+        response = RedirectResponse('/')
+        response.set_cookie('session_id', session_id, httponly=True, samesite='lax')
+        return response
+
     session_id = secrets.token_urlsafe(32)
 
     auth_url = session_domain.get_auth_url()
@@ -33,11 +84,10 @@ async def login(
     if kc_idp_hint:
         auth_url = f"{auth_url}&kc_idp_hint={kc_idp_hint}"
 
-    # Add state param to OIDC URL
     auth_url = f"{auth_url}&state={state}"
 
     response = RedirectResponse(auth_url)
-    response.set_cookie('session_id', session_id)
+    response.set_cookie('session_id', session_id, httponly=True, samesite='lax', secure=True)
 
     return response
 

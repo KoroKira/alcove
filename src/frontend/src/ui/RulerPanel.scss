@@ -1,0 +1,96 @@
+.ruler-panel {
+  position: fixed;
+  bottom: 72px;
+  right: 12px;
+  z-index: 100;
+  background: var(--island-bg-color, var(--ap-bg0));
+  border: 1px solid var(--color-surface-mid, var(--ap-bg3));
+  border-radius: var(--ap-radius-md);
+  padding: 8px 10px;
+  min-width: 150px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+  color: var(--color-on-surface, var(--ap-text0));
+  user-select: none;
+
+  &__title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: 600;
+    margin-bottom: 6px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-on-surface-low, var(--ap-text2));
+  }
+
+  &__dpi-btn {
+    background: none;
+    border: 1px solid var(--color-surface-mid, var(--ap-bg3));
+    border-radius: var(--ap-radius-xs);
+    color: var(--color-on-surface-low, var(--ap-text2));
+    padding: 1px 5px;
+    font-size: 10px;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--color-surface-mid, var(--ap-bg3));
+    }
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+
+  &__label {
+    width: 14px;
+    font-size: 11px;
+    color: var(--color-on-surface-low, var(--ap-text2));
+  }
+
+  &__input {
+    background: var(--color-surface, var(--ap-bg2));
+    border: 1px solid var(--color-surface-mid, var(--ap-bg3));
+    border-radius: var(--ap-radius-xs);
+    color: var(--color-on-surface, var(--ap-text0));
+    padding: 3px 6px;
+    width: 68px;
+    font-size: 12px;
+
+    &:focus {
+      outline: none;
+      border-color: var(--color-primary, var(--ap-accent2));
+    }
+  }
+
+  &__unit {
+    font-size: 11px;
+    color: var(--color-on-surface-low, var(--ap-text2));
+  }
+
+  &__apply {
+    background: var(--color-primary, var(--ap-accent2));
+    border: none;
+    border-radius: var(--ap-radius-xs);
+    color: var(--color-primary-darker, var(--ap-bg0));
+    padding: 2px 8px;
+    font-size: 11px;
+    cursor: pointer;
+    font-weight: 600;
+
+    &:hover {
+      opacity: 0.85;
+    }
+  }
+
+  &__info {
+    margin-top: 4px;
+    font-size: 10px;
+    color: var(--color-on-surface-low, var(--ap-overlay0));
+    text-align: center;
+  }
+}

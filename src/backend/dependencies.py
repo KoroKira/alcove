@@ -1,4 +1,5 @@
 import jwt
+import time
 from typing import Optional, Dict, Any, Tuple
 from uuid import UUID
 import os
@@ -17,6 +18,9 @@ from database.database import get_session
 # oidc_config for session creation and user sessions
 oidc_config = {
     'server_url': os.getenv('OIDC_SERVER_URL'),
+    # Internal URL for server-side OIDC calls (token exchange, JWKS).
+    # Defaults to server_url when not set (e.g. on Linux with host networking).
+    'internal_server_url': os.getenv('OIDC_INTERNAL_URL') or os.getenv('OIDC_SERVER_URL'),
     'realm': os.getenv('OIDC_REALM'),
     'client_id': os.getenv('OIDC_CLIENT_ID'),
     'client_secret': os.getenv('OIDC_CLIENT_SECRET'),
@@ -38,20 +42,31 @@ class UserSession:
         self._user_data = None
         self._session_domain = session_domain
 
+        # Dev mode: skip OIDC/JWT entirely, use the stored session data directly
+        if token_data.get('dev_session'):
+            self.token_data = {
+                'sub': token_data.get('sub', '00000000-0000-0000-0000-000000000001'),
+                'preferred_username': token_data.get('username', 'local'),
+                'email': token_data.get('email', 'local@localhost'),
+                'name': token_data.get('name', 'Local User'),
+                'email_verified': True,
+                'exp': time.time() + 86400 * 365,
+            }
+            return
+
         # Get the signing key and decode with verification
         try:
             jwks_client = self._session_domain._get_jwks_client()
             signing_key = jwks_client.get_signing_key_from_jwt(access_token)
-            
+
             self.token_data = jwt.decode(
                 access_token,
                 signing_key.key,
                 algorithms=["RS256"],
                 audience=oidc_config['client_id']
             )
-            
+
         except jwt.InvalidTokenError as e:
-            # Log the error and raise an appropriate exception
             print(f"Invalid token: {str(e)}")
             raise ValueError(f"Invalid authentication token: {str(e)}")
 

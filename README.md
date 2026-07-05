@@ -1,159 +1,204 @@
-# pad.ws -  whiteboard as an IDE 🎨
+# alko-pad.ws
 
+> Fork personnel de [pad.ws](https://github.com/pad-ws/pad.ws) — un espace de travail visuel combinant tableau blanc (Excalidraw), éditeur de documents et outils de gestion de connaissances personnelle, avec IA locale via Ollama.
 
+[![screenshot](docs/canvas_ide.png)](https://github.com/pad-ws/pad.ws)
 
-[![Pad.ws Canvas IDE](docs/canvas_ide.png)](https://pad.ws)
+---
 
-[pad.ws](https://pad.ws) is a whiteboard app that acts as a dev environment in your browser
+## Fonctionnalités
 
-## ✨ Features
+### Pads (types de contenu)
 
-* 🎨 **Interactive Whiteboard** - Draw, sketch and visualize your ideas with Excalidraw
-* 💻 **Fully fledged IDE** - Access terminals and VS Code directly within the whiteboard
-* ☁️ **Browser friendly** - Access your dev env from any device
-* 🔄 **Seamless Workflow** - Switch between visual ideation and coding
-* 🛠️ **Use your own tools** - Access your VM from your desktop client (VS Code & Cursor supported)
+| Type | Description |
+|---|---|
+| **Canvas** | Tableau blanc Excalidraw — dessins, formes, connexions |
+| **Document** | Éditeur Markdown (Monaco) avec preview en temps réel |
+| **LaTeX** | Éditeur LaTeX avec compilation PDF intégrée |
+| **Kanban** | Tableau à colonnes glissables (À faire / En cours / Terminé) |
+| **Gantt** | Diagramme de Gantt interactif (frappe-gantt) |
 
-This uses [Excalidraw](https://github.com/excalidraw/excalidraw) for the whiteboard interface while [Coder](https://github.com/coder/coder) powers the cloud development environments.
+### Gestion de connaissances
 
+| Feature | Description |
+|---|---|
+| **Wikilinks** | `[[nom-du-pad]]` — liens entre pads avec autocomplétion |
+| **Transclusion** | `![[nom-du-pad]]` — embarque le contenu d'un autre pad |
+| **Callouts** | `> [!NOTE]`, `> [!TIP]`, `> [!WARNING]` — blocs style Obsidian |
+| **KaTeX** | Formules mathématiques `$inline$` et `$$bloc$$` |
+| **Image paste** | Coller une image → base64 dans le Markdown |
+| **Table des matières** | Générée automatiquement depuis les titres `##` |
+| **Daily notes** | Un pad document par jour, généré automatiquement |
+| **Graphe de connaissances** | Vue graphe de tous les wikilinks entre pads |
+| **Recherche full-text** | Recherche dans les titres et le contenu de tous les pads |
+| **Historique de versions** | Snapshots automatiques (toutes les 5 min) et manuels |
+| **Tags** | Étiquettes sur chaque pad, filtrage dans le Dashboard |
+| **Flashcards** | Syntaxe `Q:/A:` dans les docs + répétition espacée (SM-2) |
+| **Export** | `.md`, PDF (impression), ZIP de tous les pads |
+| **Import Obsidian** | Import d'un vault Obsidian (`.md` + images) |
 
-## Try it online  🌐
+### Assistant IA (Ollama — 100% local)
 
-Visit [pad.ws](https://pad.ws) for an official managed instance. During this beta, we offer free ubuntu dev environments without any setup
+| Feature | Description |
+|---|---|
+| **Chat** | Conversation libre avec un modèle local |
+| **Résumé** | Résume le document ouvert en 3-5 points |
+| **Suggestion de tags** | Génère des tags à partir du contenu |
+| **Liens suggérés** | Propose des wikilinks pertinents |
+| **RAG** | Recherche sémantique dans tous les pads + réponse contextuelle |
+| **Flashcards IA** | Génère des flashcards Q/A depuis un document |
+| **Quiz** | Questions/réponses sur le contenu de plusieurs pads |
+| **Auto-démarrage** | Ollama est lancé automatiquement s'il est installé mais éteint |
 
-## Self-Hosting 🛠️
+Attention, des fois ils sont un peu limités. Je ne sais pas si c'est lié au modèle utilisé ou à autre chose, ou si faut que j'inclue des preprompts.
 
-⚠️ IMPORTANT NOTICE: This repository is in early development stage. The setup provided in `docker-compose.yml` is for development and testing purposes only.
-This simplified example lets you host pad on `localhost` but is not safe for real-life use without further configurations ⚠️
+### Outils
 
+| Feature | Description |
+|---|---|
+| **Palette de commandes** | `Cmd+K` — accès rapide à toutes les actions |
+| **Dashboard** | Vue de tous les pads avec filtres par tags |
+| **Templates canvas** | 5 templates prédéfinis (Réunion, Brainstorm, Kanban…) |
+| **Pomodoro** | Timer intégré directement dans l'interface |
+| **Terminal local** | Shell zsh embarqué dans un canvas (ttyd) |
+| **Thèmes** | Thème clair/sombre par pad + builder de thèmes personnalisés |
+| **PWA offline** | Fonctionne hors-ligne via Service Worker |
+| **Pad scratch** | Pad épinglé toujours en première position |
 
+---
 
+## Démarrage rapide
 
-### ✅ Prerequisites
-*   **Linux Host** (This was tested on Ubuntu only)
-*   **Docker & Docker Compose:** Ensure you have both installed. [Install Docker](https://docs.docker.com/get-docker/) / [Install Docker Compose](https://docs.docker.com/compose/install/)
+### Mode local macOS (recommandé pour un usage solo)
 
+> Nécessite macOS + [Homebrew](https://brew.sh). Pas de Docker, pas de Keycloak.
 
-### 1️⃣ .env
+```bash
+git clone https://github.com/<ton-pseudo>/alko-pad.ws.git
+cd alko-pad.ws
+bash scripts/run.sh
+```
 
-*  Copy and review the default values
-    ```bash
-    cp .env.template .env
-    ```
+Le script installe automatiquement les dépendances manquantes (PostgreSQL, Redis, ttyd), configure l'environnement et lance tous les services.
 
-### 2️⃣ PostgreSQL 🐘
-> Ensure persistence for the whole deployment (canvases and configs)
+**→ Ouvrir [http://localhost:8000](http://localhost:8000)**
 
-*   Run the PostgreSQL container using the provided configuration (e.g., in your `docker-compose.yml`)
+Connexion automatique en tant que `local@localhost` (pas de mot de passe).
 
-    ```bash
-    docker compose up -d postgres 
-    ```
+### Mode Docker (pour partager ou héberger)
 
-### 3️⃣ Redis 🔄
-> In-memory data store for caching and session management with password authentication
+> Nécessite [Docker Desktop](https://docs.docker.com/get-docker/) + `jq` (`brew install jq`).
 
-*   Run the Redis container with password authentication
-    ```bash
-    docker compose up -d redis
-    ```
-*   The Redis password is configured in your `.env` file using the `REDIS_PASSWORD` variable
+```bash
+git clone https://github.com/<ton-pseudo>/alko-pad.ws.git
+cd alko-pad.ws
+cp .env.template .env          # Édite les mots de passe avant de continuer
+bash scripts/setup.sh          # Premier lancement (~3-5 min)
+bash scripts/start.sh          # Démarrage quotidien
+```
 
-### 4️⃣ Keycloak 🔑
-> OIDC provider for access and user management (within coder and pad app)
-*   Run the Keycloak container
-    ```bash
-    docker compose up -d keycloak 
-    ```
-*   Access the Keycloak admin console http://localhost:8080
-*   **Create a Realm:** Name it appropriately (e.g., `pad-ws`)
-*   **Create a Client:**
-    *   Give it a `Client ID` (e.g., `pad-ws-client`)
-    *   Enable **Client Authentication**
-    *   Add * to the valid redirect urls
-    *   You can leave other settings as default for now
-*   **Get Credentials:**
-    *   Navigate to `Clients` -> `[Your Client ID]` -> `Credentials` tab
-    *   Note the **Client secret**.
-    *   Update your environment variables file (`.env`) with:
-        ```dotenv
-        OIDC_REALM=your_oidc_realm
-        OIDC_CLIENT_ID=your_client_id 
-        OIDC_CLIENT_SECRET=your_client_secret 
-        ```
-*   **Create a User:**
-    *   Navigate to `Users` -> `Create user`
-    *   Fill in the details
-    *   **Important:** Tick `Email verified`
-    *   Go to the `Credentials` tab for the new user and set a password
-*   **Create an Audience:**
-    *   Navigate to `Clients` -> `[Your Client ID]` -> `Client Scopes`
-    *   Click on the dedicated scope of your Client (`[clientid]-dedicated`)
-    *   Click on `Configure a new mapper`
-    *   Then click on `Audience`
-    *   Ensure `Included Client Audience` matches your `Client ID`
-    *   Ensure `Add to access token` is On
-    
-### 5️⃣ Coder 🧑‍💻
+**→ Ouvrir [http://localhost:8000](http://localhost:8000)**
 
-*   **Find Docker Group ID:** You'll need this to grant necessary permissions
-    ```bash
-    getent group docker | cut -d: -f3 
-    ```
-*   Update your `.env` file with the `DOCKER_GROUP_ID`:
-    ```dotenv
-    DOCKER_GROUP_ID=your_docker_group_id 
-    ```
-*   Run the Coder container.
-    ```bash
-    docker compose up -d coder
-    ```
-*   **Access Coder UI:** Open [localhost:7080](http://localhost:7080) in your browser
-*   **First Login:** Create an administrator user (e.g., `admin`)
-*   **Create a Template:**
-    *   Use the "Start from template" option.
-    *   Choose a base image (e.g., `docker-containers` or a simple Ubuntu). Configure it as needed
-*   **Generate API Key:**
-    *   Click your profile picture (top right) -> `Account` -> `API Keys`
-    *   Generate a new token
-    *   Update your `.env`
-        ```dotenv
-        CODER_API_KEY=your_coder_api_key 
-        ```
-*   **Get Template ID:**
-    *   Visit `http://localhost:7080/api/v2/templates` in your browser (or use `curl`)
-    *   Find the `id` of the template you created
-    *   Update your `.env`
-        ```dotenv
-        CODER_TEMPLATE_ID=your_coder_template_id # Example: 85fb21ba-085b-47a6-9f4d-94ea979aaba9
-        ```
-*   **Get Default Organization ID:**
-    *   Visit `http://localhost:7080/api/v2/organizations` in your browser (or use `curl`)
-    *   Find the `id` of your organization (usually the default one)
-    *   Update your `.env`:
-        ```dotenv
-        CODER_DEFAULT_ORGANIZATION=your_organization_id # Example: 70f6af06-ef3a-4b4c-a663-c03c9ee423bb
-        ```
-*   **If you use a custom name for your workspace:**
-    *   You need to provide the name as `CODER_WORKSPACE_NAME` in your `.env`. Otherwise, it will assume your workspace name is the default we chose: `ubuntu`.
+---
 
-### 6️⃣ Pad App 📝
-> The fastAPI app that both serves the build frontend and the backend API to interface with Coder
+## IA locale (Ollama)
 
-*   **Run the Application:**
-    *   Ensure all environment variables in your `.env` file are correctly set
-    *   Run the `pad` application container
+L'assistant IA utilise [Ollama](https://ollama.com) pour tourner entièrement en local — aucune donnée n'est envoyée à un serveur externe.
 
-        ```bash
-        docker compose up -d pad 
-        ```
+```bash
+# Installer Ollama
+brew install ollama
 
-🎉 **Congratulations!**  You should now be able to access and login to your self-hosted pad at [localhost:8000](http://localhost:8000) 
+# Télécharger un modèle (exemples)
+ollama pull deepseek-r1:1.5b   # rapide, léger (~1 Go)
+ollama pull llama3.2           # polyvalent (~2 Go)
+ollama pull mistral            # puissant (~4 Go)
+```
 
-🚧 *Did you have any issue while following this guide?*
+Si Ollama est installé, l'app le détecte et le lance automatiquement. Le panneau IA s'ouvre avec l'icône ✦ en haut à droite du canvas.
 
-*Please [let us know](https://github.com/pad-ws/pad.ws/issues) so we can improve the onboarding flow*
+---
 
-## 🚀 Project Growth
+## Raccourcis clavier
 
-[![Star History Chart](https://api.star-history.com/svg?repos=pad-ws/pad.ws&type=Date)](https://star-history.com/#pad-ws/pad.ws&Date)
+| Raccourci | Action |
+|---|---|
+| `Cmd/Ctrl + N` | Nouveau canvas |
+| `Cmd/Ctrl + K` | Palette de commandes |
+| `Cmd/Ctrl + Shift + F` | Recherche full-text |
+| `Cmd/Ctrl + D` | Dashboard |
+| `Cmd/Ctrl + G` | Graphe de connaissances |
+| `Cmd/Ctrl + J` | Daily note d'aujourd'hui |
+
+---
+
+## Configuration
+
+### Variables principales (`.env.local` pour mode local, `.env` pour Docker)
+
+| Variable | Description | Défaut |
+|---|---|---|
+| `PAD_DEV_MODE` | Mode local sans auth (auto-login) | `false` |
+| `POSTGRES_USER` | Utilisateur PostgreSQL | `(ton username macOS)` |
+| `POSTGRES_DB` | Nom de la base de données | `pad` |
+| `REDIS_HOST` | Hôte Redis | `localhost` |
+| `OLLAMA_URL` | URL du serveur Ollama | `http://localhost:11434` |
+| `OLLAMA_DEFAULT_MODEL` | Modèle Ollama par défaut | `llama3.2` |
+| `SYNC_DIR` | Dossier de sync locale des pads `.excalidraw` | `~/Documents/pads/` |
+| `TTYD_URL` | URL du terminal local (ttyd) | `http://localhost:7681` |
+
+> ⚠️ Changez les mots de passe par défaut dans `.env` avant tout déploiement public.
+
+---
+
+## Structure du projet
+
+```
+alko-pad.ws/
+├── src/
+│   ├── backend/              # FastAPI (Python 3.11+)
+│   │   ├── routers/          # Endpoints API (pad, ai, auth, ws…)
+│   │   ├── domain/           # Logique métier (Pad, User, Session)
+│   │   ├── database/         # Modèles SQLAlchemy + init DB
+│   │   ├── workers/          # Canvas worker (sauvegarde périodique)
+│   │   ├── cache/            # Client Redis singleton
+│   │   └── config.py         # Variables d'environnement
+│   └── frontend/             # React 19 + TypeScript
+│       └── src/
+│           ├── pad/          # Éditeurs (Document, Kanban, Gantt, LaTeX)
+│           ├── ui/           # Composants (Dashboard, AIPanel, Tabs…)
+│           ├── hooks/        # State management (usePadTabs, useOllama…)
+│           └── lib/          # Collaboration temps réel (WebSocket)
+├── scripts/
+│   ├── run.sh                # Démarrage local macOS (sans Docker)
+│   ├── setup.sh              # Setup initial Docker
+│   └── start.sh              # Démarrage quotidien Docker
+├── docker-compose.yml
+├── .env.template             # Template config Docker
+├── .env.local.template       # Template config local macOS
+└── SETUP.md                  # Guide d'installation détaillé
+```
+
+---
+
+## Stack technique
+
+| Couche | Technologie |
+|---|---|
+| Frontend | React 19, TypeScript, Excalidraw (fork `@atyrode/excalidraw`) |
+| Éditeur | Monaco Editor, marked.js, KaTeX, DOMPurify, Mermaid |
+| Backend | FastAPI, SQLAlchemy async, Python 3.11+ |
+| Base de données | PostgreSQL 16 (données canvas en JSONB) |
+| Cache / WebSocket | Redis |
+| Auth | Keycloak (OIDC) en production, `PAD_DEV_MODE=true` en local |
+| IA | Ollama (LLM local), nomic-embed-text (embeddings RAG) |
+| Build | Vite 5, vite-plugin-pwa (PWA + Service Worker) |
+
+---
+
+## Crédits
+
+- [pad.ws](https://github.com/pad-ws/pad.ws) — projet upstream
+- [Excalidraw](https://github.com/excalidraw/excalidraw) — moteur de canvas
+- [Ollama](https://ollama.com) — inférence LLM locale
+- [Alexandrie](https://github.com/Smaug6739/Alexandrie) - Surement l'une des meilleures app qui puisse exister, qui m'a bien inspiré pour mon projet

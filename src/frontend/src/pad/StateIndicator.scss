@@ -22,15 +22,15 @@
   }
   
   &--starting {
-    background-color: #e67e22; // Orange for starting, pending, loading
+    background-color: var(--ap-orange); // Orange for starting, pending, loading
   }
   
   &--stopping {
-    background-color: #e67e22; // Orange for stopping
+    background-color: var(--ap-orange); // Orange for stopping
   }
   
   &--stopped {
-    background-color: #e74c3c; // Red for stopped
+    background-color: var(--ap-red); // Red for stopped
   }
   
   // &--loading style removed as it will use 'starting' modifier

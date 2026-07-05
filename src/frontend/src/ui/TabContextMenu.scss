@@ -4,7 +4,7 @@
 .tab-context-menu,
 .context-menu {
   position: fixed;
-  border-radius: 4px;
+  border-radius: var(--ap-radius-xs);
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
   padding: 0.5rem 0;
   list-style: none;
@@ -72,7 +72,7 @@
 /* Delete item styling */
 .tab-context-menu .menu-item.delete .menu-item__label,
 .context-menu-item.dangerous {
-  color: #e53935;
+  color: var(--ap-red);
 }
 
 /* Hover states */
@@ -85,7 +85,7 @@
 /* Dangerous hover states */
 .tab-context-menu .menu-item.delete:hover,
 .context-menu-item.dangerous:hover {
-  background-color: #e53935;
+  background-color: var(--ap-red);
 }
 
 .tab-context-menu .menu-item.delete:hover .menu-item__label,
@@ -129,7 +129,7 @@
   flex: 1;
   padding: 0.25rem 0.5rem;
   border: 1px solid var(--button-gray-3, #ccc);
-  border-radius: 4px;
+  border-radius: var(--ap-radius-xs);
   margin-right: 0.25rem;
   background-color: var(--input-bg-color, #fff);
   color: var(--text-color-primary, #333);
@@ -139,7 +139,7 @@
   background-color: var(--color-surface-primary-container, #4285f4);
   color: var(--color-on-primary-container, white);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--ap-radius-xs);
   padding: 0.25rem 0.5rem;
   cursor: pointer;
 }

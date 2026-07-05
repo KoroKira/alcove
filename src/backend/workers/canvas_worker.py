@@ -1,6 +1,9 @@
 import asyncio
 import uuid
 import json
+import logging
+import os
+import re
 from typing import Dict, Any, List, Optional, Tuple, Set
 from uuid import UUID
 from datetime import datetime
@@ -8,7 +11,9 @@ from datetime import datetime
 from database.database import async_session
 from domain.pad import Pad
 
-SAVE_INTERVAL = 300 # 5 minutes in seconds
+logger = logging.getLogger(__name__)
+
+SAVE_INTERVAL = 30  # 30 seconds — save often so reloads never lose more than 30s
 
 class CanvasWorker:
     """
@@ -434,21 +439,60 @@ class CanvasWorker:
         except Exception as e:
             print(f"Error in periodic save for pad {pad_id}: {e}")
     
+    async def save_pad(self, pad_id: UUID) -> bool:
+        """Public alias for immediate pad save (e.g. on WebSocket disconnect)."""
+        return await self._save_pad(pad_id)
+
     async def _save_pad(self, pad_id: UUID) -> bool:
         """Save pad data using the Pad domain class."""
         try:
-            # Create database session and save using Pad domain
             async with async_session() as session:
-                # Get the pad from database (this will also check cache first)
                 pad = await Pad.get_by_id(session, pad_id)
-                
+
                 if not pad:
-                    print(f"Pad {pad_id} not found in database, skipping save")
+                    logger.warning("Pad %s not found, skipping save", pad_id)
                     return False
-                
+
                 await pad.save(session)
+                await self._sync_to_local(pad)
+                await self._maybe_snapshot(session, pad)
                 return True
-                
+
         except Exception as e:
-            print(f"Error saving pad {pad_id} to database via domain: {e}")
+            logger.error("Error saving pad %s: %s", pad_id, e)
             return False
+
+    _save_counters: dict = {}
+
+    async def _maybe_snapshot(self, session, pad) -> None:
+        """Create a version snapshot every 5 canvas saves."""
+        if getattr(pad, 'pad_type', 'canvas') != 'canvas':
+            return
+        pid = str(pad.id)
+        count = self._save_counters.get(pid, 0) + 1
+        self._save_counters[pid] = count
+        if count % 5 == 0:
+            try:
+                from database.models.version_model import PadVersion
+                await PadVersion.create(session, pad_id=pad.id, data=pad.data, pad_type='canvas', reason='auto')
+            except Exception as e:
+                logger.error("Snapshot failed for pad %s: %s", pad.id, e)
+
+    async def _sync_to_local(self, pad: Any) -> None:
+        """Write pad data to local SYNC_DIR as a .excalidraw file."""
+        try:
+            from config import SYNC_DIR
+            if not SYNC_DIR:
+                return
+            os.makedirs(SYNC_DIR, exist_ok=True)
+            safe_name = re.sub(r'[^\w\-]', '_', pad.display_name or 'untitled')
+            filename = f"{safe_name}_{str(pad.id)[:8]}.excalidraw"
+            path = os.path.join(SYNC_DIR, filename)
+            data_str = json.dumps(pad.data, ensure_ascii=False, indent=2)
+            loop = asyncio.get_running_loop()
+            def _write():
+                with open(path, 'w', encoding='utf-8') as f:
+                    f.write(data_str)
+            await loop.run_in_executor(None, _write)
+        except Exception as e:
+            logger.error("Sync to local failed for pad %s: %s", pad.id, e)

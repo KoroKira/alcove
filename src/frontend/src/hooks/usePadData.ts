@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import type { ExcalidrawImperativeAPI, AppState } from "@atyrode/excalidraw/types";
 import type { ExcalidrawElement } from "@atyrode/excalidraw/element/types";
-import { normalizeCanvasData } from '../lib/canvas';
+import { normalizeCanvasData, adaptSceneToTheme } from '../lib/canvas';
 import { INITIAL_APP_DATA } from '../constants';
 
 interface PadData {
@@ -28,7 +28,11 @@ const fetchPadById = async (padId: string): Promise<PadData> => {
     return response.json();
 };
 
-export const usePad = (padId: string | null, excalidrawAPI: ExcalidrawImperativeAPI | null) => {
+export const usePad = (
+    padId: string | null,
+    excalidrawAPI: ExcalidrawImperativeAPI | null,
+    themeColors?: { bg: string; ink: string },
+) => {
     const isTemporaryPad = padId?.startsWith('temp-');
 
     const { data, isLoading, error, isError } = useQuery<PadData, Error>({
@@ -37,23 +41,26 @@ export const usePad = (padId: string | null, excalidrawAPI: ExcalidrawImperative
             if (!padId) throw new Error("padId is required");
             return fetchPadById(padId);
         },
-        enabled: !!padId && !isTemporaryPad, 
+        enabled: !!padId && !isTemporaryPad,
     });
 
     useEffect(() => {
+        const applyThemeOverride = (scene: PadData) =>
+            themeColors ? adaptSceneToTheme(scene, themeColors.bg, themeColors.ink) : scene;
+
         if (isTemporaryPad && excalidrawAPI) {
             console.debug(`[pad.ws] Initializing new temporary pad ${padId}`);
-            const normalizedData = normalizeCanvasData(INITIAL_APP_DATA);
+            const normalizedData = normalizeCanvasData(applyThemeOverride(INITIAL_APP_DATA));
             excalidrawAPI.updateScene(normalizedData);
-            return; 
+            return;
         }
 
         if (data && excalidrawAPI && !isTemporaryPad) {
-            const normalizedData = normalizeCanvasData(data);
+            const normalizedData = normalizeCanvasData(applyThemeOverride(data));
             console.debug(`[pad.ws] Loading pad ${padId}`);
             excalidrawAPI.updateScene(normalizedData);
         }
-    }, [data, excalidrawAPI, padId, isTemporaryPad]);
+    }, [data, excalidrawAPI, padId, isTemporaryPad, themeColors?.bg, themeColors?.ink]);
 
     if (isTemporaryPad) {
         return {

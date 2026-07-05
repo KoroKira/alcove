@@ -1,5 +1,10 @@
 version: '3.8'
 
+# Bridge networking so this works on macOS Docker Desktop (host networking is Linux-only).
+# Services communicate via service names on the pad-network.
+# Keycloak is reached from containers via extra_hosts "keycloak-host" → Docker host,
+# so the public issuer URL (http://localhost:8080) matches what Coder receives in JWTs.
+
 services:
   postgres:
     image: postgres:16
@@ -10,19 +15,23 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
     restart: unless-stopped
-    network_mode: host
+    networks:
+      - pad-network
 
   redis:
     image: redis:alpine
     container_name: redis
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     restart: unless-stopped
     command: redis-server --requirepass ${REDIS_PASSWORD} --save 60 1 --loglevel warning
-    network_mode: host
+    networks:
+      - pad-network
 
   keycloak:
     image: quay.io/keycloak/keycloak:25.0
@@ -41,59 +50,91 @@ services:
       KC_PROXY: "edge"
       PROXY_ADDRESS_FORWARDING: "true"
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://localhost:5432/${POSTGRES_DB}
+      # Use service name (bridge network)
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
       KC_DB_USERNAME: ${POSTGRES_USER}
       KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${KEYCLOAK_PORT:-8080}:8080"
     restart: unless-stopped
-    network_mode: host
+    depends_on:
+      - postgres
+    networks:
+      - pad-network
 
   coder:
     image: ghcr.io/coder/coder:latest
     container_name: coder
     environment:
       CODER_ACCESS_URL: http://localhost:${CODER_PORT}
-      CODER_OIDC_ISSUER_URL: http://localhost:8080/realms/${OIDC_REALM}
+      # Must match the issuer in Keycloak-issued JWTs (http://localhost:…).
+      # extra_hosts routes "localhost" → Docker host so this container can reach Keycloak.
+      CODER_OIDC_ISSUER_URL: http://localhost:${KEYCLOAK_PORT}/realms/${OIDC_REALM}
       CODER_OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
       CODER_OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
       CODER_OIDC_SIGN_IN_TEXT: "Sign in for pad"
       CODER_ADDITIONAL_CSP_POLICY: ${CODER_ADDITIONAL_CSP_POLICY}
       CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLED: "false"
-      CODER_PG_CONNECTION_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}?sslmode=disable
+      CODER_PG_CONNECTION_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       CODER_ADDRESS: 0.0.0.0:7080
       CODER_OIDC_IGNORE_EMAIL_VERIFIED: "true"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    group_add:
-      - ${DOCKER_GROUP_ID}
+    ports:
+      - "${CODER_PORT:-7080}:7080"
     restart: unless-stopped
-    network_mode: host
+    depends_on:
+      - postgres
+      - keycloak
+    # Routes "localhost" inside this container to the Docker host, so that
+    # http://localhost:8080 reaches the Keycloak port exposed on the host.
+    extra_hosts:
+      - "localhost:host-gateway"
+    networks:
+      - pad-network
 
   pad:
-    image: ghcr.io/pad-ws/pad.ws:main
+    build: .
+    image: alko-pad-ws:local
     container_name: pad
     environment:
       - STATIC_DIR=/app/frontend/dist
       - ASSETS_DIR=/app/frontend/dist/assets
       - OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
       - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET}
+      # Public URL (used to build browser redirect URLs)
       - OIDC_SERVER_URL=http://localhost:${KEYCLOAK_PORT}
+      # Internal URL (used for server-side token exchange and JWKS)
+      - OIDC_INTERNAL_URL=http://keycloak:${KEYCLOAK_PORT}
       - OIDC_REALM=${OIDC_REALM}
       - REDIRECT_URI=${REDIRECT_URI}
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
-      - POSTGRES_HOST=localhost
-      - POSTGRES_PORT=${POSTGRES_PORT}
-      - REDIS_HOST=${REDIS_HOST}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - REDIS_HOST=redis
       - REDIS_PORT=${REDIS_PORT}
       - REDIS_PASSWORD=${REDIS_PASSWORD}
       - CODER_API_KEY=${CODER_API_KEY}
-      - CODER_URL=http://localhost:${CODER_PORT}
+      - CODER_URL=http://coder:${CODER_PORT}
       - CODER_TEMPLATE_ID=${CODER_TEMPLATE_ID}
       - CODER_DEFAULT_ORGANIZATION=${CODER_DEFAULT_ORGANIZATION}
       - API_WORKERS=${API_WORKERS}
       - FRONTEND_URL=${FRONTEND_URL}
-    network_mode: host
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+      - keycloak
+    networks:
+      - pad-network
+
+networks:
+  pad-network:
+    driver: bridge
 
 volumes:
   postgres_data:

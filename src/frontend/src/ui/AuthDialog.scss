@@ -94,7 +94,7 @@
     background-color: rgb(232, 232, 232);
     color: #333;
     padding: 8px 12px;
-    border-radius: 12px;
+    border-radius: var(--ap-radius-lg);
     font-size: 14px;
     max-width: 180px;
     left: 73px;
@@ -184,7 +184,7 @@
       min-width: 250px;
       gap: 8px;
       height: 44px;
-      border-radius: 6px;
+      border-radius: var(--ap-radius-sm);
       border: 2px solid #727279;
       font-size: 15px;
       font-weight: 500;

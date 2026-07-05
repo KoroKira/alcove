@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 
 interface AppConfig {
   coderUrl: string;
+  ttydUrl: string;
   posthogKey: string;
   posthogHost: string;
   devMode: boolean;

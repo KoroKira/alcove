@@ -1,14 +1,36 @@
 @import 'src/css/_colors.scss';
+@import 'src/css/_themes.scss';
 @import 'src/css/_excalidraw-overrides.scss';
 @import 'src/css/_fonts.scss';
 @import 'src/css/_defaults.scss';
+@import 'src/css/_responsive.scss';
 
-/* Makes excalidraw fill the entire screen */
-#root {
-  height: 100vb;
-}
-
-/* Removes the default margin */
 body {
   margin: 0;
+  overflow: hidden;
+  font-family: var(--ap-font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  height: 100vh;
+}
+
+/* Canvas: always full viewport — Excalidraw's pointer math assumes (0,0) origin */
+.app-canvas-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+}
+
+/* Document pad: fixed, slides right of sidebar */
+.app-doc-wrap {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  transition: left 0.16s ease;
 }

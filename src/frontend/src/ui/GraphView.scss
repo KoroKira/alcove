@@ -1,0 +1,74 @@
+.graph-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  background: #0d0d1a;
+  display: flex;
+  flex-direction: column;
+}
+
+.graph-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: rgba(var(--ap-bg0-rgb), 0.9);
+  border-bottom: 1px solid var(--ap-bg2);
+  flex-shrink: 0;
+  z-index: 1;
+
+  &__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ap-text0);
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__hint {
+    font-size: 11px;
+    color: var(--ap-overlay0);
+  }
+
+  &__close {
+    background: none;
+    border: none;
+    color: var(--ap-text2);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: var(--ap-radius-xs);
+    display: flex;
+    align-items: center;
+
+    &:hover { background: var(--ap-bg2); color: var(--ap-text0); }
+  }
+}
+
+.graph-canvas {
+  flex: 1;
+  display: block;
+  cursor: grab;
+
+  &:active { cursor: grabbing; }
+}
+
+.graph-tooltip {
+  position: fixed;
+  pointer-events: none;
+  background: var(--ap-bg0);
+  border: 1px solid var(--ap-bg3);
+  border-radius: var(--ap-radius-sm);
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--ap-text0);
+  z-index: 260;
+  white-space: nowrap;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}

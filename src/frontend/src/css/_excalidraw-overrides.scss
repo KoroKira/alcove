@@ -38,31 +38,84 @@
             pointer-events: var(--embeddable-pointer-events, all) !important; /* Allows conditional interaction with the embeddable */
         }
     }
-}
 
-/* Overriding Excalidraw's default (light theme) colors */
-.excalidraw {
+    /* Hide Excalidraw's built-in "Click to interact" hint — our custom StateIndicator handles this */
+    &__embeddable-hint {
+        display: none !important;
+    }
 
-    --select-highlight-color: #{$accent-lighter} !important; /* Context menu highlight color */
-    --color-on-primary-container: #{$black} !important;
-    --color-surface-primary-container: #{$accent-light} !important;
-    --color-selection: #{$accent-lighter} !important;
+    /* Hide library/sidebar toggle button (the palm tree) */
+    .default-sidebar-trigger,
+    .sidebar-trigger {
+        display: none !important;
+    }
 
-    .dropdown-menu-group-title {
-        color: $accent-lighter !important;
+    /* Offset top-left hamburger so the sidebar (40px collapsed) doesn't cover it */
+    .App-menu_top__left {
+        padding-left: 44px !important;
+    }
+
+    /* Offset bottom-left zoom controls for the same reason */
+    .layer-ui__wrapper__footer-left {
+        margin-left: 46px !important;
     }
 }
 
-/* Overriding Excalidraw's default (dark theme) colors */
-.excalidraw.theme--dark {
-
-    --select-highlight-color: #{$accent-darker} !important; /* Context menu highlight color */
-    --color-on-primary-container: #{$white} !important;
-    --color-surface-primary-container: #{$accent} !important;
-    --color-selection: #{$accent-darker} !important;
+/* Chrome theming: appState.theme stays "light" (Excalidraw's dark mode inverts
+   the canvas render, breaking custom backgrounds), so the panel/toolbar palette
+   is driven entirely by our theme tokens — it follows every app theme, dark or
+   light.
+   IMPORTANT: Excalidraw's own `.excalidraw.theme--dark { --island-bg-color: ...; }`
+   selector has TWO classes (specificity 0-2-0), which outranks our unqualified
+   `html .excalidraw` (0-1-1, one element + one class). If the container ever
+   ends up with the `theme--dark` class — even transiently, e.g. a race while
+   switching pads — every one of our un-!important tokens below gets silently
+   clobbered by Excalidraw's own dark palette, including `--theme-filter`
+   (the invert(93%) hue-rotate(180deg) that's applied straight to the <canvas>
+   via `.excalidraw.theme--dark canvas { filter: var(--theme-filter); }`).
+   `!important` on every token here is what actually guarantees our theme wins
+   regardless of that class's presence — this is not just belt-and-suspenders. */
+html .excalidraw {
+    --theme-filter: none !important;
+    --island-bg-color: rgba(var(--ap-bg1-rgb), 0.96) !important;
+    --default-bg-color: var(--ap-bg0) !important;
+    --popup-bg-color: var(--ap-bg1) !important;
+    --popup-secondary-bg-color: var(--ap-bg2) !important;
+    --popup-text-color: var(--ap-text0) !important;
+    --text-primary-color: var(--ap-text0) !important;
+    --icon-fill-color: var(--ap-text1) !important;
+    --default-border-color: var(--ap-bg3) !important;
+    --input-bg-color: var(--ap-bg1) !important;
+    --input-border-color: var(--ap-bg3) !important;
+    --input-hover-bg-color: var(--ap-bg2) !important;
+    --input-label-color: var(--ap-text2) !important;
+    --button-gray-1: var(--ap-bg2) !important;
+    --button-gray-2: var(--ap-bg3) !important;
+    --button-gray-3: var(--ap-bg4) !important;
+    --button-hover-bg: var(--ap-bg2) !important;
+    --sidebar-bg-color: var(--ap-bg1) !important;
+    --sidebar-border-color: var(--ap-bg2) !important;
+    --scrollbar-thumb: var(--ap-bg3) !important;
+    --scrollbar-thumb-hover: var(--ap-bg4) !important;
+    --overlay-bg-color: rgba(var(--ap-bg0-rgb), 0.6) !important;
+    --color-primary: var(--ap-accent) !important;
+    --color-primary-darker: var(--ap-accent) !important;
+    --color-primary-darkest: var(--ap-accent2) !important;
+    --color-primary-light: rgba(var(--ap-accent-rgb), 0.2) !important;
+    --color-primary-hover: var(--ap-accent2) !important;
+    --select-highlight-color: var(--ap-accent) !important;
+    --color-on-primary-container: var(--ap-bg0) !important;
+    --color-surface-primary-container: rgba(var(--ap-accent-rgb), 0.25) !important;
+    --color-selection: var(--ap-accent) !important;
 
     .dropdown-menu-group-title {
-        color: $accent-darker !important;
+        color: var(--ap-accent) !important;
     }
+}
+
+/* Canvas fill itself: belt-and-suspenders against the invert filter above —
+   even if --theme-filter leaks through, keep the drawn background sane. */
+html .excalidraw canvas {
+    filter: none !important;
 }
   

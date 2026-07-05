@@ -1,0 +1,57 @@
+/* ── Responsive / touch adaptations ──────────────────────────────────────────
+   The desktop layout offsets panels by fixed pixel widths. On narrow screens
+   those fixed widths eat the whole viewport, so here we switch the sidebar and
+   side panels to full-width overlays and enlarge tap targets. */
+
+@media (max-width: 768px) {
+  /* Document/kanban/gantt panels: don't reserve space for the sidebar — it
+     overlays instead. `!important` beats the inline `left: sidebarWidth`. */
+  .app-doc-wrap {
+    left: 0 !important;
+  }
+
+  /* Sidebar becomes a slide-over drawer with a drop shadow. */
+  .pad-sidebar:not(.pad-sidebar--collapsed) {
+    width: min(84vw, 320px);
+    box-shadow: 0 0 48px rgba(0, 0, 0, 0.55);
+    z-index: 300;
+  }
+
+  /* Pad rows: taller, comfier for touch. */
+  .pad-sidebar__item {
+    min-height: 40px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  .pad-sidebar__item-title { font-size: 14px; }
+
+  /* The "more" action is always visible on touch (no hover). */
+  .pad-sidebar__item-more { opacity: 1 !important; }
+
+  /* AI panel + split doc panel: full width. */
+  .ai-panel {
+    width: 100vw;
+  }
+
+  /* Bottom toolbars wrap instead of overflowing. */
+  .pad-sidebar__bottom,
+  .pad-sidebar__bottom-bar {
+    flex-wrap: wrap;
+  }
+
+  /* Give icon buttons a bigger hit area on touch. */
+  .pad-sidebar__icon-btn {
+    width: 30px;
+    height: 30px;
+  }
+}
+
+/* Coarse-pointer (touch) devices of any width: enlarge the small pad-row
+   affordances so they're tappable. */
+@media (pointer: coarse) {
+  .pad-sidebar__item-more,
+  .command-palette__item,
+  .ai-panel__conv-item {
+    min-height: 34px;
+  }
+}

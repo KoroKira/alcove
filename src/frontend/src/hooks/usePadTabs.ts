@@ -15,6 +15,11 @@ export interface Tab {
     sharingPolicy: SharingPolicy;
     createdAt: string;
     updatedAt: string;
+    theme?: 'light' | 'dark';
+    isScratch?: boolean;
+    padType?: 'canvas' | 'document' | 'kanban' | 'gantt' | 'latex';
+    tags?: string[];
+    folder?: string;
 }
 
 interface PadResponse {
@@ -38,6 +43,11 @@ interface UserResponse {
         sharing_policy: string;
         created_at: string;
         updated_at: string;
+        theme?: string;
+        is_scratch?: boolean;
+        pad_type?: string;
+        tags?: string[];
+        folder?: string;
     }[];
 }
 
@@ -58,14 +68,23 @@ const fetchUserPads = async (): Promise<PadResponse> => {
     const userData: UserResponse = await response.json();
 
     // Transform pads into tabs format
-    const tabs = userData.pads.map(pad => ({
+    const rawTabs = userData.pads.map(pad => ({
         id: pad.id,
         title: pad.display_name,
         ownerId: pad.owner_id,
         sharingPolicy: pad.sharing_policy as SharingPolicy,
         createdAt: pad.created_at,
-        updatedAt: pad.updated_at
+        updatedAt: pad.updated_at,
+        // undefined = no per-pad override, follow the app-wide theme
+        theme: (pad.theme as 'light' | 'dark' | undefined) || undefined,
+        isScratch: !!pad.is_scratch,
+        padType: (pad.pad_type as 'canvas' | 'document' | 'kanban' | 'gantt' | 'latex') || 'canvas',
+        tags: pad.tags || [],
+        folder: pad.folder || undefined,
     }));
+    const scratchTabs = rawTabs.filter(t => t.isScratch);
+    const otherTabs = rawTabs.filter(t => !t.isScratch);
+    const tabs = [...scratchTabs, ...otherTabs];
 
     // Use last_selected_pad if it exists and is in the current tabs, otherwise use first tab
     let activeTabId = '';
@@ -88,11 +107,19 @@ interface NewPadApiResponse {
     sharing_policy: SharingPolicy;
     created_at: string;
     updated_at: string;
+    pad_type?: string;
 }
 
-const createNewPad = async (): Promise<Tab> => {
+type PadType = 'canvas' | 'document' | 'kanban' | 'gantt' | 'latex';
+const PAD_DEFAULT_NAMES: Record<PadType, string> = {
+    canvas: 'New pad', document: 'New document', kanban: 'New kanban', gantt: 'New gantt', latex: 'New LaTeX',
+};
+
+const createNewPad = async (padType: PadType = 'canvas'): Promise<Tab> => {
     const response = await fetch('/api/pad/new', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pad_type: padType, display_name: PAD_DEFAULT_NAMES[padType] }),
     });
     if (!response.ok) {
         let errorMessage = 'Failed to create new pad';
@@ -116,6 +143,7 @@ const createNewPad = async (): Promise<Tab> => {
         sharingPolicy: newPadResponse.sharing_policy as SharingPolicy,
         createdAt: newPadResponse.created_at,
         updatedAt: newPadResponse.updated_at,
+        padType: (newPadResponse.pad_type as 'canvas' | 'document' | 'kanban' | 'gantt' | 'latex') || padType,
     };
 };
 
@@ -149,20 +177,21 @@ export const usePadTabs = (isAuthenticated?: boolean) => {
         }
     }, [data, isLoading]);
 
-    const createPadMutation = useMutation<Tab, Error, void, { previousTabsResponse?: PadResponse, tempTabId?: string }>({
-        mutationFn: createNewPad,
-        onMutate: async () => {
+    const createPadMutation = useMutation<Tab, Error, PadType | void, { previousTabsResponse?: PadResponse, tempTabId?: string }>({
+        mutationFn: (padType) => createNewPad((padType as PadType) || 'canvas'),
+        onMutate: async (padType) => {
             await queryClient.cancelQueries({ queryKey: ['padTabs'] });
             const previousTabsResponse = queryClient.getQueryData<PadResponse>(['padTabs']);
 
             const tempTabId = `temp-${Date.now()}`;
             const tempTab: Tab = {
                 id: tempTabId,
-                title: 'New pad',
+                title: PAD_DEFAULT_NAMES[(padType as PadType) || 'canvas'],
                 ownerId: '',
                 sharingPolicy: SharingPolicy.PRIVATE,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
+                padType: (padType as 'canvas' | 'document' | 'kanban' | 'gantt' | 'latex') || 'canvas',
             };
 
             queryClient.setQueryData<PadResponse>(['padTabs'], (old) => {
@@ -419,14 +448,134 @@ export const usePadTabs = (isAuthenticated?: boolean) => {
         setSelectedTabId(tabId);
     };
 
+    const updateThemeAPI = async ({ padId, theme }: { padId: string; theme: 'light' | 'dark' | null }): Promise<void> => {
+        const res = await fetch(`/api/pad/${padId}/theme`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ theme }),
+        });
+        if (!res.ok) throw new Error('Failed to update theme');
+    };
+
+    const updateThemeMutation = useMutation<void, Error, { padId: string; theme: 'light' | 'dark' | null }, { previousTabsResponse?: PadResponse }>({
+        mutationFn: updateThemeAPI,
+        onMutate: async ({ padId, theme }) => {
+            await queryClient.cancelQueries({ queryKey: ['padTabs'] });
+            const previousTabsResponse = queryClient.getQueryData<PadResponse>(['padTabs']);
+            queryClient.setQueryData<PadResponse>(['padTabs'], (old) => {
+                if (!old) return undefined;
+                return { ...old, tabs: old.tabs.map(t => t.id === padId ? { ...t, theme: theme ?? undefined } : t) };
+            });
+            return { previousTabsResponse };
+        },
+        onError: (_err, _vars, context) => {
+            if (context?.previousTabsResponse) {
+                queryClient.setQueryData<PadResponse>(['padTabs'], context.previousTabsResponse);
+            }
+        },
+        onSettled: () => {
+            queryClient.invalidateQueries({ queryKey: ['padTabs'] });
+        },
+    });
+
+    const updateTagsAPI = async ({ padId, tags }: { padId: string; tags: string[] }): Promise<void> => {
+        const res = await fetch(`/api/pad/${padId}/tags`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tags }),
+        });
+        if (!res.ok) throw new Error('Failed to update tags');
+    };
+
+    const updateTagsMutation = useMutation<void, Error, { padId: string; tags: string[] }, { previousTabsResponse?: PadResponse }>({
+        mutationFn: updateTagsAPI,
+        onMutate: async ({ padId, tags }) => {
+            await queryClient.cancelQueries({ queryKey: ['padTabs'] });
+            const previousTabsResponse = queryClient.getQueryData<PadResponse>(['padTabs']);
+            queryClient.setQueryData<PadResponse>(['padTabs'], (old) => {
+                if (!old) return undefined;
+                return { ...old, tabs: old.tabs.map(t => t.id === padId ? { ...t, tags } : t) };
+            });
+            return { previousTabsResponse };
+        },
+        onError: (_err, _vars, context) => {
+            if (context?.previousTabsResponse) {
+                queryClient.setQueryData<PadResponse>(['padTabs'], context.previousTabsResponse);
+            }
+        },
+        onSettled: () => { queryClient.invalidateQueries({ queryKey: ['padTabs'] }); },
+    });
+
+    const updateFolderAPI = async ({ padId, folder }: { padId: string; folder: string | null }): Promise<void> => {
+        const res = await fetch(`/api/pad/${padId}/folder`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ folder }),
+        });
+        if (!res.ok) throw new Error('Failed to update folder');
+    };
+
+    const updateFolderMutation = useMutation<void, Error, { padId: string; folder: string | null }, { previousTabsResponse?: PadResponse }>({
+        mutationFn: updateFolderAPI,
+        onMutate: async ({ padId, folder }) => {
+            await queryClient.cancelQueries({ queryKey: ['padTabs'] });
+            const previousTabsResponse = queryClient.getQueryData<PadResponse>(['padTabs']);
+            queryClient.setQueryData<PadResponse>(['padTabs'], (old) => {
+                if (!old) return undefined;
+                return { ...old, tabs: old.tabs.map(t => t.id === padId ? { ...t, folder: folder ?? undefined } : t) };
+            });
+            return { previousTabsResponse };
+        },
+        onError: (_err, _vars, context) => {
+            if (context?.previousTabsResponse) {
+                queryClient.setQueryData<PadResponse>(['padTabs'], context.previousTabsResponse);
+            }
+        },
+        onSettled: () => { queryClient.invalidateQueries({ queryKey: ['padTabs'] }); },
+    });
+
+    const createDailyNote = async () => {
+        const res = await fetch('/api/pad/daily');
+        if (!res.ok) return;
+        const data = await res.json();
+        const dailyTab: Tab = {
+            id: data.id,
+            title: data.display_name,
+            ownerId: data.owner_id,
+            sharingPolicy: data.sharing_policy as SharingPolicy,
+            createdAt: data.created_at,
+            updatedAt: data.updated_at,
+            theme: (data.theme as 'light' | 'dark' | undefined) || undefined,
+            isScratch: !!data.is_scratch,
+            padType: 'document',
+            folder: data.folder || undefined,
+        };
+        queryClient.setQueryData<PadResponse>(['padTabs'], (old) => {
+            if (!old) return { tabs: [dailyTab], activeTabId: dailyTab.id };
+            const existing = old.tabs.find(t => t.id === dailyTab.id);
+            return {
+                tabs: existing ? old.tabs : [...old.tabs, dailyTab],
+                activeTabId: old.activeTabId,
+            };
+        });
+        setSelectedTabId(dailyTab.id);
+        queryClient.invalidateQueries({ queryKey: ['padTabs'] });
+    };
+
     return {
         tabs: data?.tabs ?? [],
         selectedTabId: selectedTabId || data?.activeTabId || '',
         isLoading,
         error,
         isError,
-        createNewPad: createPadMutation.mutate, // Standard mutate for fire-and-forget
-        createNewPadAsync: createPadMutation.mutateAsync, // For components needing the result
+        createNewPad: () => createPadMutation.mutate('canvas'),
+        createNewPadAsync: () => createPadMutation.mutateAsync('canvas'),
+        createNewDocument: () => createPadMutation.mutate('document'),
+        createNewDocumentAsync: () => createPadMutation.mutateAsync('document'),
+        createNewKanban: () => createPadMutation.mutateAsync('kanban'),
+        createNewGantt: () => createPadMutation.mutateAsync('gantt'),
+        createNewLatex: () => createPadMutation.mutateAsync('latex'),
+        createDailyNote,
         isCreating: createPadMutation.isPending,
         renamePad: renamePadMutation.mutate,
         isRenaming: renamePadMutation.isPending,
@@ -436,6 +585,10 @@ export const usePadTabs = (isAuthenticated?: boolean) => {
         isLeavingSharedPad: leaveSharedPadMutation.isPending,
         updateSharingPolicy: updateSharingPolicyMutation.mutate,
         isUpdatingSharingPolicy: updateSharingPolicyMutation.isPending,
-        selectTab
+        updateTheme: updateThemeMutation.mutate,
+        updateTags: updateTagsMutation.mutate,
+        updateFolder: updateFolderMutation.mutate,
+        selectTab,
+        refetchTabs: () => queryClient.invalidateQueries({ queryKey: ['padTabs'] }),
     };
 };

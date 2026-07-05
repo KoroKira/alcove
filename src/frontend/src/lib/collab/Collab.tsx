@@ -228,21 +228,21 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     }
 
     if (this.props.padId !== prevProps.padId) {
-      // Portal's updatePadId will handle disconnection from old and connection to new
-      this.debouncedBroadcastAppState.cancel(); // Cancel any pending app state updates for the old pad
-      this.lastSentAppState = null; // Reset last sent app state for the new pad
-
-      // Reset versions immediately when switching pads
+      this.debouncedBroadcastAppState.cancel();
+      this.lastSentAppState = null;
       this.lastBroadcastedSceneVersion = -1;
-      // Mark as initial load for the new pad
       this.isInitialLoad = true;
+
+      // Clear the canvas so the old pad's elements don't bleed into the new pad
+      if (this.props.excalidrawAPI) {
+        this.props.excalidrawAPI.updateScene({ elements: [], commitToHistory: false } as any);
+      }
 
       this.portal.updatePadId(this.props.padId);
       this.setState({
         collaborators: new Map(),
         lastProcessedSceneVersion: -1,
         username: this.props.user?.username || this.props.user?.id || '',
-        // connectionStatus will be updated by portal's callbacks
       });
     }
 
@@ -503,32 +503,33 @@ class Collab extends PureComponent<CollabProps, CollabState> {
       }
       case 'scene_update': {
         const remoteElements = messageData?.elements as ExcalidrawElementType[] | undefined;
+        const subtype = messageData?.update_subtype as string | undefined;
 
         if (remoteElements !== undefined && this.props.excalidrawAPI) {
-          console.debug(`[pad.ws] Received scene update. Elements count: ${remoteElements.length}`, remoteElements);
-          const localElements = this.props.excalidrawAPI.getSceneElementsIncludingDeleted();
-          const currentAppState = this.props.excalidrawAPI.getAppState();
-
-          // Ensure elements are properly restored (e.g., if they are plain objects from JSON)
           const restoredRemoteElements = restoreElements(remoteElements, null);
 
-          const reconciled = reconcileElements(
-            localElements,
-            restoredRemoteElements as any[], // Cast as any if type conflicts, ensure it matches Excalidraw's expected RemoteExcalidrawElement[]
-            currentAppState
-          );
-
-          this.props.excalidrawAPI.updateScene({ elements: reconciled as ExcalidrawElementType[], commitToHistory: false });
-
-          const reconciledVersion = getSceneVersion(reconciled);
-          this.setState({ lastProcessedSceneVersion: reconciledVersion });
-
-          // If this is a fresh pad (lastBroadcastedSceneVersion is -1), initialize it
-          if (this.lastBroadcastedSceneVersion === -1) {
-            console.debug('[pad.ws] Initializing lastBroadcastedSceneVersion from remote scene update');
-            this.lastBroadcastedSceneVersion = reconciledVersion;
-            // Mark initial load as complete since we received remote data
+          if (subtype === 'SCENE_INIT') {
+            // Full replacement — server is sending the authoritative saved state for this pad.
+            // Do NOT reconcile with stale local elements from a previous pad.
+            console.debug(`[pad.ws] SCENE_INIT received. Replacing canvas with ${remoteElements.length} elements.`);
+            this.props.excalidrawAPI.updateScene({ elements: restoredRemoteElements as ExcalidrawElementType[], commitToHistory: false });
+            const v = getSceneVersion(restoredRemoteElements);
+            this.lastBroadcastedSceneVersion = v;
+            this.setState({ lastProcessedSceneVersion: v });
             this.isInitialLoad = false;
+          } else {
+            // Incremental update — reconcile with current local state
+            console.debug(`[pad.ws] scene_update received. Elements count: ${remoteElements.length}`);
+            const localElements = this.props.excalidrawAPI.getSceneElementsIncludingDeleted();
+            const currentAppState = this.props.excalidrawAPI.getAppState();
+            const reconciled = reconcileElements(localElements, restoredRemoteElements as any[], currentAppState);
+            this.props.excalidrawAPI.updateScene({ elements: reconciled as ExcalidrawElementType[], commitToHistory: false });
+            const reconciledVersion = getSceneVersion(reconciled);
+            this.setState({ lastProcessedSceneVersion: reconciledVersion });
+            if (this.lastBroadcastedSceneVersion === -1) {
+              this.lastBroadcastedSceneVersion = reconciledVersion;
+              this.isInitialLoad = false;
+            }
           }
         }
         break;

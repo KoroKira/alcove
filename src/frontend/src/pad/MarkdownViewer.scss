@@ -1,0 +1,92 @@
+.md-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: var(--island-bg-color, var(--ap-bg0));
+  color: var(--text-primary-color, var(--ap-text0));
+  font-family: var(--ap-font-ui);
+  font-size: 14px;
+  overflow: hidden;
+
+  &--edit {
+    padding: 8px;
+    gap: 8px;
+  }
+
+  &--render {
+    position: relative;
+    padding: 16px;
+    overflow-y: auto;
+  }
+
+  &__input {
+    flex: 1;
+    resize: none;
+    background: var(--ap-sidebar-bg);
+    color: inherit;
+    border: 1px solid var(--ap-bg2);
+    border-radius: var(--ap-radius-sm);
+    padding: 10px;
+    font-family: var(--ap-font-mono);
+    font-size: 13px;
+    outline: none;
+    min-height: 120px;
+    &:focus { border-color: var(--ap-accent2); }
+  }
+
+  &__toolbar {
+    display: flex;
+    gap: 6px;
+  }
+
+  &__btn {
+    padding: 6px 14px;
+    border-radius: var(--ap-radius-sm);
+    border: 1px solid var(--ap-bg2);
+    background: var(--ap-bg2);
+    color: var(--ap-text0);
+    cursor: pointer;
+    font-size: 13px;
+    &--primary { background: var(--ap-accent2); color: var(--ap-bg0); border-color: var(--ap-accent2); }
+    &:hover { opacity: 0.85; }
+  }
+
+  &__loading, &__error {
+    padding: 8px;
+    font-size: 13px;
+  }
+
+  &__error { color: var(--ap-red); }
+
+  &__content {
+    h1, h2, h3, h4 { color: var(--ap-accent); margin: 0.6em 0 0.3em; }
+    h1 { font-size: 1.6em; border-bottom: 1px solid var(--ap-bg2); padding-bottom: 4px; }
+    h2 { font-size: 1.3em; }
+    code { background: var(--ap-sidebar-bg); padding: 2px 5px; border-radius: var(--ap-radius-xs); font-size: 0.9em; }
+    pre { background: var(--ap-sidebar-bg); padding: 12px; border-radius: var(--ap-radius-md); overflow-x: auto; }
+    pre code { background: none; padding: 0; }
+    a { color: var(--ap-accent2); }
+    blockquote { border-left: 3px solid var(--ap-accent2); margin: 0; padding-left: 12px; color: var(--ap-text2); }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid var(--ap-bg2); padding: 6px 10px; }
+    th { background: var(--ap-bg1); }
+    img { max-width: 100%; border-radius: var(--ap-radius-xs); }
+    ul, ol { padding-left: 20px; }
+    p { margin: 0.4em 0; line-height: 1.6; }
+  }
+
+  &__edit-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: var(--ap-bg2);
+    border: none;
+    border-radius: var(--ap-radius-xs);
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 12px;
+    opacity: 0.6;
+    &:hover { opacity: 1; }
+  }
+}

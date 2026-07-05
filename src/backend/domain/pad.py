@@ -35,6 +35,11 @@ class Pad:
         sharing_policy: str = "private",
         whitelist: List[UUID] = None,
         worker_id: Optional[str] = None,
+        theme: Optional[str] = None,
+        is_scratch: bool = False,
+        pad_type: str = "canvas",
+        tags: List[str] = None,
+        folder: Optional[str] = None,
     ):
         self.id = id
         self.owner_id = owner_id
@@ -47,6 +52,11 @@ class Pad:
         self.sharing_policy = sharing_policy or "private"
         self.whitelist = whitelist or []
         self.worker_id = worker_id  # Cache-only field, not persisted to database
+        self.theme = theme  # None = follow the app-wide theme
+        self.is_scratch = is_scratch
+        self.pad_type = pad_type or "canvas"
+        self.tags = tags or []
+        self.folder = folder or None
 
     @classmethod
     async def create(
@@ -110,7 +120,8 @@ class Pad:
             whitelist = [UUID(uid) for uid in json.loads(whitelist_str)] if whitelist_str else []
             # Get worker_id from cache (cache-only field)
             worker_id = cached_data.get('worker_id', None)
-            
+            theme = cached_data.get('theme') or None
+
             # Create a minimal PadStore instance
             store = PadStore(
                 id=pad_id,
@@ -122,7 +133,7 @@ class Pad:
                 sharing_policy=sharing_policy,
                 whitelist=whitelist
             )
-            
+
             return cls(
                 id=pad_id,
                 owner_id=owner_id,
@@ -134,7 +145,12 @@ class Pad:
                 redis=redis,
                 sharing_policy=sharing_policy,
                 whitelist=whitelist,
-                worker_id=worker_id
+                worker_id=worker_id,
+                theme=theme,
+                is_scratch=cached_data.get('is_scratch', 'false') == 'true',
+                pad_type=cached_data.get('pad_type', 'canvas') or 'canvas',
+                tags=json.loads(cached_data.get('tags', '[]')),
+                folder=cached_data.get('folder') or None,
             )
         except (json.JSONDecodeError, KeyError, ValueError, RedisError) as e:
             return None
@@ -175,7 +191,12 @@ class Pad:
             store=store,
             redis=redis,
             sharing_policy=store.sharing_policy or "private",
-            whitelist=store.whitelist or []
+            whitelist=store.whitelist or [],
+            theme=getattr(store, 'theme', None),
+            is_scratch=getattr(store, 'is_scratch', False) or False,
+            pad_type=getattr(store, 'pad_type', 'canvas') or 'canvas',
+            tags=list(getattr(store, 'tags', None) or []),
+            folder=getattr(store, 'folder', None) or None,
         )
 
     async def save(self, session: AsyncSession) -> 'Pad':
@@ -184,6 +205,11 @@ class Pad:
         self._store.data = self.data
         self._store.sharing_policy = self.sharing_policy
         self._store.whitelist = self.whitelist
+        self._store.theme = self.theme
+        self._store.is_scratch = self.is_scratch
+        self._store.pad_type = self.pad_type
+        self._store.tags = self.tags
+        self._store.folder = self.folder
         self._store.updated_at = datetime.now()
         self._store = await self._store.save(session)
 
@@ -233,7 +259,12 @@ class Pad:
             'updated_at': self.updated_at.isoformat(),
             'sharing_policy': self.sharing_policy,
             'whitelist': json.dumps([str(uid) for uid in self.whitelist]) if self.whitelist else '[]',
-            'worker_id': self.worker_id or ''  # Cache-only field
+            'worker_id': self.worker_id or '',  # Cache-only field
+            'theme': self.theme or '',  # empty string sentinel for "no override" (Redis hash can't store None)
+            'is_scratch': 'true' if self.is_scratch else 'false',
+            'pad_type': self.pad_type or 'canvas',
+            'tags': json.dumps(self.tags or []),
+            'folder': self.folder or '',  # Redis hash can't store None
         }
         try:
             async with self._redis.pipeline() as pipe:
@@ -363,16 +394,13 @@ class Pad:
             return []
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary representation"""
-        return {
-            "id": str(self.id),
-            "owner_id": str(self.owner_id),
-            "display_name": self.display_name,
-            "data": self.data,
-            "sharing_policy": self.sharing_policy,
-            "whitelist": [str(uid) for uid in self.whitelist],
-            "created_at": self.created_at.isoformat(),
-            "updated_at": self.updated_at.isoformat(),
-            "worker_id": self.worker_id if self.worker_id else None
-        }
+        """Convert to dictionary representation (canonical shape — see
+        database.pad_serialization.serialize_pad, the single source of truth)."""
+        from database.pad_serialization import serialize_pad
+        return serialize_pad(
+            self,
+            include_data=True,
+            include_whitelist=True,
+            worker_id=self.worker_id,
+        )
     

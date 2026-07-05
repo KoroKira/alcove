@@ -130,22 +130,23 @@ class UserStore(Base, BaseModel):
             PadStore.display_name,
             PadStore.created_at,
             PadStore.updated_at,
-            PadStore.sharing_policy
+            PadStore.sharing_policy,
+            PadStore.theme,
+            PadStore.is_scratch,
+            PadStore.pad_type,
+            PadStore.tags,
+            PadStore.folder,
         ).where(
             PadStore.id.in_(all_pad_ids)
         ).order_by(PadStore.created_at)
-        
+
         result = await session.execute(stmt)
         pads = result.all()
-        
-        return [{
-            "id": str(pad.id),
-            "owner_id": str(pad.owner_id),
-            "display_name": pad.display_name,
-            "created_at": pad.created_at.isoformat(),
-            "updated_at": pad.updated_at.isoformat(),
-            "sharing_policy": pad.sharing_policy
-        } for pad in pads]
+
+        # Canonical serialization — same rules as Pad.to_dict (theme stays None
+        # when there's no override). See database.pad_serialization.
+        from database.pad_serialization import serialize_pad
+        return [serialize_pad(pad) for pad in pads]
 
     async def save(self, session: AsyncSession) -> 'UserStore':
         """Save the current user state"""

@@ -1,4 +1,6 @@
 import React, { useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from '../i18n';
 import clsx from 'clsx';
 
 import './TabContextMenu.scss';
@@ -37,13 +39,20 @@ interface TabContextMenuProps {
   padId: string;
   padName: string;
   onRename: (padId: string, newName: string) => void;
-  onDelete: (padId: string) => void; // For deleting owned pads
+  onDelete: (padId: string) => void;
   onUpdateSharingPolicy: (padId: string, policy: string) => void;
+  onUpdateTheme: (padId: string) => void;
+  onUpdateTags?: (padId: string, tags: string[]) => void;
+  onMoveToFolder?: (padId: string) => void;
+  currentFolder?: string;
   onClose: () => void;
   currentUserId?: string;
   tabOwnerId?: string;
   sharingPolicy?: string;
-  onLeaveSharedPad: (padId: string) => void; // For leaving shared pads
+  currentTheme?: string;
+  currentTags?: string[];
+  onLeaveSharedPad: (padId: string) => void;
+  onToggleReadLater?: (padId: string, newTags: string[]) => void;
 }
 
 // Popover component
@@ -207,51 +216,77 @@ class TabActionManager implements ActionManager {
   padId: string;
   padName: string;
   onRename: (padId: string, newName: string) => void;
-  onDelete: (padId: string) => void; // For deleteOwnedPad
+  onDelete: (padId: string) => void;
   onUpdateSharingPolicy: (padId: string, policy: string) => void;
+  onUpdateTheme: (padId: string) => void;
+  onUpdateTags?: (padId: string, tags: string[]) => void;
+  onToggleReadLater?: (padId: string, newTags: string[]) => void;
+  onMoveToFolder?: (padId: string) => void;
+  currentTags?: string[];
   app: any;
   sharingPolicy?: string;
-  onLeaveSharedPad: (padId: string) => void; // For leaveSharedPad
+  onLeaveSharedPad: (padId: string) => void;
 
   constructor(
     padId: string,
     padName: string,
     onRename: (padId: string, newName: string) => void,
-    onDelete: (padId: string) => void, // This is for deleteOwnedPad
+    onDelete: (padId: string) => void,
     onUpdateSharingPolicy: (padId: string, policy: string) => void,
     onLeaveSharedPad: (padId: string) => void,
-    sharingPolicy?: string
+    onUpdateTheme: (padId: string) => void,
+    sharingPolicy?: string,
+    onUpdateTags?: (padId: string, tags: string[]) => void,
+    currentTags?: string[],
+    onToggleReadLater?: (padId: string, newTags: string[]) => void,
   ) {
     this.padId = padId;
     this.padName = padName;
     this.onRename = onRename;
-    this.onDelete = onDelete; // Will be called by 'deleteOwnedPad'
+    this.onDelete = onDelete;
     this.onUpdateSharingPolicy = onUpdateSharingPolicy;
-    this.onLeaveSharedPad = onLeaveSharedPad; // Will be called by 'leaveSharedPad'
+    this.onUpdateTheme = onUpdateTheme;
+    this.onLeaveSharedPad = onLeaveSharedPad;
     this.sharingPolicy = sharingPolicy;
+    this.onUpdateTags = onUpdateTags;
+    this.currentTags = currentTags;
+    this.onToggleReadLater = onToggleReadLater;
     this.app = { props: {} };
   }
 
   executeAction(action: Action, source: string) {
     if (action.name === 'rename') {
-      const newName = window.prompt('Rename pad', this.padName);
+      const newName = window.prompt(i18n.t('contextMenu.renamePrompt'), this.padName);
       if (newName && newName.trim() !== '') {
         this.onRename(this.padId, newName);
       }
-    } else if (action.name === 'deleteOwnedPad') { // Renamed from 'delete'
+    } else if (action.name === 'aiRename') {
+      this.aiRename();
+    } else if (action.name === 'deleteOwnedPad') {
       console.debug('[pad.ws] Attempting to delete owned pad:', this.padId, this.padName);
       if (window.confirm(`Are you sure you want to delete "${this.padName}"?`)) {
         console.debug('[pad.ws] User confirmed delete, calling onDelete');
-        this.onDelete(this.padId); // Calls original onDelete for owned pads
+        this.onDelete(this.padId);
       }
     } else if (action.name === 'leaveSharedPad') {
       console.debug('[pad.ws] Attempting to leave shared pad:', this.padId, this.padName);
       if (window.confirm(`Are you sure you want to leave "${this.padName}"? This will remove it from your list of open pads.`)) {
-        this.onLeaveSharedPad(this.padId); // Calls the new handler
+        this.onLeaveSharedPad(this.padId);
       }
     } else if (action.name === 'toggleSharingPolicy') {
       const newPolicy = this.sharingPolicy === 'public' ? 'private' : 'public';
       this.onUpdateSharingPolicy(this.padId, newPolicy);
+    } else if (action.name === 'toggleTheme') {
+      this.onUpdateTheme(this.padId);
+    } else if (action.name === 'editTags') {
+      const current = (this.currentTags || []).join(', ');
+      const input = window.prompt(i18n.t('contextMenu.tagsPrompt'), current);
+      if (input !== null && this.onUpdateTags) {
+        const tags = input.split(',').map(t => t.trim()).filter(Boolean);
+        this.onUpdateTags(this.padId, tags);
+      }
+    } else if (action.name === 'moveToFolder') {
+      this.onMoveToFolder?.(this.padId);
     } else if (action.name === 'copyUrl') {
       const url = `${window.location.origin}/pad/${this.padId}`;
       navigator.clipboard.writeText(url).then(() => {
@@ -259,6 +294,44 @@ class TabActionManager implements ActionManager {
       }).catch(err => {
         console.error('[pad.ws] Failed to copy URL:', err);
       });
+    } else if (action.name === 'toggleReadLater') {
+      const tags = [...(this.currentTags || [])];
+      const idx = tags.indexOf('read-later');
+      if (idx >= 0) tags.splice(idx, 1);
+      else tags.push('read-later');
+      this.onToggleReadLater?.(this.padId, tags);
+    }
+  }
+
+  /** Fetch the pad's text and ask Ollama for a title, then rename. */
+  private async aiRename() {
+    try {
+      const resp = await fetch(`/api/pad/${this.padId}`);
+      if (!resp.ok) throw new Error(`fetch pad ${resp.status}`);
+      const pad = await resp.json();
+      const data = pad.data ?? {};
+      const content: string = typeof data.content === 'string'
+        ? data.content
+        : (data.elements ?? [])
+            .map((el: any) => (typeof el.text === 'string' ? el.text : ''))
+            .filter(Boolean)
+            .join('\n');
+      if (!content.trim()) {
+        window.alert(i18n.t('contextMenu.aiRenameEmpty'));
+        return;
+      }
+      const model = localStorage.getItem('pad-ws-ai-model') ?? undefined;
+      const lang = i18n.language.startsWith('fr') ? 'fr' : 'en';
+      const titleResp = await fetch('/api/ai/title', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content, model, lang }),
+      });
+      const { title, error } = await titleResp.json();
+      if (title) this.onRename(this.padId, title);
+      else window.alert(error || i18n.t('contextMenu.aiRenameFailed'));
+    } catch (e) {
+      window.alert(i18n.t('contextMenu.aiRenameFailed'));
     }
   }
 }
@@ -272,17 +345,26 @@ const TabContextMenu: React.FC<TabContextMenuProps> = ({
   onRename,
   onDelete,
   onUpdateSharingPolicy,
+  onUpdateTheme,
+  onUpdateTags,
+  onMoveToFolder,
+  currentFolder,
   onClose,
   currentUserId,
   tabOwnerId,
   sharingPolicy,
-  onLeaveSharedPad // Destructure new prop
+  currentTheme,
+  currentTags,
+  onLeaveSharedPad,
+  onToggleReadLater,
 }) => {
+  const { t } = useTranslation();
   const isOwner = currentUserId && tabOwnerId && currentUserId === tabOwnerId;
   const isPadPublic = sharingPolicy === 'public';
+  const isReadLater = (currentTags || []).includes('read-later');
 
-  // Create an action manager instance
-  const actionManager = new TabActionManager(padId, padName, onRename, onDelete, onUpdateSharingPolicy, onLeaveSharedPad, sharingPolicy);
+  const actionManager = new TabActionManager(padId, padName, onRename, onDelete, onUpdateSharingPolicy, onLeaveSharedPad, onUpdateTheme, sharingPolicy, onUpdateTags, currentTags, onToggleReadLater);
+  actionManager.onMoveToFolder = onMoveToFolder;
 
   // Define menu items
   const menuItemsResult: ContextMenuItems = [];
@@ -290,16 +372,25 @@ const TabContextMenu: React.FC<TabContextMenuProps> = ({
   if (isOwner) {
     menuItemsResult.push({
       name: 'rename',
-      label: 'Rename',
+      label: t('contextMenu.rename'),
     });
-    // No separator needed here if toggleSharingPolicy directly follows
+    menuItemsResult.push({
+      name: 'aiRename',
+      label: t('contextMenu.aiRename'),
+    });
   }
 
-  // Always show Copy URL
   menuItemsResult.push({
     name: 'copyUrl',
-    label: 'Copy URL',
+    label: t('contextMenu.copyUrl'),
   });
+
+  if (onToggleReadLater) {
+    menuItemsResult.push({
+      name: 'toggleReadLater',
+      label: isReadLater ? t('contextMenu.removeFromReading') : t('contextMenu.addToReading'),
+    });
+  }
   
   if (isOwner) {
     // Add separator if rename was added, before toggle policy
@@ -315,10 +406,33 @@ const TabContextMenu: React.FC<TabContextMenuProps> = ({
 
     menuItemsResult.push({
       name: 'toggleSharingPolicy',
-      label: () => isPadPublic ? 'Set Private' : 'Set Public',
+      label: isPadPublic ? t('contextMenu.setPrivate') : t('contextMenu.setPublic'),
     });
+    menuItemsResult.push({
+      // Cycle: follow app theme (currentTheme undefined) → forced dark → forced light → follow app theme
+      name: 'toggleTheme',
+      label: currentTheme === undefined
+        ? t('contextMenu.switchDark')
+        : currentTheme === 'dark'
+          ? t('contextMenu.switchLight')
+          : t('contextMenu.switchAuto'),
+    });
+    menuItemsResult.push({
+      name: 'editTags',
+      label: (currentTags && currentTags.length > 0)
+        ? t('contextMenu.hasTags', { tags: currentTags.map(tag => '#' + tag).join(' ') })
+        : t('contextMenu.addTags'),
+    });
+    if (onMoveToFolder) {
+      menuItemsResult.push({
+        name: 'moveToFolder',
+        label: currentFolder
+          ? t('contextMenu.inFolder', { folder: currentFolder })
+          : t('contextMenu.moveToFolder'),
+      });
+    }
   }
-  
+
   // Separator before delete/leave
   if (menuItemsResult.length > 0 && menuItemsResult[menuItemsResult.length -1] !== CONTEXT_MENU_SEPARATOR) {
       menuItemsResult.push(CONTEXT_MENU_SEPARATOR);
@@ -326,7 +440,7 @@ const TabContextMenu: React.FC<TabContextMenuProps> = ({
 
   menuItemsResult.push({
     name: !isOwner ? 'leaveSharedPad' : 'deleteOwnedPad', // Dynamically set action name
-    label: () => (!isOwner ? 'Leave shared pad' : 'Delete'),
+    label: !isOwner ? t('contextMenu.leave') : t('contextMenu.delete'),
     dangerous: true,
   });
   

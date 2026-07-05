@@ -51,7 +51,7 @@
                 position: absolute;
                 bottom: -7px;
                 right: -4px;
-                font-size: 9px;
+                font-size: 10px;
                 opacity: 0.7;
                 color: var(--keybinding-color);
                 font-weight: normal;
@@ -122,7 +122,7 @@
 
             &.active-pad {
                 --tab-inner-bg: #cc6d24;
-                border: 1px solid #c6c6c6;
+                border: 1px solid var(--ap-bg4);
                 background-color: var(--tab-inner-bg);
                 background-image: none;
                 background-clip: padding-box;
@@ -161,11 +161,11 @@
 
             &.active-pad {
                 background-color: #cc6d24;
-                border: 1px solid #c6c6c6;
+                border: 1px solid var(--ap-bg4);
             }
 
             &:hover {
-                border: 1px solid #c6c6c6;
+                border: 1px solid var(--ap-bg4);
             }
         }
     }
@@ -209,7 +209,7 @@
         margin-right: 0.6rem !important;
         border-radius: var(--border-radius-lg);
         transition: background-color 0.2s ease;
-        color: #bdbdbd; // Light gray color for the icons
+        color: var(--ap-text2); // Light gray color for the icons
         flex-shrink: 0; // Prevent button from shrinking
         min-width: unset !important; // Override any min-width inheritance
         max-width: unset !important; // Override any max-width inheritance

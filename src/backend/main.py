@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 from contextlib import asynccontextmanager
 from typing import Optional
 from uuid import UUID
@@ -8,14 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import posthog
 import httpx
 from fastapi import FastAPI, Request, Depends, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from database import init_db, engine
 from config import (
-    STATIC_DIR, ASSETS_DIR, POSTHOG_API_KEY, POSTHOG_HOST, 
-    PAD_DEV_MODE, DEV_FRONTEND_URL
+    STATIC_DIR, ASSETS_DIR, POSTHOG_API_KEY, POSTHOG_HOST,
+    PAD_DEV_MODE, DEV_FRONTEND_URL, SYNC_DIR, FRONTEND_URL
 )
 from cache import RedisClient
 from dependencies import UserSession, optional_auth
@@ -25,44 +26,54 @@ from routers.workspace_router import workspace_router
 from routers.pad_router import pad_router
 from routers.app_router import app_router
 from routers.ws_router import ws_router
+from routers.ai_router import ai_router
+from routers.latex_router import latex_router
 from database.database import get_session
 from database.models.user_model import UserStore
 from domain.pad import Pad
 from workers.canvas_worker import CanvasWorker
 from domain.user import User
 
-# Initialize PostHog if API key is available
+logging.basicConfig(
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
+
 if POSTHOG_API_KEY:
     posthog.project_api_key = POSTHOG_API_KEY
     posthog.host = POSTHOG_HOST
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage the lifecycle of the application and its services."""
-    
     if PAD_DEV_MODE:
-        print("Starting in dev mode")
+        logger.info("Running in dev mode (PAD_DEV_MODE=true) — auth bypassed, Vite proxy active")
 
-    # Initialize database
+    if SYNC_DIR:
+        os.makedirs(SYNC_DIR, exist_ok=True)
+        logger.info("Pad sync directory: %s", SYNC_DIR)
+
     await init_db()
-    print("Database connection established successfully")
-    
-    # Initialize Redis client and verify connection
-    redis = await RedisClient.get_instance()
-    print("Redis connection established successfully")
-    
-    # Initialize the canvas worker
-    canvas_worker = await CanvasWorker.get_instance()
-    print("Canvas worker started successfully")
-    
+    logger.info("Database ready")
+
+    await RedisClient.get_instance()
+    logger.info("Redis ready")
+
+    await CanvasWorker.get_instance()
+    logger.info("Canvas worker started")
+
     yield
-    
+
     await CanvasWorker.shutdown_instance()
     await RedisClient.close()
     await engine.dispose()
 
+
 app = FastAPI(lifespan=lifespan)
 
+# CORS is permissive because authentication is enforced via httpOnly session cookies,
+# not Origin headers. Restrict this if you expose the app to the internet.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -71,62 +82,45 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+if not PAD_DEV_MODE:
+    app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-async def serve_index_html(request: Request = None, response: Response = None, pad_id: Optional[UUID] = None):
+
+async def serve_index_html(
+    request: Request = None,
+    response: Response = None,
+    pad_id: Optional[UUID] = None,
+) -> Response:
     """
-    Helper function to serve the index.html file or proxy to dev server based on PAD_DEV_MODE.
-    Optionally sets a pending_pad_id cookie if pad_id is provided.
+    Serve the SPA entry point.
+    In dev mode, proxies to the Vite dev server so HMR works through port 8000.
+    In production, serves the built dist/index.html.
+    Optionally sets a pending_pad_id cookie so the frontend can open the right pad on load.
     """
-    
-    if PAD_DEV_MODE:
-        try:
-            # Proxy the request to the development server's root URL
-            url = f"{DEV_FRONTEND_URL}/"
-            # If request path is available, use it for proxying
-            if request and str(request.url).replace(str(request.base_url), ""):
-                url = f"{DEV_FRONTEND_URL}{request.url.path}"
-            
-            async with httpx.AsyncClient() as client:
-                proxy_response = await client.get(url)
-                # Create a new response with the proxied content
-                final_response = Response(
-                    content=proxy_response.content,
-                    status_code=proxy_response.status_code,
-                    media_type=proxy_response.headers.get("content-type")
-                )
-                
-                # Set cookie if pad_id is provided
-                if pad_id is not None:
-                    final_response.set_cookie(
-                        key="pending_pad_id",
-                        value=str(pad_id),
-                        httponly=True,
-                        secure=True,
-                        samesite="lax"
-                    )
-                
-                return final_response
-        except Exception as e:
-            error_message = f"Error proxying to dev server: {e}"
-            print(error_message)
-            return Response(content=error_message, status_code=500)
-    else:
-        # For production, serve the static build
-        file_response = FileResponse(os.path.join(STATIC_DIR, "index.html"))
-        
-        # Set cookie if pad_id is provided
+    def _set_pending_pad(resp: Response) -> Response:
         if pad_id is not None:
-            file_response.set_cookie(
-                key="pending_pad_id",
-                value=str(pad_id),
-                httponly=True,
-                secure=True,
-                samesite="lax"
-            )
-        
-        return file_response
+            _secure = bool(FRONTEND_URL and FRONTEND_URL.startswith("https://"))
+            resp.set_cookie("pending_pad_id", str(pad_id), httponly=True, samesite="lax", secure=_secure)
+        return resp
+
+    if PAD_DEV_MODE:
+        path = request.url.path if request else "/"
+        url = f"{DEV_FRONTEND_URL}{path}"
+        try:
+            async with httpx.AsyncClient() as client:
+                proxy = await client.get(url)
+                return _set_pending_pad(Response(
+                    content=proxy.content,
+                    status_code=proxy.status_code,
+                    media_type=proxy.headers.get("content-type"),
+                ))
+        except Exception as e:
+            logger.error("Vite proxy error for %s: %s", url, e)
+            return Response(content=f"Dev server unreachable: {e}", status_code=502)
+    else:
+        return _set_pending_pad(FileResponse(os.path.join(STATIC_DIR, "index.html")))
+
 
 @app.get("/pad/{pad_id}")
 async def read_pad(
@@ -134,30 +128,28 @@ async def read_pad(
     request: Request,
     response: Response,
     user: Optional[UserSession] = Depends(optional_auth),
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
 ):
+    # Unauthenticated: let the frontend handle the auth redirect
     if not user:
         return await serve_index_html(request, response, pad_id)
-        
+
     try:
         pad = await Pad.get_by_id(session, pad_id)
-        if not pad:
-            print("No pad found")
+        if not pad or not pad.can_access(user.id):
             return await serve_index_html(request, response)
-            
-        if not pad.can_access(user.id):
-            print("No access to pad")
-            return await serve_index_html(request, response)
-            
-        # Just serve the page if user has access
         return await serve_index_html(request, response, pad_id)
     except Exception as e:
-        print(f"Error in read_pad endpoint: {e}")
+        logger.warning("Error checking pad access for %s: %s", pad_id, e)
         return await serve_index_html(request, response, pad_id)
+
 
 @app.get("/")
 async def read_root(request: Request, auth: Optional[UserSession] = Depends(optional_auth)):
+    if PAD_DEV_MODE and not auth:
+        return RedirectResponse("/api/auth/login")
     return await serve_index_html(request)
+
 
 app.include_router(auth_router, prefix="/api/auth")
 app.include_router(users_router, prefix="/api/users")
@@ -165,7 +157,29 @@ app.include_router(workspace_router, prefix="/api/workspace")
 app.include_router(pad_router, prefix="/api/pad")
 app.include_router(app_router, prefix="/api/app")
 app.include_router(ws_router)
-    
+app.include_router(ai_router)
+app.include_router(latex_router)
+
+
+if PAD_DEV_MODE:
+    @app.api_route("/{path:path}", methods=["GET", "HEAD"])
+    async def vite_proxy(request: Request, path: str):
+        """Forward all unmatched GET requests to the Vite dev server (port 3003)."""
+        url = f"{DEV_FRONTEND_URL}/{path}"
+        if request.url.query:
+            url += f"?{request.url.query}"
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, headers={"Accept": request.headers.get("Accept", "*/*")})
+                return Response(
+                    content=resp.content,
+                    status_code=resp.status_code,
+                    media_type=resp.headers.get("content-type"),
+                )
+        except Exception as e:
+            return Response(content=f"Vite proxy error: {e}", status_code=502)
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

@@ -22,6 +22,8 @@ interface TabsProps {
     deletePad: (padId: string) => void;
     leaveSharedPad: (padId: string) => void;
     updateSharingPolicy: (args: { padId: string; policy: string }) => void;
+    updateTheme: (args: { padId: string; theme: 'light' | 'dark' }) => void;
+    updateTags?: (args: { padId: string; tags: string[] }) => void;
     selectTab: (tabId: string) => void;
 }
 
@@ -57,7 +59,9 @@ const Tabs: React.FC<TabsProps> = ({
     deletePad,
     leaveSharedPad, // Destructure new prop
     updateSharingPolicy,
+    updateTheme,
     selectTab,
+    updateTags,
 }) => {
     const { user: currentUser } = useAuthStatus();
     const { isLoading: isPadLoading, error: padError } = usePad(selectedTabId, excalidrawAPI);
@@ -360,7 +364,7 @@ const Tabs: React.FC<TabsProps> = ({
                                                                             ref={el => { titleRefs.current[tab.id] = el; }}
                                                                             className={`tab-title ${overflowMap[tab.id] ? 'tab-title-overflow' : ''}`}
                                                                         >
-                                                                            {selectedTabId === tab.id && displayPadLoadingIndicator ? "..." : tab.title}
+                                                                            {tab.isScratch ? '📌 ' : ''}{selectedTabId === tab.id && displayPadLoadingIndicator ? "..." : tab.title}
                                                                         </span>
                                                                         {/* Calculate position based on overall index in `tabs` if needed, or `startPadIndex + index + 1` */}
                                                                         {tab.sharingPolicy === "public" ? 
@@ -382,7 +386,7 @@ const Tabs: React.FC<TabsProps> = ({
                                                                     ref={el => { titleRefs.current[tab.id] = el; }}
                                                                     className={`tab-title ${overflowMap[tab.id] ? 'tab-title-overflow' : ''}`}
                                                                 >
-                                                                    {tab.title}
+                                                                    {tab.isScratch ? '📌 ' : ''}{tab.title}
                                                                 </span>
                                                                 {tab.sharingPolicy === "public" ? 
                                                                     <Users className="tab-position tab-users-icon" /> : 
@@ -453,6 +457,11 @@ const Tabs: React.FC<TabsProps> = ({
                         renamePad({ padId, newName });
                     }}
                     onDelete={(padId: any) => { // This is for 'deleteOwnedPad'
+                        const tabToCheck = tabs?.find((t: { id: any }) => t.id === padId);
+                        if (tabToCheck?.isScratch) {
+                            alert("Cannot delete the scratch pad");
+                            return;
+                        }
                         if (tabs && tabs.length <= 1) {
                             alert("Cannot delete the last pad");
                             return;
@@ -477,6 +486,15 @@ const Tabs: React.FC<TabsProps> = ({
                         capture("pad_sharing_policy_updated", { padId, policy });
                         updateSharingPolicy({ padId, policy });
                     }}
+                    onUpdateTheme={(padId: string) => {
+                        const tab = tabs.find(t => t.id === padId);
+                        const newTheme = (tab?.theme === 'light' ? 'dark' : 'light') as 'light' | 'dark';
+                        updateTheme({ padId, theme: newTheme });
+                        excalidrawAPI.updateScene({ appState: { theme: newTheme } } as any);
+                    }}
+                    currentTheme={tabs.find(tab => tab.id === contextMenu.padId)?.theme}
+                    currentTags={tabs.find(tab => tab.id === contextMenu.padId)?.tags}
+                    onUpdateTags={updateTags ? (padId: string, tags: string[]) => updateTags({ padId, tags }) : undefined}
                     onClose={() => {
                         setContextMenu((prev: any) => ({ ...prev, visible: false }));
                     }}

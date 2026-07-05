@@ -1,9 +1,65 @@
-*.pyc
-*/__pycache__/*
-node_modules
-dist
-src/excalidraw
+# ─────────────────────────────────────────────────────────────────────────────
+#  Secrets & local configuration  — NEVER commit these
+# ─────────────────────────────────────────────────────────────────────────────
 .env
-src/frontend/.env.local
-.vscode/settings.json
-dev/
+.env.local
+.env.*.local
+.env.production
+*.local.env
+# …but DO keep the example/template files so others can bootstrap
+!.env.template
+!.env.local.template
+!*.example
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Python (backend)
+# ─────────────────────────────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Node / frontend build
+# ─────────────────────────────────────────────────────────────────────────────
+node_modules/
+dist/
+dev-dist/
+.vite/
+*.tsbuildinfo
+
+# The upstream Excalidraw checkout (vendored separately)
+src/excalidraw
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Local data & runtime artifacts (never part of the repo)
+# ─────────────────────────────────────────────────────────────────────────────
+# Local pad sync folder (if someone points SYNC_DIR inside the repo)
+/pads/
+# DB dumps / SQLite / cookies used during manual testing
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.sql.gz
+*cookies*.txt
+# Logs
+*.log
+logs/
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Editor / OS / tooling
+# ─────────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+# Claude Code / agent local config
+.claude/

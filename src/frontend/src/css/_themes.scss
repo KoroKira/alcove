@@ -1,0 +1,233 @@
+/* ── Global CSS variables (defaults = Mocha dark) ──
+   applyTheme() in themes/index.ts overwrites these at runtime and auto-derives
+   every "-rgb" companion; the values here only cover the first paint. */
+:root {
+  --ap-sidebar-bg: #11111b;
+  --color-surface: #181825;
+  --ap-bg0: #1e1e2e;
+  --ap-bg1: #181825;
+  --ap-bg2: #313244;
+  --ap-bg3: #45475a;
+  --ap-bg4: #585b70;
+  --ap-text0: #cdd6f4;
+  --ap-text1: #bac2de;
+  --ap-text2: #a6adc8;
+  --ap-accent: #cba6f7;
+  --ap-accent2: #89b4fa;
+  --ap-green: #a6e3a1;
+  --ap-red: #f38ba8;
+  --ap-yellow: #f9e2af;
+  --ap-orange: #fab387;
+  --ap-overlay0: #6c7086;
+  --ap-sidebar-bg-rgb: 17,17,27;
+  --ap-bg0-rgb: 30,30,46;
+  --ap-bg1-rgb: 24,24,37;
+  --ap-bg2-rgb: 49,50,68;
+  --ap-bg3-rgb: 69,71,90;
+  --ap-bg4-rgb: 88,91,112;
+  --ap-text0-rgb: 205,214,244;
+  --ap-text1-rgb: 186,194,222;
+  --ap-text2-rgb: 166,173,200;
+  --ap-accent-rgb: 203,166,247;
+  --ap-accent2-rgb: 137,180,250;
+  --ap-green-rgb: 166,227,161;
+  --ap-red-rgb: 243,139,168;
+  --ap-yellow-rgb: 249,226,175;
+  --ap-orange-rgb: 250,179,135;
+  --ap-overlay0-rgb: 108,112,134;
+  --color-surface-lowest: #1e1e2e;
+  --color-surface-mid: #313244;
+  --color-surface-high: #45475a;
+  --color-on-surface: #cdd6f4;
+  --color-on-surface-low: #a6adc8;
+
+  /* Typography — system stack: SF Pro on macOS, Segoe on Windows */
+  --ap-font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+  --ap-font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', ui-monospace, Menlo, monospace;
+
+  /* Radius scale */
+  --ap-radius-xs: 4px;
+  --ap-radius-sm: 6px;
+  --ap-radius-md: 8px;
+  --ap-radius-lg: 12px;
+  --ap-radius-xl: 16px;
+
+  /* Elevation */
+  --ap-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.25);
+  --ap-shadow-md: 0 6px 24px rgba(0, 0, 0, 0.35);
+  --ap-shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Global polish (all themes) ── */
+
+/* Themed scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ap-bg3) transparent;
+}
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--ap-bg3);
+  border-radius: 4px;
+  &:hover { background: var(--ap-bg4); }
+}
+
+/* Accent-colored text selection */
+::selection {
+  background: rgba(var(--ap-accent-rgb), 0.3);
+}
+
+/* Consistent keyboard-focus ring */
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid rgba(var(--ap-accent-rgb), 0.6);
+  outline-offset: 1px;
+}
+
+/* ── Light theme (Latte) overrides ── */
+html[data-theme="latte"] {
+  color-scheme: light;
+
+  /* Recolor rgba borders that use the dark-optimised lavender */
+  .kanban, .gantt { color: var(--ap-text0); }
+
+  .kanban__col {
+    background: rgba(188, 192, 204, 0.35);
+    border-color: rgba(76, 79, 105, 0.15);
+  }
+  .kanban__card {
+    background: #e6e9ef;
+    border-color: rgba(76, 79, 105, 0.12);
+    color: #4c4f69;
+    &:hover { border-color: rgba(136, 57, 239, 0.35); }
+  }
+  .card-modal {
+    background: #e6e9ef;
+    border-color: rgba(76, 79, 105, 0.2);
+    color: #4c4f69;
+  }
+  .card-modal__backdrop { background: rgba(76, 79, 105, 0.4); }
+  .card-modal__title { color: #4c4f69; }
+  .card-modal__desc { color: #5c5f77; }
+  .card-modal__section-label { color: #6c6f85; }
+
+  .gantt__detail { background: #e6e9ef; color: #4c4f69; }
+  .gantt__labels-header { background: #dce0e8; }
+  .gantt__row { &:hover { background: rgba(136, 57, 239, 0.05); } }
+  .gantt__row-name-text { color: #4c4f69; }
+
+  .document-pad, .document-pad--dark {
+    background: var(--ap-bg0);
+    color: var(--ap-text0);
+
+    .document-pad__toolbar {
+      background: var(--color-surface);
+      border-bottom-color: var(--ap-bg3);
+    }
+    .document-pad__view-btn {
+      color: var(--ap-text2);
+      &.active, &:hover { background: var(--ap-bg2); color: var(--ap-text0); }
+    }
+    .document-pad__toolbar-btn {
+      color: var(--ap-text2);
+      &:hover, &.active { background: var(--ap-bg2); color: var(--ap-text0); }
+    }
+    .document-pad__stats { color: var(--ap-bg4); }
+    .document-pad__status { color: var(--ap-text2); }
+    .document-pad__preview {
+      background: var(--ap-bg0);
+      color: var(--ap-text0);
+    }
+    .document-pad__toc {
+      background: var(--color-surface);
+      border-left-color: var(--ap-bg2);
+    }
+    .document-pad__toc-item { color: var(--ap-text2); &:hover { color: var(--ap-text0); } }
+    .document-pad__backlinks { border-top-color: var(--ap-bg2); }
+    /* Monaco editor */
+    .cm-editor .cm-content { color: var(--ap-text0); background: var(--ap-bg0); }
+    .cm-gutterElement, .cm-lineNumbers { color: var(--ap-text2); background: var(--ap-bg1); }
+    .cm-editor .cm-gutters { background: var(--ap-bg1); border-right-color: var(--ap-bg2); }
+    .cm-editor.cm-focused .cm-cursor { border-left-color: var(--ap-accent); }
+  }
+
+  /* Home hub / Onboarding light adaptation */
+  .home-hub { background: var(--ap-bg0); }
+  .onboarding { background: var(--ap-bg0); }
+
+  /* ── Light sidebar ── */
+  .pad-sidebar {
+    background: var(--ap-sidebar-bg);
+    border-right-color: rgba(76, 79, 105, 0.15);
+  }
+  .pad-sidebar__icon-btn {
+    color: #6c6f85;
+    &:hover { color: #4c4f69; background: rgba(76, 79, 105, 0.1); }
+    &--active { color: #8839ef; background: rgba(136, 57, 239, 0.1); }
+  }
+  .pad-sidebar__filter-input {
+    background: rgba(76, 79, 105, 0.08);
+    border-color: rgba(76, 79, 105, 0.2);
+    color: #4c4f69;
+    &::placeholder { color: #9ca0b0; }
+  }
+  .pad-sidebar__section-label { color: #6c6f85; }
+  .pad-sidebar__item {
+    color: #5c5f77;
+    &:hover { background: rgba(76, 79, 105, 0.08); }
+    &--active {
+      background: rgba(136, 57, 239, 0.08);
+      border-left-color: #8839ef;
+      color: #4c4f69;
+    }
+  }
+  .pad-sidebar__item-more { color: #9ca0b0; }
+  .pad-sidebar__item-dot { background: #9ca0b0; }
+  .pad-sidebar__tag {
+    background: rgba(76, 79, 105, 0.08);
+    color: #6c6f85;
+    &--active { background: rgba(136, 57, 239, 0.12); color: #8839ef; }
+  }
+  .pad-sidebar__bottom {
+    border-top-color: rgba(76, 79, 105, 0.12);
+  }
+  .pad-sidebar__bottom-bar {
+    border-top-color: rgba(76, 79, 105, 0.12);
+  }
+  .pad-sidebar__bar-btn {
+    background: rgba(76, 79, 105, 0.08);
+    border-color: rgba(76, 79, 105, 0.15);
+    color: #6c6f85;
+    &:hover { background: rgba(76, 79, 105, 0.14); color: #4c4f69; }
+  }
+  .pad-sidebar__lang-flag { opacity: 0.5; &--active { opacity: 1; } }
+
+  /* Kanban buttons */
+  .kanban__col-add {
+    background: none;
+    border-color: rgba(76, 79, 105, 0.2);
+    color: #6c6f85;
+    &:hover { background: rgba(136, 57, 239, 0.07); color: #8839ef; }
+  }
+}
+
+/* ── All themes: use CSS vars in new components ── */
+.btn-accent {
+  background: rgba(var(--ap-accent-rgb), 0.12);
+  border: 1px solid rgba(var(--ap-accent-rgb), 0.3);
+  border-radius: 8px;
+  color: var(--ap-accent);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 14px;
+  transition: background 0.15s;
+
+  &:hover { background: rgba(var(--ap-accent-rgb), 0.22); }
+  &:disabled { cursor: default; opacity: 0.5; }
+}

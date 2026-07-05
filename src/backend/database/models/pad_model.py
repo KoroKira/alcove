@@ -2,7 +2,7 @@ from typing import Dict, Any, Optional, List, TYPE_CHECKING
 from uuid import UUID
 from datetime import datetime
 
-from sqlalchemy import Column, String, ForeignKey, Index, UUID as SQLUUID, select, update, delete, ARRAY
+from sqlalchemy import Column, String, Boolean, ForeignKey, Index, UUID as SQLUUID, select, update, delete, ARRAY
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship, Mapped
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +31,13 @@ class PadStore(Base, BaseModel):
     data = Column(JSONB, nullable=False)
     sharing_policy = Column(String(20), nullable=False, default="private")
     whitelist = Column(ARRAY(SQLUUID(as_uuid=True)), nullable=True, default=[])
+    # NULL = follow the app-wide theme; "light"/"dark" = per-pad override
+    theme = Column(String(10), nullable=True, default=None)
+    is_scratch = Column(Boolean, nullable=False, default=False)
+    pad_type = Column(String(20), nullable=False, default="canvas")
+    tags = Column(ARRAY(String(50)), nullable=True, default=[])
+    # NULL/empty = ungrouped; otherwise the folder name this pad lives under
+    folder = Column(String(80), nullable=True, default=None)
     
     # Relationships
     owner: Mapped["UserStore"] = relationship("UserStore", back_populates="pads")
@@ -79,6 +86,11 @@ class PadStore(Base, BaseModel):
                 data=self.data,
                 sharing_policy=self.sharing_policy,
                 whitelist=self.whitelist,
+                theme=self.theme,
+                is_scratch=self.is_scratch or False,
+                pad_type=self.pad_type or 'canvas',
+                tags=self.tags or [],
+                folder=self.folder,
                 updated_at=self.updated_at
             )
             await session.execute(stmt)
@@ -87,12 +99,16 @@ class PadStore(Base, BaseModel):
             # After update, get the fresh object from the database
             refreshed = await self.get_by_id(session, self.id)
             if refreshed:
-                # Update this object's attributes from the database
                 self.owner_id = refreshed.owner_id
                 self.display_name = refreshed.display_name
                 self.data = refreshed.data
                 self.sharing_policy = refreshed.sharing_policy
                 self.whitelist = refreshed.whitelist
+                self.theme = refreshed.theme
+                self.is_scratch = refreshed.is_scratch
+                self.pad_type = refreshed.pad_type
+                self.tags = refreshed.tags
+                self.folder = refreshed.folder
                 self.created_at = refreshed.created_at
                 self.updated_at = refreshed.updated_at
                 

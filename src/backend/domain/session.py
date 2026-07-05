@@ -100,23 +100,27 @@ class Session:
     def get_token_url(self) -> str:
         """
         Get the token endpoint URL.
-        
+
         Returns:
             The token endpoint URL
         """
-        return f"{self.oidc_config['server_url']}/realms/{self.oidc_config['realm']}/protocol/openid-connect/token"
+        base = self.oidc_config.get('internal_server_url') or self.oidc_config['server_url']
+        return f"{base}/realms/{self.oidc_config['realm']}/protocol/openid-connect/token"
 
     def is_token_expired(self, token_data: Dict[str, Any], buffer_seconds: int = 30) -> bool:
         """
         Check if the access token is expired.
-        
+
         Args:
             token_data: The token data to check
             buffer_seconds: Buffer time in seconds before actual expiration
-            
+
         Returns:
             True if the token is expired, False otherwise
         """
+        if token_data and token_data.get('dev_session'):
+            return False
+
         if not token_data or 'access_token' not in token_data:
             return True
             
@@ -190,12 +194,13 @@ class Session:
     def _get_jwks_client(self) -> PyJWKClient:
         """
         Get or create a PyJWKClient for token verification.
-        
+
         Returns:
             The JWKs client
         """
         if self._jwks_client is None:
-            jwks_url = f"{self.oidc_config['server_url']}/realms/{self.oidc_config['realm']}/protocol/openid-connect/certs"
+            base = self.oidc_config.get('internal_server_url') or self.oidc_config['server_url']
+            jwks_url = f"{base}/realms/{self.oidc_config['realm']}/protocol/openid-connect/certs"
             self._jwks_client = PyJWKClient(jwks_url)
         return self._jwks_client
 

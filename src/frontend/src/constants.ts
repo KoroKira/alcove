@@ -1,9 +1,11 @@
 import { UserSettings } from "./ui/types";
 
 // Default app values
+// theme stays "light": Excalidraw's dark mode applies an invert() filter that
+// wrecks custom canvas colors — we render WYSIWYG and theme the chrome via CSS
 export const INITIAL_APP_DATA = {
     appState: {
-        theme: "dark",
+        theme: "light",
         gridModeEnabled: true,
         gridSize: 20,
         gridStep: 5,

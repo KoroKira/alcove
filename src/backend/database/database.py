@@ -44,7 +44,14 @@ async def init_db() -> None:
         # Create tables
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-  
+
+        # Column migrations for existing DBs (idempotent)
+        async with engine.begin() as conn:
+            from sqlalchemy import text
+            await conn.execute(text(
+                "ALTER TABLE pad_ws.pads ADD COLUMN IF NOT EXISTS tags TEXT[] DEFAULT '{}'"
+            ))
+
     except Exception as e:
         print(f"Error initializing database: {str(e)}")
         raise

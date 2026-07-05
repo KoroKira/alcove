@@ -1,0 +1,295 @@
+.model-mgr {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Tab bar */
+.model-mgr__tabs {
+  display: flex;
+  border-bottom: 1px solid var(--color-surface-mid, var(--ap-bg2));
+  padding: 0 12px;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.model-mgr__tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--color-on-surface-low, var(--ap-text2));
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 10px 8px 8px;
+  transition: all 0.15s;
+
+  &:hover { color: var(--color-on-surface, var(--ap-text0)); }
+
+  &--active {
+    color: var(--ap-accent);
+    border-bottom-color: var(--ap-accent);
+  }
+}
+
+/* ── Installed tab ── */
+.model-mgr__installed {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.model-mgr__empty {
+  color: var(--color-on-surface-low, var(--ap-text2));
+  font-size: 12px;
+  text-align: center;
+  padding: 24px 0;
+}
+
+.model-mgr__error {
+  background: rgba(var(--ap-red-rgb), 0.1);
+  border: 1px solid rgba(var(--ap-red-rgb), 0.3);
+  border-radius: var(--ap-radius-md);
+  color: var(--ap-red);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  padding: 7px 10px;
+  margin-bottom: 6px;
+}
+
+.model-mgr__installed-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--color-surface-mid, var(--ap-bg2));
+  border: 1px solid var(--color-surface-high, var(--ap-bg3));
+  border-radius: var(--ap-radius-md);
+  padding: 9px 12px;
+}
+
+.model-mgr__installed-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.model-mgr__installed-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-on-surface, var(--ap-text0));
+}
+
+.model-mgr__installed-size {
+  font-size: 11px;
+  color: var(--color-on-surface-low, var(--ap-text2));
+}
+
+.model-mgr__delete-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--ap-radius-sm);
+  color: var(--color-on-surface-low, var(--ap-text2));
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  transition: all 0.15s;
+
+  &:hover:not(:disabled) {
+    background: rgba(var(--ap-red-rgb), 0.12);
+    border-color: var(--ap-red);
+    color: var(--ap-red);
+  }
+
+  &:disabled { opacity: 0.4; cursor: not-allowed; }
+}
+
+/* ── Catalog tab ── */
+.model-mgr__catalog {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.model-mgr__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 10px 12px 6px;
+  flex-shrink: 0;
+}
+
+.model-mgr__filter {
+  background: var(--color-surface-mid, var(--ap-bg2));
+  border: 1px solid var(--color-surface-high, var(--ap-bg3));
+  border-radius: 20px;
+  color: var(--color-on-surface-low, var(--ap-text2));
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 10px;
+  transition: all 0.15s;
+
+  &:hover { border-color: var(--ap-accent); color: var(--ap-accent); }
+
+  &--active {
+    background: rgba(var(--ap-accent-rgb), 0.15);
+    border-color: var(--ap-accent);
+    color: var(--ap-accent);
+  }
+}
+
+.model-mgr__entries {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.model-mgr__entry {
+  background: var(--color-surface-mid, var(--ap-bg2));
+  border: 1px solid var(--color-surface-high, var(--ap-bg3));
+  border-radius: var(--ap-radius-lg);
+  padding: 10px 12px;
+  transition: border-color 0.15s;
+
+  &--installed {
+    border-color: rgba(var(--ap-green-rgb), 0.3);
+    background: rgba(var(--ap-green-rgb), 0.04);
+  }
+}
+
+.model-mgr__entry-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 3px;
+  gap: 8px;
+}
+
+.model-mgr__entry-title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.model-mgr__entry-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-on-surface, var(--ap-text0));
+}
+
+.model-mgr__entry-params {
+  font-size: 11px;
+  color: var(--color-on-surface-low, var(--ap-text2));
+  font-weight: 500;
+}
+
+.model-mgr__entry-badge {
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.model-mgr__entry-meta {
+  display: flex;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--color-on-surface-low, var(--ap-text2));
+  margin-bottom: 5px;
+}
+
+.model-mgr__entry-desc {
+  font-size: 11px;
+  color: var(--color-on-surface-low, var(--ap-text2));
+  line-height: 1.45;
+  margin-bottom: 8px;
+}
+
+.model-mgr__entry-actions {
+  display: flex;
+  align-items: center;
+}
+
+.model-mgr__installed-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ap-green);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.model-mgr__pull-btn {
+  background: rgba(var(--ap-accent-rgb), 0.1);
+  border: 1px solid rgba(var(--ap-accent-rgb), 0.4);
+  border-radius: var(--ap-radius-sm);
+  color: var(--ap-accent);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  transition: all 0.15s;
+
+  &:hover:not(:disabled) {
+    background: rgba(var(--ap-accent-rgb), 0.2);
+    border-color: var(--ap-accent);
+  }
+
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+/* Pull log terminal */
+.model-mgr__pull-log {
+  background: var(--ap-sidebar-bg);
+  border-top: 1px solid var(--color-surface-mid, var(--ap-bg2));
+  flex-shrink: 0;
+  max-height: 120px;
+  overflow-y: auto;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.model-mgr__pull-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  font-family: var(--ap-font-mono);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--color-on-surface-low, var(--ap-text2));
+
+  &--step { color: var(--ap-accent2); font-weight: 600; }
+  &--success { color: var(--ap-green); svg { color: var(--ap-green); } }
+  &--error { color: var(--ap-red); svg { color: var(--ap-red); } }
+  &--warn { color: var(--ap-yellow); }
+
+  svg { flex-shrink: 0; margin-top: 1px; }
+}
+
+.model-mgr__spin {
+  animation: mgr-spin 1s linear infinite;
+}
+
+@keyframes mgr-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}

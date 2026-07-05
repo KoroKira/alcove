@@ -10,6 +10,8 @@ import {
   Editor,
   Terminal,
 } from './pad';
+import MarkdownViewer from './pad/MarkdownViewer';
+import TerminalLocal from './pad/TerminalLocal';
 import { ActionButton } from './pad/buttons';
 import "./CustomEmbeddableRenderer.scss";
 
@@ -62,6 +64,14 @@ export const renderCustomEmbeddable = (
       case 'dashboard':
         content = <Dashboard element={element} appState={appState} excalidrawAPI={excalidrawAPI} />;
         title = "Dashboard";
+        break;
+      case 'markdown':
+        content = <MarkdownViewer element={element} excalidrawAPI={excalidrawAPI} />;
+        title = "Markdown";
+        break;
+      case 'terminal-local':
+        content = <TerminalLocal />;
+        title = "Terminal";
         break;
       default:
         title = "Untitled";
