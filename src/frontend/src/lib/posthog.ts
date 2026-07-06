@@ -9,11 +9,11 @@ interface PostHogConfigKeys {
 
 export const initializePostHog = (config: PostHogConfigKeys) => {
   if (isPostHogInitialized) {
-    console.warn('[pad.ws] PostHog is already initialized. Skipping re-initialization.');
+    console.warn('[alcove] PostHog is already initialized. Skipping re-initialization.');
     return;
   }
   if (!config || !config.posthogKey || !config.posthogHost) {
-    console.warn('[pad.ws] PostHog initialization skipped due to missing or invalid config.');
+    console.warn('[alcove] PostHog initialization skipped due to missing or invalid config.');
     return;
   }
 
@@ -22,15 +22,15 @@ export const initializePostHog = (config: PostHogConfigKeys) => {
       api_host: config.posthogHost,
     });
     isPostHogInitialized = true;
-    console.debug('[pad.ws] PostHog initialized successfully from posthog.ts with config:', config);
+    console.debug('[alcove] PostHog initialized successfully from posthog.ts with config:', config);
   } catch (error) {
-    console.error('[pad.ws] Error initializing PostHog:', error);
+    console.error('[alcove] Error initializing PostHog:', error);
   }
 };
 
 export const capture = (eventName: string, properties?: Record<string, any>) => {
   if (!isPostHogInitialized) {
-    console.warn(`[pad.ws] PostHog not yet initialized. Event "${eventName}" was not captured.`);
+    console.warn(`[alcove] PostHog not yet initialized. Event "${eventName}" was not captured.`);
     return;
   }
   posthog.capture(eventName, properties);

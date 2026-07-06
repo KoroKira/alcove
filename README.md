@@ -1,8 +1,13 @@
-# alko-pad.ws
+![Alcove](docs/brand/alcove-banner.png)
 
-> Fork personnel de [pad.ws](https://github.com/pad-ws/pad.ws) — un espace de travail visuel combinant tableau blanc (Excalidraw), éditeur de documents et outils de gestion de connaissances personnelle, avec IA locale via Ollama.
+[![CI](https://github.com/KoroKira/alcove/actions/workflows/ci.yml/badge.svg)](https://github.com/KoroKira/alcove/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-support-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/guilhemdl)
 
-[![screenshot](docs/canvas_ide.png)](https://github.com/pad-ws/pad.ws)
+> Fork personnel de [pad.ws](https://github.com/pad-ws/pad.ws) — un espace de travail visuel combinant tableau blanc (Excalidraw), éditeur de documents et outils de gestion de connaissances personnelle, avec IA locale via Ollama. **Vos notes et votre IA ne quittent jamais votre machine.**
+> Je n'ai **rien créé** fondamentalement parlant. Tout ceci n'est que des briques assemblées faites par de plus grands génies que moi, que j'ai adaptées à mes besoins.
+
+[![screenshot](docs/canvas_ide.png)](https://github.com/KoroKira/alcove)
 
 ---
 
@@ -50,7 +55,7 @@
 | **Quiz** | Questions/réponses sur le contenu de plusieurs pads |
 | **Auto-démarrage** | Ollama est lancé automatiquement s'il est installé mais éteint |
 
-Attention, des fois ils sont un peu limités. Je ne sais pas si c'est lié au modèle utilisé ou à autre chose, ou si faut que j'inclue des preprompts.
+> La qualité des réponses IA dépend du modèle local utilisé — `llama3.2` par défaut. Un modèle plus gros (`OLLAMA_DEFAULT_MODEL`) donne de meilleurs résultats.
 
 ### Outils
 
@@ -74,8 +79,8 @@ Attention, des fois ils sont un peu limités. Je ne sais pas si c'est lié au mo
 > Nécessite macOS + [Homebrew](https://brew.sh). Pas de Docker, pas de Keycloak.
 
 ```bash
-git clone https://github.com/<ton-pseudo>/alko-pad.ws.git
-cd alko-pad.ws
+git clone https://github.com/KoroKira/alcove.git
+cd alcove
 bash scripts/run.sh
 ```
 
@@ -90,8 +95,8 @@ Connexion automatique en tant que `local@localhost` (pas de mot de passe).
 > Nécessite [Docker Desktop](https://docs.docker.com/get-docker/) + `jq` (`brew install jq`).
 
 ```bash
-git clone https://github.com/<ton-pseudo>/alko-pad.ws.git
-cd alko-pad.ws
+git clone https://github.com/KoroKira/alcove.git
+cd alcove
 cp .env.template .env          # Édite les mots de passe avant de continuer
 bash scripts/setup.sh          # Premier lancement (~3-5 min)
 bash scripts/start.sh          # Démarrage quotidien
@@ -154,7 +159,7 @@ Si Ollama est installé, l'app le détecte et le lance automatiquement. Le panne
 ## Structure du projet
 
 ```
-alko-pad.ws/
+alcove/
 ├── src/
 │   ├── backend/              # FastAPI (Python 3.11+)
 │   │   ├── routers/          # Endpoints API (pad, ai, auth, ws…)
@@ -193,6 +198,14 @@ alko-pad.ws/
 | Auth | Keycloak (OIDC) en production, `PAD_DEV_MODE=true` en local |
 | IA | Ollama (LLM local), nomic-embed-text (embeddings RAG) |
 | Build | Vite 5, vite-plugin-pwa (PWA + Service Worker) |
+
+---
+
+## Sécurité & contribution
+
+⚠️ Cette app est conçue pour un **usage local mono-utilisateur**. Le terminal embarqué (ttyd) est un vrai shell sur votre machine : il est lié à `localhost` uniquement et ne doit jamais être exposé sur un réseau. Avant tout déploiement sur serveur, lisez [SECURITY.md](SECURITY.md) et changez tous les mots de passe par défaut du `.env`.
+
+Contributions bienvenues — voir [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 

@@ -49,7 +49,7 @@ export const usePad = (
             themeColors ? adaptSceneToTheme(scene, themeColors.bg, themeColors.ink) : scene;
 
         if (isTemporaryPad && excalidrawAPI) {
-            console.debug(`[pad.ws] Initializing new temporary pad ${padId}`);
+            console.debug(`[alcove] Initializing new temporary pad ${padId}`);
             const normalizedData = normalizeCanvasData(applyThemeOverride(INITIAL_APP_DATA));
             excalidrawAPI.updateScene(normalizedData);
             return;
@@ -57,7 +57,7 @@ export const usePad = (
 
         if (data && excalidrawAPI && !isTemporaryPad) {
             const normalizedData = normalizeCanvasData(applyThemeOverride(data));
-            console.debug(`[pad.ws] Loading pad ${padId}`);
+            console.debug(`[alcove] Loading pad ${padId}`);
             excalidrawAPI.updateScene(normalizedData);
         }
     }, [data, excalidrawAPI, padId, isTemporaryPad, themeColors?.bg, themeColors?.ink]);

@@ -73,8 +73,8 @@ export default defineConfig(({ mode }) => {
           ],
         },
         manifest: {
-          name: 'pad.ws',
-          short_name: 'pad.ws',
+          name: 'Alcove',
+          short_name: 'Alcove',
           description: 'Votre espace de travail visuel',
           theme_color: '#1e1e2e',
           background_color: '#1e1e2e',

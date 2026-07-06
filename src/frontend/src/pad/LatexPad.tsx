@@ -18,7 +18,7 @@ const DEFAULT_SOURCE = `\\documentclass[12pt,a4paper]{article}
 \\maketitle
 
 \\section{Introduction}
-Bienvenue dans l'éditeur \\LaTeX{} intégré à pad.ws.
+Bienvenue dans l'éditeur \\LaTeX{} intégré à Alcove.
 
 \\section{Mathématiques}
 \\[

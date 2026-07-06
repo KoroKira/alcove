@@ -190,7 +190,7 @@ export const Terminal: React.FC<TerminalProps> = ({
   // Handle iframe load event
   const handleIframeLoad = () => {
     setIframeLoaded(true);
-    console.debug('[pad.ws] Terminal iframe loaded');
+    console.debug('[alcove] Terminal iframe loaded');
   };
 
   return (
@@ -206,7 +206,7 @@ export const Terminal: React.FC<TerminalProps> = ({
           <div className={`terminal-loading-animation terminal-loading-animation--fade ${iframeLoaded ? 'terminal-loading-animation--hidden' : ''}`}>
             <img 
               src="/assets/images/favicon.png" 
-              alt="pad.ws logo" 
+              alt="Alcove logo" 
               className="terminal-loading-logo" 
             />
           </div>
@@ -216,7 +216,7 @@ export const Terminal: React.FC<TerminalProps> = ({
           <div className="terminal-loading-animation">
             <img 
               src="/assets/images/favicon.png" 
-              alt="pad.ws logo" 
+              alt="Alcove logo" 
               className="terminal-loading-logo" 
             />
           </div>

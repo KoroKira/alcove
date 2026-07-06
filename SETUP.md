@@ -1,6 +1,6 @@
 # Guide d'installation
 
-Ce guide t'explique comment installer et lancer **alko-pad.ws** sur macOS en moins de 5 minutes.
+Ce guide t'explique comment installer et lancer **Alcove** sur macOS en moins de 5 minutes.
 
 > Pas besoin d'être développeur. Si tu sais ouvrir un terminal, tu peux le faire.
 
@@ -43,8 +43,8 @@ Si ce n'est pas le cas : `brew install git`
 ### Étape 1 — Télécharger le projet
 
 ```bash
-git clone https://github.com/guilhem/alko-pad.ws.git
-cd alko-pad.ws
+git clone https://github.com/KoroKira/alcove.git
+cd alcove
 ```
 
 ### Étape 2 — Lancer
@@ -63,7 +63,7 @@ La première fois ça prend ~3-5 minutes. Les fois suivantes, quelques secondes.
 
 ### Étape 3 — Ouvrir l'app
 
-Une fois que tu vois `pad.ws → http://localhost:8000` dans le terminal, ouvre ton navigateur sur :
+Une fois que tu vois `Alcove → http://localhost:8000` dans le terminal, ouvre ton navigateur sur :
 
 **[http://localhost:8000](http://localhost:8000)**
 
@@ -89,7 +89,7 @@ brew services stop redis
 La prochaine fois, retourne dans le dossier et relance :
 
 ```bash
-cd alko-pad.ws
+cd alcove
 bash scripts/run.sh
 ```
 

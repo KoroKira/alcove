@@ -6,7 +6,7 @@ export interface UserDocTemplate {
   createdAt: string;
 }
 
-const KEY = 'alkopad-user-doc-templates';
+const KEY = 'alcove-user-doc-templates';
 
 export function loadUserTemplates(): UserDocTemplate[] {
   try { return JSON.parse(localStorage.getItem(KEY) ?? '[]'); } catch { return []; }

@@ -1,0 +1,9 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "False positives"
+regexes = [
+  # localStorage key names, not credentials
+  '''alcove-quiz-sm2''',
+]

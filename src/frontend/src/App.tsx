@@ -150,7 +150,7 @@ export default function App() {
   const [themeBuilderOpen, setThemeBuilderOpen] = useState(false);
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [flashcardStudioOpen, setFlashcardStudioOpen] = useState(false);
-  const [currentThemeId, setCurrentThemeId] = useState(() => localStorage.getItem('alkopad-theme') ?? 'mocha');
+  const [currentThemeId, setCurrentThemeId] = useState(() => localStorage.getItem('alcove-theme') ?? 'mocha');
   const activeTheme = getTheme(currentThemeId);
   const prevThemeDarkRef = useRef<boolean>(activeTheme.dark);
 
@@ -336,7 +336,7 @@ export default function App() {
       a.href = url; a.download = `${tab?.title || 'canvas'}.png`; a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      console.error('[pad.ws] Export PNG failed:', e);
+      console.error('[alcove] Export PNG failed:', e);
     }
   };
 
@@ -370,7 +370,7 @@ export default function App() {
     if (!config?.devMode && config?.posthogKey && config?.posthogHost) {
       initializePostHog({ posthogKey: config.posthogKey, posthogHost: config.posthogHost });
     } else if (configError) {
-      console.error('[pad.ws] Failed to load app config:', configError);
+      console.error('[alcove] Failed to load app config:', configError);
     }
   }, [config, configError]);
 

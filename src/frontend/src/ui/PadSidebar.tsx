@@ -144,7 +144,7 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
   useEffect(() => {
     const count = () => {
       try {
-        const saved: Record<string, { due: number }> = JSON.parse(localStorage.getItem('alkopad-quiz-sm2') || '{}');
+        const saved: Record<string, { due: number }> = JSON.parse(localStorage.getItem('alcove-quiz-sm2') || '{}');
         const today = Math.floor(Date.now() / 86400000);
         setDueFlashcards(Object.values(saved).filter(c => c.due <= today).length);
       } catch { setDueFlashcards(0); }
@@ -198,14 +198,14 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
 
   // ── Folder grouping ──
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => {
-    try { return new Set(JSON.parse(localStorage.getItem('alkopad-collapsed-folders') || '[]')); }
+    try { return new Set(JSON.parse(localStorage.getItem('alcove-collapsed-folders') || '[]')); }
     catch { return new Set(); }
   });
   const toggleFolder = useCallback((name: string) => {
     setCollapsedFolders(prev => {
       const n = new Set(prev);
       n.has(name) ? n.delete(name) : n.add(name);
-      localStorage.setItem('alkopad-collapsed-folders', JSON.stringify([...n]));
+      localStorage.setItem('alcove-collapsed-folders', JSON.stringify([...n]));
       return n;
     });
   }, []);
@@ -347,7 +347,7 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
     <aside className="pad-sidebar">
       {/* Header */}
       <div className="pad-sidebar__header">
-        <span className="pad-sidebar__wordmark">pad.ws</span>
+        <span className="pad-sidebar__wordmark">Alcove</span>
         <button
           className="pad-sidebar__icon-btn"
           onClick={onToggleCollapse}

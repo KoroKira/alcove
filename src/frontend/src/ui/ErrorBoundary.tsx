@@ -27,7 +27,7 @@ export default class ErrorBoundary extends React.Component<Props, State> {
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     // Keep the console trail for debugging; also stash the component stack.
-    console.error('[pad.ws] Uncaught render error:', error, info.componentStack);
+    console.error('[alcove] Uncaught render error:', error, info.componentStack);
     this.setState({ info: info.componentStack ?? null });
   }
 

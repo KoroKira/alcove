@@ -3,7 +3,7 @@ import { X, Wand2, Save, Play } from 'lucide-react';
 import { THEMES, type Theme, applyTheme } from '../themes';
 import './ThemeBuilder.scss';
 
-const CUSTOM_KEY = 'alkopad-custom-themes';
+const CUSTOM_KEY = 'alcove-custom-themes';
 
 export function loadCustomThemes(): Theme[] {
   try { return JSON.parse(localStorage.getItem(CUSTOM_KEY) ?? '[]'); } catch { return []; }

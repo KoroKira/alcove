@@ -64,7 +64,7 @@ export const scheduleTokenRefresh = (
             onRefresh(refreshData);
             isRefreshScheduled = false;
         } catch (err) {
-            console.error('[pad.ws] Auth refresh failed:', err);
+            console.error('[alcove] Auth refresh failed:', err);
             onError(err instanceof Error ? err : new Error(String(err)));
             isRefreshScheduled = false;
         }

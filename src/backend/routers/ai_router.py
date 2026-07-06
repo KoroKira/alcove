@@ -27,7 +27,7 @@ ai_router = APIRouter(prefix="/api/ai")
 # Baked-in system prompt for the chat assistant. Users never see or edit this;
 # their optional custom instructions (AIPanel settings) are appended after it.
 BASE_SYSTEM_PROMPT = (
-    "Tu es l'assistant intégré d'alko-pad, un espace de travail personnel de prise de notes "
+    "Tu es l'assistant intégré d'Alcove, un espace de travail personnel de prise de notes "
     "(canvas, documents Markdown, kanban, gantt, LaTeX). "
     "Réponds dans la langue de l'utilisateur (français par défaut). "
     "Sois concis et directement utile : va droit au but, sans préambule ni reformulation de la question. "
@@ -756,7 +756,7 @@ async def clip_url(body: ClipRequest, _: UserSession = Depends(require_auth)):
         url = f"https://raw.githubusercontent.com/{gh.group(1)}/{gh.group(2)}"
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
-            resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0 (alko-pad clipper)"})
+            resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0 (alcove clipper)"})
             resp.raise_for_status()
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Impossible de récupérer la page : {e}")

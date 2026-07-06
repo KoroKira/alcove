@@ -21,7 +21,7 @@ const logoutUser = async (): Promise<LogoutResponse> => {
         errorMessage = errorData.detail || errorData.message;
       }
     } catch (e) {
-      console.warn('[pad.ws] Could not parse JSON from logout error response.');
+      console.warn('[alcove] Could not parse JSON from logout error response.');
     }
     throw new Error(errorMessage);
   }
@@ -35,7 +35,7 @@ export const useLogout = () => {
   return useMutation<LogoutResponse, LogoutError, void>({
     mutationFn: logoutUser,
     onSuccess: (data) => {
-      console.debug('[pad.ws] Logout mutation successful, Keycloak URL:', data.logout_url);
+      console.debug('[alcove] Logout mutation successful, Keycloak URL:', data.logout_url);
 
       // Invalidate authStatus query to trigger a re-fetch and update UI.
       // This will make useAuthStatus re-evaluate, and isAuthenticated should become false.
@@ -43,7 +43,7 @@ export const useLogout = () => {
       queryClient.invalidateQueries({ queryKey: ['authStatus'] });
     },
     onError: (error) => {
-      console.error('[pad.ws] Logout mutation failed:', error.message);
+      console.error('[alcove] Logout mutation failed:', error.message);
     },
   });
 };

@@ -49,7 +49,7 @@ interface Props {
 type PanelMode = 'chat' | 'rag';
 
 const SAVED_MODEL_KEY = 'pad-ws-ai-model';
-const CUSTOM_PROMPT_KEY = 'alkopad-ai-custom-prompt';
+const CUSTOM_PROMPT_KEY = 'alcove-ai-custom-prompt';
 
 function filterThinkBlocks(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();

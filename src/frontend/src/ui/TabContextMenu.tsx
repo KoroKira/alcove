@@ -263,13 +263,13 @@ class TabActionManager implements ActionManager {
     } else if (action.name === 'aiRename') {
       this.aiRename();
     } else if (action.name === 'deleteOwnedPad') {
-      console.debug('[pad.ws] Attempting to delete owned pad:', this.padId, this.padName);
+      console.debug('[alcove] Attempting to delete owned pad:', this.padId, this.padName);
       if (window.confirm(`Are you sure you want to delete "${this.padName}"?`)) {
-        console.debug('[pad.ws] User confirmed delete, calling onDelete');
+        console.debug('[alcove] User confirmed delete, calling onDelete');
         this.onDelete(this.padId);
       }
     } else if (action.name === 'leaveSharedPad') {
-      console.debug('[pad.ws] Attempting to leave shared pad:', this.padId, this.padName);
+      console.debug('[alcove] Attempting to leave shared pad:', this.padId, this.padName);
       if (window.confirm(`Are you sure you want to leave "${this.padName}"? This will remove it from your list of open pads.`)) {
         this.onLeaveSharedPad(this.padId);
       }
@@ -290,9 +290,9 @@ class TabActionManager implements ActionManager {
     } else if (action.name === 'copyUrl') {
       const url = `${window.location.origin}/pad/${this.padId}`;
       navigator.clipboard.writeText(url).then(() => {
-        console.debug('[pad.ws] URL copied to clipboard:', url);
+        console.debug('[alcove] URL copied to clipboard:', url);
       }).catch(err => {
-        console.error('[pad.ws] Failed to copy URL:', err);
+        console.error('[alcove] Failed to copy URL:', err);
       });
     } else if (action.name === 'toggleReadLater') {
       const tags = [...(this.currentTags || [])];

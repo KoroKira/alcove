@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run.sh — Lance pad.ws nativement (sans Docker) sur macOS
+# run.sh — Lance Alcove nativement (sans Docker) sur macOS
 # Dépendances : postgresql@16 et redis via Homebrew
 set -euo pipefail
 
@@ -111,7 +111,9 @@ TTYD_PID=""
 brew list ttyd &>/dev/null || { warn "Installation de ttyd…"; brew install ttyd; }
 if ! lsof -ti ":$TTYD_PORT" >/dev/null 2>&1; then
   info "Démarrage de ttyd sur le port ${TTYD_PORT}…"
-  ttyd -p "$TTYD_PORT" -W zsh &>/tmp/pad-ttyd.log &
+  # -i lo0 : loopback uniquement — ttyd est un shell distant, il ne doit JAMAIS
+  # être accessible depuis le réseau (par défaut il écoute sur 0.0.0.0)
+  ttyd -p "$TTYD_PORT" -i lo0 -W zsh &>/tmp/pad-ttyd.log &
   TTYD_PID=$!
   sleep 1
   success "ttyd prêt (PID $TTYD_PID)"
@@ -171,13 +173,15 @@ trap cleanup EXIT INT TERM
 # ── Backend ───────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BOLD}${GREEN}  pad.ws → http://localhost:8000${NC}"
+echo -e "${BOLD}${GREEN}  Alcove → http://localhost:8000${NC}"
 echo -e "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
 cd "$BACKEND"
+# 127.0.0.1 : le mode local tourne avec PAD_DEV_MODE=true (auth désactivée),
+# l'app ne doit donc jamais être accessible depuis le réseau
 exec python3 -m uvicorn main:app \
-  --host 0.0.0.0 \
+  --host 127.0.0.1 \
   --port 8000 \
   --reload \
   --env-file "$ENV_FILE"

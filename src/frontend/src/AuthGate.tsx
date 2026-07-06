@@ -20,11 +20,11 @@ export default function AuthGate() {
 
   useEffect(() => {
     if (isAuthenticated && !isLoadingAuth && !coderAuthDone && config && !isLoadingConfig && !configError) {
-      console.debug('[pad.ws] Priming Coder OIDC session');
+      console.debug('[alcove] Priming Coder OIDC session');
       const setupIframe = async () => {
         try {
           if (!config.coderUrl) {
-            console.warn('[pad.ws] Coder URL not found in config, skipping OIDC priming');
+            console.warn('[alcove] Coder URL not found in config, skipping OIDC priming');
             setCoderAuthDone(true);
             return;
           }
@@ -32,7 +32,7 @@ export default function AuthGate() {
           const iframe = document.createElement("iframe");
           iframe.style.display = "none";
           iframe.src = `${config.coderUrl}/api/v2/users/oidc/callback`;
-          console.debug(`[pad.ws] (Silently) Priming Coder OIDC session for ${config.coderUrl}`);
+          console.debug(`[alcove] (Silently) Priming Coder OIDC session for ${config.coderUrl}`);
 
           // Remove iframe as soon as it loads, or after fallback timeout
           const cleanup = () => {
@@ -47,7 +47,7 @@ export default function AuthGate() {
           // Fallback: remove iframe after 5s if onload doesn't fire
           timeoutRef.current = window.setTimeout(cleanup, 5000);
         } catch (error) {
-          console.error('[pad.ws] Error setting up Coder OIDC priming:', error);
+          console.error('[alcove] Error setting up Coder OIDC priming:', error);
           setCoderAuthDone(true);
         }
       };
@@ -64,7 +64,7 @@ export default function AuthGate() {
         }
       };
     } else if (configError) {
-      console.error('[pad.ws] Failed to load app config for OIDC priming:', configError);
+      console.error('[alcove] Failed to load app config for OIDC priming:', configError);
       setCoderAuthDone(true); // Mark as done to prevent retries if config fails
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -15,10 +15,10 @@ export default function Onboarding({ onDone, onCreatePad }: Props) {
 
   const next = () => {
     if (step < STEPS - 1) setStep(s => s + 1);
-    else { localStorage.setItem('alkopad_onboarded', '1'); onDone(); }
+    else { localStorage.setItem('alcove_onboarded', '1'); onDone(); }
   };
 
-  const skip = () => { localStorage.setItem('alkopad_onboarded', '1'); onDone(); };
+  const skip = () => { localStorage.setItem('alcove_onboarded', '1'); onDone(); };
 
   return (
     <div className="onboarding">
@@ -35,7 +35,7 @@ export default function Onboarding({ onDone, onCreatePad }: Props) {
           <div className="onboarding__logo">
             <Zap size={48} />
           </div>
-          <h1 className="onboarding__h1">Bienvenue sur<br /><span className="onboarding__accent">alko-pad.ws</span></h1>
+          <h1 className="onboarding__h1">Bienvenue sur<br /><span className="onboarding__accent">Alcove</span></h1>
           <p className="onboarding__p">Ton espace de travail tout-en-un — canvas, notes, kanban, gantt, IA. Tout au même endroit.</p>
           <button className="onboarding__btn onboarding__btn--primary" onClick={next}>
             Commencer <ArrowRight size={16} />
@@ -101,5 +101,5 @@ export default function Onboarding({ onDone, onCreatePad }: Props) {
 }
 
 export function shouldShowOnboarding(): boolean {
-  return !localStorage.getItem('alkopad_onboarded');
+  return !localStorage.getItem('alcove_onboarded');
 }

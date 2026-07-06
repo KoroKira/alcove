@@ -31,13 +31,13 @@ async function purgeStaleServiceWorkers() {
         }
         // A controlled page keeps using the old SW until the next load — reload once.
         if (navigator.serviceWorker.controller) {
-          console.warn('[pad.ws] Removed a stale service worker — reloading for fresh assets.');
+          console.warn('[alcove] Removed a stale service worker — reloading for fresh assets.');
           location.reload();
         }
       }
     }
   } catch (e) {
-    console.error('[pad.ws] SW purge failed:', e);
+    console.error('[alcove] SW purge failed:', e);
   }
 }
 

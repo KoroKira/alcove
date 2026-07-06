@@ -426,9 +426,9 @@ export function applyTheme(theme: Theme): void {
   });
   root.setAttribute('data-theme', theme.id);
   root.setAttribute('data-dark', theme.dark ? '1' : '0');
-  localStorage.setItem('alkopad-theme', theme.id);
+  localStorage.setItem('alcove-theme', theme.id);
 }
 
 export function loadSavedTheme(): Theme {
-  return getTheme(localStorage.getItem('alkopad-theme') ?? DEFAULT_THEME_ID);
+  return getTheme(localStorage.getItem('alcove-theme') ?? DEFAULT_THEME_ID);
 }

@@ -95,7 +95,7 @@ services:
 
   pad:
     build: .
-    image: alko-pad-ws:local
+    image: alcove:local
     container_name: pad
     environment:
       - STATIC_DIR=/app/frontend/dist

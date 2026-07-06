@@ -78,7 +78,7 @@ class Portal {
   private _updateStatus(status: ConnectionStatus, message?: string) {
     if (this.currentConnectionStatus !== status) {
       this.currentConnectionStatus = status;
-      console.debug(`[pad.ws] Status changed to: ${status}${message ? ` (${message})` : ''}`);
+      console.debug(`[alcove] Status changed to: ${status}${message ? ` (${message})` : ''}`);
       if (this.onStatusChange) {
         this.onStatusChange(status, message);
       }
@@ -103,11 +103,11 @@ class Portal {
 
   public connect(): void {
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-      console.debug('[pad.ws] Already connected.');
+      console.debug('[alcove] Already connected.');
       return;
     }
     if (this.socket && this.socket.readyState === WebSocket.CONNECTING) {
-      console.debug('[pad.ws] Already connecting.');
+      console.debug('[alcove] Already connecting.');
       return;
     }
 
@@ -117,24 +117,24 @@ class Portal {
     }
 
     if (!this.shouldBeConnected()) {
-      console.debug('[pad.ws] Conditions not met for connection.');
+      console.debug('[alcove] Conditions not met for connection.');
       this._updateStatus(this.isPermanentlyDisconnected ? 'Failed' : 'Closed');
       return;
     }
 
     const socketUrl = this.getSocketUrl();
     if (!socketUrl) {
-      console.error('[pad.ws] Cannot connect: Socket URL is invalid.');
+      console.error('[alcove] Cannot connect: Socket URL is invalid.');
       this._updateStatus('Failed', 'Invalid URL');
       return;
     }
 
     this._updateStatus(this.reconnectAttemptCount > 0 ? 'Reconnecting' : 'Connecting');
-    console.debug(`[pad.ws] Attempting to connect to: ${socketUrl}`);
+    console.debug(`[alcove] Attempting to connect to: ${socketUrl}`);
     this.socket = new WebSocket(socketUrl);
 
     this.socket.onopen = () => {
-      console.debug(`[pad.ws] Connection established for pad: ${this.roomId}`);
+      console.debug(`[alcove] Connection established for pad: ${this.roomId}`);
       this.isPermanentlyDisconnected = false;
       this.reconnectAttemptCount = 0;
       if (this.reconnectTimeoutId) clearTimeout(this.reconnectTimeoutId);
@@ -153,16 +153,16 @@ class Portal {
             this.collab.handlePortalMessage(validationResult.data);
           }
         } else {
-          console.error(`[pad.ws] Incoming message validation failed for pad ${this.roomId}:`, validationResult.error.issues);
-          console.error(`[pad.ws] Raw message: ${event.data}`);
+          console.error(`[alcove] Incoming message validation failed for pad ${this.roomId}:`, validationResult.error.issues);
+          console.error(`[alcove] Raw message: ${event.data}`);
         }
       } catch (error) {
-        console.error(`[pad.ws] Error parsing incoming JSON message for pad ${this.roomId}:`, error);
+        console.error(`[alcove] Error parsing incoming JSON message for pad ${this.roomId}:`, error);
       }
     };
 
     this.socket.onclose = (event: CloseEvent) => {
-      console.debug(`[pad.ws] Connection closed for pad: ${this.roomId}. Code: ${event.code}, Reason: '${event.reason}'`);
+      console.debug(`[alcove] Connection closed for pad: ${this.roomId}. Code: ${event.code}, Reason: '${event.reason}'`);
       this.socket = null; // Clear the socket instance
 
       const isAbnormalClosure = event.code !== 1000 && event.code !== 1001; // 1000 = Normal, 1001 = Going Away
@@ -175,12 +175,12 @@ class Portal {
       if (isAbnormalClosure && this.shouldBeConnected()) {
         this.reconnectAttemptCount++;
         if (this.reconnectAttemptCount > MAX_RECONNECT_ATTEMPTS) {
-          console.warn(`[pad.ws] Failed to reconnect to pad ${this.roomId} after ${this.reconnectAttemptCount -1} attempts. Stopping.`);
+          console.warn(`[alcove] Failed to reconnect to pad ${this.roomId} after ${this.reconnectAttemptCount -1} attempts. Stopping.`);
           this.isPermanentlyDisconnected = true;
           this._updateStatus('Failed', `Max reconnect attempts reached.`);
         } else {
           const delay = INITIAL_RECONNECT_DELAY * Math.pow(2, this.reconnectAttemptCount -1);
-          console.debug(`[pad.ws] Reconnecting attempt ${this.reconnectAttemptCount}/${MAX_RECONNECT_ATTEMPTS} in ${delay}ms for pad: ${this.roomId}`);
+          console.debug(`[alcove] Reconnecting attempt ${this.reconnectAttemptCount}/${MAX_RECONNECT_ATTEMPTS} in ${delay}ms for pad: ${this.roomId}`);
           this._updateStatus('Reconnecting', `Attempt ${this.reconnectAttemptCount}`);
           this.reconnectTimeoutId = setTimeout(() => this.connect(), delay);
         }
@@ -190,13 +190,13 @@ class Portal {
     };
 
     this.socket.onerror = (event: Event) => {
-      console.error(`[pad.ws] WebSocket error for pad: ${this.roomId}:`, event);
+      console.error(`[alcove] WebSocket error for pad: ${this.roomId}:`, event);
       this._updateStatus('Failed', 'WebSocket error');
     };
   }
 
   public disconnect(): void {
-    console.debug(`[pad.ws] Disconnecting from pad: ${this.roomId}`);
+    console.debug(`[alcove] Disconnecting from pad: ${this.roomId}`);
     this.isPermanentlyDisconnected = true; // Mark intent to disconnect this session
 
     if (this.reconnectTimeoutId) {
@@ -222,10 +222,10 @@ class Portal {
         try {
           socketToClose.close(1000, 'Client initiated disconnect');
         } catch (e) {
-          console.warn(`[pad.ws] Error while closing socket for pad ${this.roomId}:`, e);
+          console.warn(`[alcove] Error while closing socket for pad ${this.roomId}:`, e);
         }
       } else {
-        console.debug(`[pad.ws] Socket for pad ${this.roomId} was not OPEN or CONNECTING. Current state: ${socketToClose.readyState}. No explicit close call needed.`);
+        console.debug(`[alcove] Socket for pad ${this.roomId} was not OPEN or CONNECTING. Current state: ${socketToClose.readyState}. No explicit close call needed.`);
       }
     }
 
@@ -266,12 +266,12 @@ class Portal {
 
     if (oldShouldBeConnected !== newShouldBeConnected) {
       if (newShouldBeConnected) {
-        console.debug('[pad.ws] Auth state changed, attempting to connect/reconnect.');
+        console.debug('[alcove] Auth state changed, attempting to connect/reconnect.');
         this.isPermanentlyDisconnected = false; // Allow reconnection attempts if auth is now valid
         this.reconnectAttemptCount = 0; // Reset attempts
         this.connect();
       } else {
-        console.debug('[pad.ws] Auth state changed, disconnecting.');
+        console.debug('[alcove] Auth state changed, disconnecting.');
         this.disconnect(); // Disconnect if auth conditions no longer met
       }
     }
@@ -283,12 +283,12 @@ class Portal {
 
   private sendJsonMessage(payload: WebSocketMessage): void {
     if (!this.isOpen()) {
-      console.warn('[pad.ws] Cannot send message: WebSocket is not open.', payload.type);
+      console.warn('[alcove] Cannot send message: WebSocket is not open.', payload.type);
       return;
     }
     const validationResult = WebSocketMessageSchema.safeParse(payload);
     if (!validationResult.success) {
-      console.error(`[pad.ws] Outgoing message validation failed for pad ${this.roomId}:`, validationResult.error.issues);
+      console.error(`[alcove] Outgoing message validation failed for pad ${this.roomId}:`, validationResult.error.issues);
       return;
     }
     this.socket?.send(JSON.stringify(payload));
@@ -303,7 +303,7 @@ class Portal {
       data: data,
     };
     if (messagePayload.type != 'pointer_update') {
-      console.debug(`[pad.ws] Sending message of type: ${messagePayload.type} for pad ${this.roomId}`, messagePayload);
+      console.debug(`[alcove] Sending message of type: ${messagePayload.type} for pad ${this.roomId}`, messagePayload);
     }
     this.sendJsonMessage(messagePayload);
   }

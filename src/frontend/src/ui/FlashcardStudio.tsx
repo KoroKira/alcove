@@ -8,7 +8,7 @@ interface Deck { padId: string; padName: string; cards: Card[]; }
 
 interface SM2Card { n: number; ef: number; interval: number; due: number; }
 
-const SM2_KEY = 'alkopad-quiz-sm2';
+const SM2_KEY = 'alcove-quiz-sm2';
 const today = () => Math.floor(Date.now() / 86400000);
 
 function loadSM2(cards: Card[]): SM2Card[] {

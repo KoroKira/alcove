@@ -20,7 +20,7 @@ export const AuthDialog = ({
 }: AuthDialogProps) => {
   const logoMessages = [
     "Hello there!",
-    "Welcome to pad.ws!",
+    "Welcome to Alcove!",
     "Ready to code?",
     "Let's build something cool!",
     "Code, collaborate, create!",
@@ -75,13 +75,13 @@ export const AuthDialog = ({
         </div>
 
         {/* GitHub Star button */}
-        <a className="github-button" 
-           href="https://github.com/pad-ws/pad.ws" 
-           data-color-scheme="no-preference: dark_dimmed; light: dark_dimmed; dark: dark_dimmed;" 
-           data-icon="octicon-star" 
-           data-size="large" 
-           data-show-count="true" 
-           aria-label="Star pad-ws/pad.ws on GitHub">
+        <a className="github-button"
+           href="https://github.com/KoroKira/alcove"
+           data-color-scheme="no-preference: dark_dimmed; light: dark_dimmed; dark: dark_dimmed;"
+           data-icon="octicon-star"
+           data-size="large"
+           data-show-count="true"
+           aria-label="Star KoroKira/alcove on GitHub">
           Star
         </a>
       </div>
@@ -91,7 +91,7 @@ export const AuthDialog = ({
   return (
     <div className="auth-modal__wrapper">
       <div className="auth-modal__logo-container">
-        <img src="/assets/images/favicon.png" alt="pad.ws logo" className="auth-modal__logo" />
+        <img src="/assets/images/favicon.png" alt="Alcove logo" className="auth-modal__logo" />
         <div className="auth-modal__logo-speech-bubble">{randomMessage}</div>
       </div>
       <Dialog

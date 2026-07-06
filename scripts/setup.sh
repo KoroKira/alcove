@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup.sh — First-time setup for pad.ws on macOS (M1/M2/M3)
+# setup.sh — First-time setup for Alcove on macOS (M1/M2/M3)
 # Run once. Re-running is safe (idempotent).
 set -euo pipefail
 

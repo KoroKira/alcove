@@ -334,7 +334,7 @@ const ActionButton: React.FC<ActionButtonProps> = ({
         scrollToView: true
       });
       
-      console.debug(`[pad.ws] Embedded ${selectedTarget}`);
+      console.debug(`[alcove] Embedded ${selectedTarget}`);
       
     } else if (selectedAction === 'open-tab') {
       if (selectedTarget === 'terminal') {
@@ -345,7 +345,7 @@ const ActionButton: React.FC<ActionButtonProps> = ({
         }
         
         const terminalUrl = `${workspaceState.base_url}/@${workspaceState.username}/${workspaceState.name}.${workspaceState.agent}/terminal`;
-        console.debug(`[pad.ws] Opening terminal in new tab: ${terminalUrl}`);
+        console.debug(`[alcove] Opening terminal in new tab: ${terminalUrl}`);
         window.open(terminalUrl, '_blank');
       } else {
         // For code, open the code URL in a new tab
@@ -355,7 +355,7 @@ const ActionButton: React.FC<ActionButtonProps> = ({
           return;
         }
         
-        console.debug(`[pad.ws] Opening ${selectedTarget} in new tab: ${codeUrl}`);
+        console.debug(`[alcove] Opening ${selectedTarget} in new tab: ${codeUrl}`);
         window.open(codeUrl, '_blank');
       }
     } else if (selectedAction === 'magnet') {
@@ -375,7 +375,7 @@ const ActionButton: React.FC<ActionButtonProps> = ({
       } else if (selectedTarget === 'code') {
         const prefix = selectedCodeVariant === 'cursor' ? 'cursor' : 'vscode';
         const magnetLink = `${prefix}://coder.coder-remote/open?owner=${owner}&workspace=${workspace}&url=${url}&token=&openRecent=true&agent=${agent}`;
-        console.debug(`[pad.ws] Opening ${selectedCodeVariant} desktop app with magnet link: ${magnetLink}`);
+        console.debug(`[alcove] Opening ${selectedCodeVariant} desktop app with magnet link: ${magnetLink}`);
         window.open(magnetLink, '_blank');
       }
     }

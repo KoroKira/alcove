@@ -173,7 +173,7 @@ export const MainMenuConfig: React.FC<MainMenuConfigProps> = ({
             const iframe = document.createElement("iframe");
             iframe.style.display = "none";
             iframe.src = url;
-            console.debug(`[pad.ws] (Silently) Priming ${debugName} logout for ${url}`);
+            console.debug(`[alcove] (Silently) Priming ${debugName} logout for ${url}`);
 
             let timeoutId: number | undefined;
 
@@ -199,14 +199,14 @@ export const MainMenuConfig: React.FC<MainMenuConfigProps> = ({
 
         Promise.all(promises)
           .then(() => {
-            console.debug("[pad.ws] Keycloak iframe logout process completed successfully.");
+            console.debug("[alcove] Keycloak iframe logout process completed successfully.");
           })
           .catch(err => {
-            console.error("[pad.ws] Error during iframe logout process:", err);
+            console.error("[alcove] Error during iframe logout process:", err);
           });
       },
       onError: (error) => {
-        console.error("[pad.ws] Logout failed in MainMenu component:", error.message);
+        console.error("[alcove] Logout failed in MainMenu component:", error.message);
       }
     });
 

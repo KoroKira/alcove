@@ -106,7 +106,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
           if (this.lastSentAppState) {
             const changes = this.detectAppStateChanges(this.lastSentAppState, appState);
             if (Object.keys(changes).length > 0) {
-              console.debug('[pad.ws] AppState changes detected:', changes);
+              console.debug('[alcove] AppState changes detected:', changes);
               this.portal.broadcastAppStateUpdate(appState);
               this.lastSentAppState = { ...appState };
             }
@@ -273,7 +273,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     }
     this.periodicFullSyncIntervalId = setInterval(() => {
       if (this.props.excalidrawAPI && this.portal.isOpen() && this.props.isOnline) {
-        console.debug('[pad.ws] Performing periodic full scene sync.');
+        console.debug('[alcove] Performing periodic full scene sync.');
         const allCurrentElements = this.props.excalidrawAPI.getSceneElementsIncludingDeleted();
         this.portal.broadcastSceneUpdate('SCENE_UPDATE', allCurrentElements, true);
         this.lastBroadcastedSceneVersion = getSceneVersion(allCurrentElements);
@@ -285,7 +285,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     if (this.periodicFullSyncIntervalId !== null) {
       clearInterval(this.periodicFullSyncIntervalId);
       this.periodicFullSyncIntervalId = null;
-      console.debug('[pad.ws] Stopped periodic full scene sync.');
+      console.debug('[alcove] Stopped periodic full scene sync.');
     }
   };
 
@@ -458,7 +458,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     switch (type) {
       case 'user_joined': {
         const username = messageData?.username || senderIdString;
-        console.debug(`[pad.ws] User joined: ${username}`);
+        console.debug(`[alcove] User joined: ${username}`);
         this.setState(prevState => {
           if (prevState.collaborators.has(senderId) || (this.props.user?.id && senderIdString === this.props.user.id)) return null;
           const newCollaborator: Collaborator = {
@@ -475,7 +475,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
         break;
       }
       case 'user_left': {
-        console.debug(`[pad.ws] User left: ${user_id}`);
+        console.debug(`[alcove] User left: ${user_id}`);
         this.setState(prevState => {
           if (!prevState.collaborators.has(user_id as SocketId) || (this.props.user?.id && user_id === this.props.user.id)) return null;
           const newCollaborators = new Map(prevState.collaborators);
@@ -511,7 +511,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
           if (subtype === 'SCENE_INIT') {
             // Full replacement — server is sending the authoritative saved state for this pad.
             // Do NOT reconcile with stale local elements from a previous pad.
-            console.debug(`[pad.ws] SCENE_INIT received. Replacing canvas with ${remoteElements.length} elements.`);
+            console.debug(`[alcove] SCENE_INIT received. Replacing canvas with ${remoteElements.length} elements.`);
             this.props.excalidrawAPI.updateScene({ elements: restoredRemoteElements as ExcalidrawElementType[], commitToHistory: false });
             const v = getSceneVersion(restoredRemoteElements);
             this.lastBroadcastedSceneVersion = v;
@@ -519,7 +519,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
             this.isInitialLoad = false;
           } else {
             // Incremental update — reconcile with current local state
-            console.debug(`[pad.ws] scene_update received. Elements count: ${remoteElements.length}`);
+            console.debug(`[alcove] scene_update received. Elements count: ${remoteElements.length}`);
             const localElements = this.props.excalidrawAPI.getSceneElementsIncludingDeleted();
             const currentAppState = this.props.excalidrawAPI.getAppState();
             const reconciled = reconcileElements(localElements, restoredRemoteElements as any[], currentAppState);
@@ -538,12 +538,12 @@ class Collab extends PureComponent<CollabProps, CollabState> {
         const collaboratorsList = messageData?.collaboratorsList as any | undefined;
 
         if (collaboratorsList && Array.isArray(collaboratorsList)) {
-          console.debug(`[pad.ws] Received 'connected' message with ${collaboratorsList.length} collaborators.`);
+          console.debug(`[alcove] Received 'connected' message with ${collaboratorsList.length} collaborators.`);
           this.setState(prevState => {
             const newCollaborators = new Map<SocketId, Collaborator>();
             collaboratorsList.forEach(collabData => {
 
-              console.debug(`[pad.ws] Collaborator data: ${JSON.stringify(collabData)}`);
+              console.debug(`[alcove] Collaborator data: ${JSON.stringify(collabData)}`);
               if (collabData.user_id && collabData.user_id !== this.props.user?.id) {
 
                 const newCollaborator: Collaborator = {
@@ -563,7 +563,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
             return { collaborators: newCollaborators };
           });
         } else {
-          console.warn("[pad.ws] 'connected' message received without valid collaboratorsList.", messageData);
+          console.warn("[alcove] 'connected' message received without valid collaboratorsList.", messageData);
         }
         break;
       }
