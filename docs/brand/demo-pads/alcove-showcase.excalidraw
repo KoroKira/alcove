@@ -260,6 +260,106 @@
       "points": [[0, 0], [0, 90]], "lastCommittedPoint": null,
       "startBinding": null, "endBinding": null,
       "startArrowhead": null, "endArrowhead": null
+    },
+
+    {
+      "id": "figD-head", "type": "ellipse",
+      "x": 536, "y": 420, "width": 28, "height": 28, "angle": 0,
+      "strokeColor": "#EEEDFE", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid",
+      "roughness": 2, "opacity": 100, "groupIds": ["figD"], "frameId": null,
+      "roundness": {"type": 2}, "seed": 330401, "version": 1,
+      "versionNonce": 430401, "isDeleted": false, "boundElements": null,
+      "updated": 1735689600000, "link": null, "locked": false
+    },
+    {
+      "id": "figD-torso", "type": "line",
+      "x": 550, "y": 448, "width": 0, "height": 52, "angle": 0,
+      "strokeColor": "#EEEDFE", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid",
+      "roughness": 2, "opacity": 100, "groupIds": ["figD"], "frameId": null,
+      "roundness": {"type": 2}, "seed": 330402, "version": 1,
+      "versionNonce": 430402, "isDeleted": false, "boundElements": null,
+      "updated": 1735689600000, "link": null, "locked": false,
+      "points": [[0, 0], [0, 52]], "lastCommittedPoint": null,
+      "startBinding": null, "endBinding": null,
+      "startArrowhead": null, "endArrowhead": null
+    },
+    {
+      "id": "figD-arms", "type": "line",
+      "x": 508, "y": 398, "width": 85, "height": 80, "angle": 0,
+      "strokeColor": "#EEEDFE", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid",
+      "roughness": 2, "opacity": 100, "groupIds": ["figD"], "frameId": null,
+      "roundness": {"type": 2}, "seed": 330403, "version": 1,
+      "versionNonce": 430403, "isDeleted": false, "boundElements": null,
+      "updated": 1735689600000, "link": null, "locked": false,
+      "points": [[0, 80], [42, 50], [85, 0]], "lastCommittedPoint": null,
+      "startBinding": null, "endBinding": null,
+      "startArrowhead": null, "endArrowhead": null
+    },
+    {
+      "id": "figD-legs", "type": "line",
+      "x": 518, "y": 500, "width": 65, "height": 45, "angle": 0,
+      "strokeColor": "#EEEDFE", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid",
+      "roughness": 2, "opacity": 100, "groupIds": ["figD"], "frameId": null,
+      "roundness": {"type": 2}, "seed": 330404, "version": 1,
+      "versionNonce": 430404, "isDeleted": false, "boundElements": null,
+      "updated": 1735689600000, "link": null, "locked": false,
+      "points": [[0, 40], [32, 0], [65, 45]], "lastCommittedPoint": null,
+      "startBinding": null, "endBinding": null,
+      "startArrowhead": null, "endArrowhead": null
+    },
+
+    {
+      "id": "figE-head", "type": "ellipse",
+      "x": 936, "y": 420, "width": 28, "height": 28, "angle": 0,
+      "strokeColor": "#EEEDFE", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid",
+      "roughness": 2, "opacity": 100, "groupIds": ["figE"], "frameId": null,
+      "roundness": {"type": 2}, "seed": 330405, "version": 1,
+      "versionNonce": 430405, "isDeleted": false, "boundElements": null,
+      "updated": 1735689600000, "link": null, "locked": false
+    },
+    {
+      "id": "figE-torso", "type": "line",
+      "x": 950, "y": 448, "width": 0, "height": 52, "angle": 0,
+      "strokeColor": "#EEEDFE", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid",
+      "roughness": 2, "opacity": 100, "groupIds": ["figE"], "frameId": null,
+      "roundness": {"type": 2}, "seed": 330406, "version": 1,
+      "versionNonce": 430406, "isDeleted": false, "boundElements": null,
+      "updated": 1735689600000, "link": null, "locked": false,
+      "points": [[0, 0], [0, 52]], "lastCommittedPoint": null,
+      "startBinding": null, "endBinding": null,
+      "startArrowhead": null, "endArrowhead": null
+    },
+    {
+      "id": "figE-arms", "type": "line",
+      "x": 920, "y": 460, "width": 60, "height": 40, "angle": 0,
+      "strokeColor": "#EEEDFE", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid",
+      "roughness": 2, "opacity": 100, "groupIds": ["figE"], "frameId": null,
+      "roundness": {"type": 2}, "seed": 330407, "version": 1,
+      "versionNonce": 430407, "isDeleted": false, "boundElements": null,
+      "updated": 1735689600000, "link": null, "locked": false,
+      "points": [[0, 40], [30, 0], [60, 40]], "lastCommittedPoint": null,
+      "startBinding": null, "endBinding": null,
+      "startArrowhead": null, "endArrowhead": null
+    },
+    {
+      "id": "figE-legs", "type": "line",
+      "x": 930, "y": 500, "width": 40, "height": 40, "angle": 0,
+      "strokeColor": "#EEEDFE", "backgroundColor": "transparent",
+      "fillStyle": "solid", "strokeWidth": 2, "strokeStyle": "solid",
+      "roughness": 2, "opacity": 100, "groupIds": ["figE"], "frameId": null,
+      "roundness": {"type": 2}, "seed": 330408, "version": 1,
+      "versionNonce": 430408, "isDeleted": false, "boundElements": null,
+      "updated": 1735689600000, "link": null, "locked": false,
+      "points": [[0, 40], [20, 0], [40, 40]], "lastCommittedPoint": null,
+      "startBinding": null, "endBinding": null,
+      "startArrowhead": null, "endArrowhead": null
     }
   ],
   "appState": {
