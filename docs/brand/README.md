@@ -25,7 +25,7 @@ Ces couleurs sont volontairement distinctes des ~11 thèmes d'interface (`--ap-*
 
 - `alcove-mark.svg` — source vectorielle, à décliner
 - `alcove-mark-preview.png` — rendu 1024×1024 pour prévisualisation rapide
-- `alcove-hero-illustration.jpg` — illustration hero utilisée en tête du README (générée avec Gemini à partir du logo + d'une scène de démo Excalidraw, éditée pour retirer le watermark). Pas de source éditable : pour une nouvelle version, repartir du prompt et régénérer plutôt que retoucher le JPG.
+- `alcove-illustration.jpg` — illustration utilisée en tête du README.
 - `alcove-banner.svg` / `.png` — bannière plus simple (logo + texte), gardée en solution de repli si besoin d'un visuel éditable
 - Déployés dans l'app : `src/frontend/public/favicon.svg`, `public/assets/images/favicon.png`, `public/icon-192.png`, `public/icon-512.png`
 

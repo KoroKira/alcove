@@ -1,4 +1,4 @@
-![Alcove](docs/brand/alcove-hero-illustration.jpg)
+![Alcove](docs/brand/alcove-illustration.jpg)
 
 [![CI](https://github.com/KoroKira/alcove/actions/workflows/ci.yml/badge.svg)](https://github.com/KoroKira/alcove/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -6,8 +6,6 @@
 
 > Fork personnel de [pad.ws](https://github.com/pad-ws/pad.ws) — un espace de travail visuel combinant tableau blanc (Excalidraw), éditeur de documents et outils de gestion de connaissances personnelle, avec IA locale via Ollama. **Vos notes et votre IA ne quittent jamais votre machine.**
 > Je n'ai **rien créé** fondamentalement parlant. Tout ceci n'est que des briques assemblées faites par de plus grands génies que moi, que j'ai adaptées à mes besoins.
-
-[![screenshot](docs/canvas_ide.png)](https://github.com/KoroKira/alcove)
 
 ---
 
