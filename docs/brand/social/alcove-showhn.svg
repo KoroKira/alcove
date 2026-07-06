@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 727">
+  <defs>
+    <clipPath id="shot"><rect x="0" y="52" width="1200" height="675"/></clipPath>
+  </defs>
+  <rect x="0" y="0" width="1200" height="727" fill="#1e1e2e"/>
+
+  <rect x="0" y="0" width="1200" height="52" fill="#26263d"/>
+  <circle cx="24" cy="26" r="6" fill="#E24B4A"/>
+  <circle cx="46" cy="26" r="6" fill="#EF9F27"/>
+  <circle cx="68" cy="26" r="6" fill="#639922"/>
+  <rect x="460" y="16" width="280" height="20" rx="10" fill="#1e1e2e"/>
+  <text x="600" y="30" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#AFA9EC">alcove.app</text>
+
+  <rect x="0" y="52" width="1200" height="675" fill="#26263d" stroke="#7F77DD" stroke-width="2" stroke-dasharray="6,6"/>
+  <text x="600" y="385" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#7F77DD">Capture d'écran ici</text>
+  <text x="600" y="410" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#5a5a7a">screenshot.png</text>
+
+  <image href="screenshot.png" x="0" y="52" width="1200" height="675" clip-path="url(#shot)" preserveAspectRatio="xMidYMid slice"/>
+
+  <rect x="1030" y="659" width="140" height="48" rx="8" fill="#1e1e2e" opacity="0.85"/>
+  <path d="M1052,695 L1052,679 A9,9 0 0 1 1070,679 L1070,695 Z" fill="#7F77DD"/>
+  <text x="1084" y="689" font-family="sans-serif" font-weight="700" font-size="16" fill="#F5F3FF">Alcove</text>
+</svg>

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640">
+  <defs>
+    <clipPath id="shot"><rect x="700" y="168" width="540" height="304" rx="10"/></clipPath>
+  </defs>
+  <rect x="0" y="0" width="1280" height="640" fill="#1e1e2e"/>
+
+  <path d="M106,323 L106,217 A88,88 0 0 1 282,217 L282,323 Z" fill="#7F77DD"/>
+  <path d="M150,323 L150,256 A44,44 0 0 1 238,256 L238,323 Z" fill="#EEEDFE"/>
+  <rect x="150" y="290" width="88" height="14" fill="#7F77DD"/>
+
+  <text x="60" y="390" font-family="sans-serif" font-weight="700" font-size="64" fill="#F5F3FF">Alcove</text>
+  <text x="60" y="425" font-family="sans-serif" font-size="22" fill="#AFA9EC">Canvas, notes, IA locale — 100% chez toi</text>
+
+  <rect x="700" y="168" width="540" height="304" rx="10" fill="#26263d" stroke="#7F77DD" stroke-width="2" stroke-dasharray="6,6"/>
+  <text x="970" y="310" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#7F77DD">Capture d'écran ici</text>
+  <text x="970" y="332" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#5a5a7a">screenshot.png</text>
+
+  <image href="screenshot.png" x="700" y="168" width="540" height="304" clip-path="url(#shot)" preserveAspectRatio="xMidYMid slice"/>
+  <rect x="700" y="168" width="540" height="304" rx="10" fill="none" stroke="#7F77DD" stroke-width="3"/>
+</svg>
