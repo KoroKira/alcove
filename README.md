@@ -1,4 +1,4 @@
-![Alcove](docs/brand/alcove-banner.png)
+![Alcove](docs/brand/alcove-hero-illustration.jpg)
 
 [![CI](https://github.com/KoroKira/alcove/actions/workflows/ci.yml/badge.svg)](https://github.com/KoroKira/alcove/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
