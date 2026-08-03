@@ -44,7 +44,12 @@ class RedisClient:
                     max_connections=20,  # Limit connection pool size
                     retry_on_timeout=True,
                     socket_keepalive=True,
-                    socket_keepalive_options={}
+                    socket_keepalive_options={},
+                    # redis-py defaults socket_timeout to 5s, which races with the
+                    # XREAD block=5000 calls in canvas_worker/ws_router: any added
+                    # network latency (e.g. through a port-forwarding proxy) makes
+                    # the read raise TimeoutError instead of returning empty.
+                    socket_timeout=None,
                 )
                 print(f"Redis client initialized with connection pool (max 20 connections)")
                 

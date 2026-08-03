@@ -1,0 +1,32 @@
+# docker-compose.local.yml — Postgres + Redis only, for scripts/run.ps1 (Windows local mode).
+# Backend/frontend run natively (see run.ps1); this just replaces the two
+# services that Homebrew provides natively on macOS (see run.sh).
+# Distinct container/volume names so this never collides with docker-compose.yml
+# (the full Keycloak/Coder sharing stack) if both are used on the same machine.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: alcove-local-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - alcove_local_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  redis:
+    image: redis:alpine
+    container_name: alcove-local-redis
+    volumes:
+      - alcove_local_redis_data:/data
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+
+volumes:
+  alcove_local_postgres_data:
+  alcove_local_redis_data:

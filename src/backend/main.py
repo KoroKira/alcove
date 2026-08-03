@@ -50,7 +50,8 @@ if POSTHOG_API_KEY:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if PAD_DEV_MODE:
-        logger.info("Running in dev mode (PAD_DEV_MODE=true) — auth bypassed, Vite proxy active")
+        mode = "serving static build" if HAS_STATIC_BUILD else "Vite proxy active"
+        logger.info("Running in dev mode (PAD_DEV_MODE=true) — auth bypassed, %s", mode)
 
     if SYNC_DIR:
         os.makedirs(SYNC_DIR, exist_ok=True)
@@ -84,7 +85,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-if not PAD_DEV_MODE:
+# A built frontend (dist/index.html) can be present even in dev mode — e.g. the
+# "friends" Docker image bundles PAD_DEV_MODE=true (auto-login, no Keycloak) with
+# the static production build instead of proxying to a Vite dev server. Whichever
+# is true, prefer serving the static build over proxying.
+HAS_STATIC_BUILD = bool(STATIC_DIR) and os.path.isfile(os.path.join(STATIC_DIR, "index.html"))
+
+if not PAD_DEV_MODE or HAS_STATIC_BUILD:
     app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -106,7 +113,7 @@ async def serve_index_html(
             resp.set_cookie("pending_pad_id", str(pad_id), httponly=True, samesite="lax", secure=_secure)
         return resp
 
-    if PAD_DEV_MODE:
+    if PAD_DEV_MODE and not HAS_STATIC_BUILD:
         path = request.url.path if request else "/"
         url = f"{DEV_FRONTEND_URL}{path}"
         try:
@@ -165,7 +172,7 @@ app.include_router(research_router)
 app.include_router(latex_router)
 
 
-if PAD_DEV_MODE:
+if PAD_DEV_MODE and not HAS_STATIC_BUILD:
     @app.api_route("/{path:path}", methods=["GET", "HEAD"])
     async def vite_proxy(request: Request, path: str):
         """Forward all unmatched GET requests to the Vite dev server (port 3003)."""

@@ -184,6 +184,47 @@ bash scripts/run.sh
 
 ---
 
+## Windows
+
+Homebrew n'existe pas sous Windows, donc le mode local utilise Docker (déjà
+nécessaire de toute façon pour beaucoup d'usages) à la place, uniquement pour
+PostgreSQL et Redis — le backend et le frontend tournent nativement, comme
+sur Mac.
+
+### Prérequis
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (pour Postgres + Redis uniquement)
+- Python 3.11/3.12/3.13, Node.js, Yarn
+- [Ollama pour Windows](https://ollama.com/download/windows) (IA locale, optionnel) — ou `winget install Ollama.Ollama`
+
+### Lancer
+
+```powershell
+git clone https://github.com/KoroKira/alcove.git
+cd alcove
+powershell -ExecutionPolicy Bypass -File scripts\run.ps1
+```
+
+Le script `scripts/run.ps1` :
+- démarre PostgreSQL + Redis via `scripts/docker-compose.local.yml` (conteneurs Docker légers, pas le stack Keycloak/Coder du mode partage) ;
+- crée le virtualenv Python et installe les dépendances backend ;
+- installe les dépendances frontend (`yarn install`) et lance Vite ;
+- démarre Ollama automatiquement s'il est installé ;
+- lance le backend FastAPI sur [http://localhost:8000](http://localhost:8000).
+
+### Limitation connue
+
+Le **terminal embarqué** (pad "Terminal", basé sur `ttyd`) n'est pas disponible
+sous Windows — pas de build fiable. Le reste de l'app fonctionne normalement.
+
+### Arrêter / relancer
+
+`Ctrl+C` arrête le backend, Vite et Ollama. Les conteneurs Docker restent actifs ;
+pour les arrêter : `docker compose -f scripts/docker-compose.local.yml stop`.
+Pour relancer plus tard : rejouer `scripts\run.ps1`.
+
+---
+
 ## Pour aller plus loin
 
 - **Sync locale** : tes pads canvas sont automatiquement sauvegardés en `.excalidraw` dans `~/Documents/pads/`

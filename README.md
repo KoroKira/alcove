@@ -72,25 +72,46 @@
 
 ## Démarrage rapide
 
-### Mode local macOS (recommandé pour un usage solo)
+### 🚀 Le plus simple : lancer chez un(e) ami(e) (Windows ou macOS)
 
-> Nécessite macOS + [Homebrew](https://brew.sh). Pas de Docker, pas de Keycloak.
+> Le seul prérequis est [Docker Desktop](https://www.docker.com/products/docker-desktop/). Pas de Python, pas de Node, pas de ligne de commande à connaître.
+
+1. Télécharge le projet : bouton vert **Code → Download ZIP** sur cette page GitHub, puis décompresse le dossier (ou `git clone` si tu préfères).
+2. Installe [Docker Desktop](https://www.docker.com/products/docker-desktop/) si ce n'est pas déjà fait, et lance-le au moins une fois.
+3. Double-clique sur :
+   - **Windows** : `scripts\start-for-friends.bat`
+   - **macOS** : `scripts/start-for-friends.command` (clic droit → Ouvrir la première fois, à cause de Gatekeeper)
+
+Le script construit l'image, démarre tout (app, base de données, IA) et ouvre `http://localhost:8000` automatiquement dans ton navigateur. Le tout premier lancement prend quelques minutes (build de l'image + téléchargement du modèle IA, ~2 Go) ; les suivants sont quasi instantanés.
+
+Connexion automatique en tant que `local@localhost` — pas de compte à créer.
+
+Pour arrêter : `docker compose -f docker-compose.friends.yml stop`.
+
+### Mode local macOS/Windows (pour usage solo, sans Docker pour l'app)
+
+> macOS : nécessite [Homebrew](https://brew.sh). Windows : nécessite [Docker Desktop](https://www.docker.com/products/docker-desktop/) (pour Postgres/Redis uniquement, l'app reste native) — voir [SETUP.md](SETUP.md).
 
 ```bash
 git clone https://github.com/KoroKira/alcove.git
 cd alcove
+
+# macOS
 bash scripts/run.sh
+
+# Windows (PowerShell)
+powershell -ExecutionPolicy Bypass -File scripts\run.ps1
 ```
 
-Le script installe automatiquement les dépendances manquantes (PostgreSQL, Redis, ttyd), configure l'environnement et lance tous les services.
+Le script installe automatiquement les dépendances manquantes, configure l'environnement et lance tous les services.
 
 **→ Ouvrir [http://localhost:8000](http://localhost:8000)**
 
 Connexion automatique en tant que `local@localhost` (pas de mot de passe).
 
-### Mode Docker (pour partager ou héberger)
+### Mode Docker complet (multi-utilisateurs, hébergement)
 
-> Nécessite [Docker Desktop](https://docs.docker.com/get-docker/) + `jq` (`brew install jq`).
+> Nécessite [Docker Desktop](https://docs.docker.com/get-docker/) + `jq` (`brew install jq`). Inclut Keycloak (auth) et Coder (workspaces) — utile pour héberger l'app pour plusieurs personnes avec de vrais comptes, sinon préfère le mode "amis" ci-dessus.
 
 ```bash
 git clone https://github.com/KoroKira/alcove.git
@@ -173,13 +194,18 @@ alcove/
 │           ├── hooks/        # State management (usePadTabs, useOllama…)
 │           └── lib/          # Collaboration temps réel (WebSocket)
 ├── scripts/
-│   ├── run.sh                # Démarrage local macOS (sans Docker)
-│   ├── setup.sh              # Setup initial Docker
-│   └── start.sh              # Démarrage quotidien Docker
-├── docker-compose.yml
-├── .env.template             # Template config Docker
-├── .env.local.template       # Template config local macOS
-└── SETUP.md                  # Guide d'installation détaillé
+│   ├── start-for-friends.bat     # Double-clic Windows — mode "amis" (Docker seul)
+│   ├── start-for-friends.command # Double-clic macOS  — mode "amis" (Docker seul)
+│   ├── run.sh                    # Démarrage local macOS (sans Docker pour l'app)
+│   ├── run.ps1                   # Démarrage local Windows (sans Docker pour l'app)
+│   ├── docker-compose.local.yml  # Postgres+Redis pour run.ps1
+│   ├── setup.sh                  # Setup initial Docker complet
+│   └── start.sh                  # Démarrage quotidien Docker complet
+├── docker-compose.yml         # Mode Docker complet (Keycloak + Coder)
+├── docker-compose.friends.yml # Mode "amis" (app + Postgres + Redis + Ollama)
+├── .env.template              # Template config Docker complet
+├── .env.local.template        # Template config local macOS/Windows
+└── SETUP.md                   # Guide d'installation détaillé
 ```
 
 ---

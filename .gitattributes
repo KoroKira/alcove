@@ -1,0 +1,7 @@
+# Force LF line endings for scripts regardless of the platform/git config that
+# checks them out — a CRLF shebang (e.g. from a Windows checkout with
+# core.autocrlf=true) makes Linux fail with "exec: no such file or directory"
+# when these files are COPY'd into a Docker image and executed.
+*.sh text eol=lf
+*.command text eol=lf
+Dockerfile text eol=lf
