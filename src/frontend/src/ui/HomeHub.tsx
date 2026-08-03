@@ -4,6 +4,7 @@ import {
   Zap, Upload, Clock, X,
 } from 'lucide-react';
 import type { Tab } from '../hooks/usePadTabs';
+import { cardTint } from '../lib/cardTint';
 import './HomeHub.scss';
 
 interface Props {
@@ -141,7 +142,7 @@ export default function HomeHub({
                   key={tab.id}
                   className="home-hub__recent-card"
                   onClick={() => { onSelectPad(tab.id); onClose(); }}
-                  style={{ '--card-accent': PAD_COLORS[tab.padType ?? 'canvas'] } as React.CSSProperties}
+                  style={{ '--card-tint': cardTint(tab.id), '--card-accent': PAD_COLORS[tab.padType ?? 'canvas'] } as React.CSSProperties}
                 >
                   <span className="home-hub__recent-icon">
                     {PAD_ICONS[tab.padType ?? 'canvas']}

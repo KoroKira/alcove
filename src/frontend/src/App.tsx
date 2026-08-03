@@ -26,6 +26,8 @@ const KanbanPad = lazy(() => import('./pad/KanbanPad'));
 import type { KanbanData } from './pad/KanbanPad';
 const GanttPad = lazy(() => import('./pad/GanttPad'));
 import type { GanttData } from './pad/GanttPad';
+const DatabasePad = lazy(() => import('./pad/DatabasePad'));
+import type { DatabaseData } from './pad/DatabasePad';
 import PresentationMode from './ui/PresentationMode';
 import CommandPalette from './ui/CommandPalette';
 import GraphView from './ui/GraphView';
@@ -37,6 +39,8 @@ const SplitDocPanel = lazy(() => import('./ui/SplitDocPanel'));
 import AIPanel from './ui/AIPanel';
 import QuickCapture from './ui/QuickCapture';
 import ObsidianImport from './ui/ObsidianImport';
+import AddFromLink from './ui/AddFromLink';
+import SmartResearch from './ui/SmartResearch';
 import HomeHub from './ui/HomeHub';
 import FlashcardStudio from './ui/FlashcardStudio';
 import Onboarding, { shouldShowOnboarding } from './ui/Onboarding';
@@ -48,6 +52,7 @@ import { applyTheme, loadSavedTheme, getTheme, type Theme } from './themes';
 // Apply theme before first render (no FOUC)
 applyTheme(loadSavedTheme());
 import type { DocumentTemplate } from './constants/documentTemplates';
+import { WELCOME_DOC_CONTENT, WELCOME_DOC_TITLE } from './constants/welcomeDoc';
 
 // Utils
 import { useTranslation } from 'react-i18next';
@@ -109,6 +114,7 @@ export default function App() {
     createNewPadAsync,
     createNewDocumentAsync,
     createNewKanban,
+    createNewDatabase,
     createNewGantt,
     createNewLatex,
     isCreating: isCreatingPad,
@@ -142,8 +148,11 @@ export default function App() {
   const [presentationMode, setPresentationMode] = useState(false);
   const [kanbanData, setKanbanData] = useState<KanbanData | null>(null);
   const [ganttData, setGanttData] = useState<GanttData | null>(null);
+  const [databaseData, setDatabaseData] = useState<DatabaseData | null>(null);
   const [quickCaptureOpen, setQuickCaptureOpen] = useState(false);
   const [obsidianImportOpen, setObsidianImportOpen] = useState(false);
+  const [addLinkOpen, setAddLinkOpen] = useState(false);
+  const [smartResearchOpen, setSmartResearchOpen] = useState(false);
   const [homeOpen, setHomeOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(shouldShowOnboarding);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
@@ -177,7 +186,8 @@ export default function App() {
   const isKanbanMode = selectedTab?.padType === 'kanban';
   const isGanttMode = selectedTab?.padType === 'gantt';
   const isLatexMode = selectedTab?.padType === 'latex';
-  const isStructuredMode = isDocumentMode || isKanbanMode || isGanttMode || isLatexMode;
+  const isDatabaseMode = selectedTab?.padType === 'database';
+  const isStructuredMode = isDocumentMode || isKanbanMode || isGanttMode || isLatexMode || isDatabaseMode;
   const firstDocTab = tabs.find(t => t.padType === 'document');
   const splitPanelDocId = splitDocId || firstDocTab?.id || null;
 
@@ -258,8 +268,14 @@ export default function App() {
         .then(r => r.json())
         .then(d => setGanttData(d as GanttData))
         .catch(console.error);
+    } else if (isDatabaseMode) {
+      setDatabaseData(null);
+      fetch(`/api/pad/${selectedTabId}`)
+        .then(r => r.json())
+        .then(d => setDatabaseData(d as DatabaseData))
+        .catch(console.error);
     }
-  }, [selectedTabId, isKanbanMode, isGanttMode]);
+  }, [selectedTabId, isKanbanMode, isGanttMode, isDatabaseMode]);
 
   // Auto-collapse sidebar in canvas mode so Excalidraw panels have full viewport
   useEffect(() => {
@@ -313,6 +329,42 @@ export default function App() {
       }).catch(console.error);
     });
   };
+
+  // Seed the "Guide Alcove" pad — a living cheat-sheet created once on first
+  // launch (from the Onboarding). It stays in the pad list, editable, so the
+  // app's hidden syntax (wikilinks, callouts, flashcards…) is discoverable.
+  const seedWelcomeGuide = useCallback(async ({ open }: { open: boolean }) => {
+    if (localStorage.getItem('alcove_welcome_seeded')) {
+      if (open) {
+        const existing = tabs.find(t => t.title === WELCOME_DOC_TITLE);
+        if (existing) selectTab(existing.id);
+      }
+      return;
+    }
+    localStorage.setItem('alcove_welcome_seeded', '1');
+    if (open) setPendingDocContent(WELCOME_DOC_CONTENT);
+    try {
+      const tab = await createNewDocumentAsync();
+      if (!tab) return;
+      // Sequence, don't race: /doc's save() rewrites the whole row (incl.
+      // display_name), so the rename MUST land after the content save — fire
+      // them concurrently and the doc save clobbers the title back to default.
+      await fetch(`/api/pad/${tab.id}/doc`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: WELCOME_DOC_CONTENT, format: 'markdown' }),
+      });
+      await fetch(`/api/pad/${tab.id}/rename`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ display_name: WELCOME_DOC_TITLE }),
+      });
+      refetchTabs();
+      if (open) selectTab(tab.id);
+    } catch (e) {
+      console.error('[alcove] Welcome guide seeding failed:', e);
+    }
+  }, [tabs, createNewDocumentAsync, refetchTabs, selectTab]);
 
   const handleToggleGrid = () => {
     if (!excalidrawAPI || isDocumentMode) return;
@@ -390,6 +442,7 @@ export default function App() {
         onNewCanvas={createNewPadAsync}
         onNewKanban={() => createNewKanban()}
         onNewGantt={() => createNewGantt()}
+        onNewDatabase={() => createNewDatabase()}
         onDailyNote={createDailyNote}
         onGraph={() => setGraphOpen(v => !v)}
         onTemplates={() => setDashboardOpen(true)}
@@ -416,6 +469,8 @@ export default function App() {
         user={user}
         onQuickCapture={() => setQuickCaptureOpen(true)}
         onImportObsidian={() => setObsidianImportOpen(true)}
+        onAddFromLink={() => setAddLinkOpen(true)}
+        onSmartResearch={() => setSmartResearchOpen(true)}
         onFlashcardStudio={() => setFlashcardStudioOpen(true)}
         onNewLatex={() => createNewLatex()}
       />
@@ -542,6 +597,16 @@ export default function App() {
         </div>
       )}
 
+      {/* ── Database pad (Table + Board views) ── */}
+      {isDatabaseMode && selectedTabId && (
+        <div className="app-doc-wrap" style={{ left: sidebarWidth }}>
+          {databaseData
+            ? <Suspense fallback={<PadLoading />}><DatabasePad padId={selectedTabId} data={databaseData} onDataChange={setDatabaseData} /></Suspense>
+            : <PadLoading />
+          }
+        </div>
+      )}
+
       {/* ── LaTeX pad (rendered as DocumentPad with latex format) ── */}
       {isLatexMode && selectedTabId && (
         <div className="app-doc-wrap" style={{ left: sidebarWidth }}>
@@ -655,6 +720,7 @@ export default function App() {
           onNewDocument={() => createNewDocumentAsync()}
           onNewKanban={() => createNewKanban()}
           onNewGantt={() => createNewGantt()}
+          onNewDatabase={() => createNewDatabase()}
           onDailyNote={() => createDailyNote()}
           onGraph={() => setGraphOpen(true)}
           onDashboard={() => setDashboardOpen(true)}
@@ -662,7 +728,10 @@ export default function App() {
           onToggleGrid={handleToggleGrid}
           onQuickCapture={() => { setCommandPaletteOpen(false); setQuickCaptureOpen(true); }}
           onImportObsidian={() => { setCommandPaletteOpen(false); setObsidianImportOpen(true); }}
+          onAddFromLink={() => { setCommandPaletteOpen(false); setAddLinkOpen(true); }}
+          onSmartResearch={() => { setCommandPaletteOpen(false); setSmartResearchOpen(true); }}
           onFlashcardStudio={() => { setCommandPaletteOpen(false); setFlashcardStudioOpen(true); }}
+          onOpenGuide={() => { setCommandPaletteOpen(false); seedWelcomeGuide({ open: true }); }}
         />
       )}
 
@@ -693,6 +762,7 @@ export default function App() {
             else if (type === 'kanban') createNewKanban();
             else if (type === 'gantt') createNewGantt();
           }}
+          onSeedWelcome={seedWelcomeGuide}
         />
       )}
 
@@ -746,6 +816,23 @@ export default function App() {
             refetchTabs();
             if (ids.length) selectTab(ids[0]);
           }}
+        />
+      )}
+
+      {/* ── Add from link (web / PDF / YouTube ingestion) ── */}
+      {addLinkOpen && (
+        <AddFromLink
+          tabs={tabs}
+          onClose={() => setAddLinkOpen(false)}
+          onCreated={(id) => { refetchTabs(); selectTab(id); }}
+        />
+      )}
+
+      {/* ── Smart Research (web search → cited note) ── */}
+      {smartResearchOpen && (
+        <SmartResearch
+          onClose={() => setSmartResearchOpen(false)}
+          onCreated={(id) => { refetchTabs(); selectTab(id); }}
         />
       )}
 

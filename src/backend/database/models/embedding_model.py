@@ -46,3 +46,19 @@ class PadEmbedding(Base, BaseModel):
     async def get_all(cls, session: AsyncSession) -> list["PadEmbedding"]:
         result = await session.execute(select(cls))
         return list(result.scalars().all())
+
+    @classmethod
+    async def get_all_for_owner(cls, session: AsyncSession, owner_id: UUID):
+        """Return (pad_id, chunk_text, embedding, pad_name) rows for one user only.
+
+        Scoped at the DB level so a query never loads other users' vectors, and
+        joined to `pads` so the caller gets the display name without a second
+        round-trip.
+        """
+        from .pad_model import PadStore
+        stmt = (
+            select(cls.pad_id, cls.chunk_text, cls.embedding, PadStore.display_name)
+            .join(PadStore, PadStore.id == cls.pad_id)
+            .where(PadStore.owner_id == owner_id)
+        )
+        return (await session.execute(stmt)).all()

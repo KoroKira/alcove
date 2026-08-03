@@ -10,6 +10,7 @@ from uuid import UUID
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -631,6 +632,220 @@ async def suggest_title(body: TitleRequest, _: UserSession = Depends(require_aut
         return {"title": "", "error": str(e)}
 
 
+class ExtractInfoRequest(BaseModel):
+    model: Optional[str] = None
+    content: str
+    lang: Optional[str] = "fr"
+
+
+@ai_router.post("/extract-info")
+async def extract_info(body: ExtractInfoRequest, _: UserSession = Depends(require_auth)):
+    """Extract structured key info (people, theme, sources) from a text — handy
+    for a YouTube description that names speakers, topics and links."""
+    model = body.model or OLLAMA_DEFAULT_MODEL
+    # Deterministic: pull URLs straight out of the text (dedup, keep order).
+    urls = list(dict.fromkeys(re.findall(r"https?://[^\s)\]<>\"']+", body.content)))[:15]
+
+    if body.lang == "fr":
+        prompt = (
+            "À partir du texte ci-dessous (souvent une description de vidéo), extrais en français :\n"
+            "- **Intervenants** : personnes / invités / auteurs cités\n"
+            "- **Thème** : le sujet principal en une phrase\n"
+            "- **Points clés** : 3 à 5 puces\n"
+            "Réponds en Markdown avec ces sections. Sois concis. N'invente rien : si une info manque, écris « — ».\n\n"
+            f"{body.content[:6000]}"
+        )
+    else:
+        prompt = (
+            "From the text below (often a video description), extract:\n"
+            "- **People**: speakers / guests / authors mentioned\n"
+            "- **Theme**: the main topic in one sentence\n"
+            "- **Key points**: 3 to 5 bullets\n"
+            "Reply in Markdown with these sections. Be concise. Do not invent: use \"—\" if missing.\n\n"
+            f"{body.content[:6000]}"
+        )
+    info = ""
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{OLLAMA_URL}/api/chat",
+                json={"model": model, "messages": [{"role": "user", "content": prompt}], "stream": False},
+            )
+            resp.raise_for_status()
+            info = resp.json().get("message", {}).get("content", "")
+            info = re.sub(r"<think>[\s\S]*?</think>", "", info).strip()
+    except Exception as e:
+        return {"info": "", "urls": urls, "error": str(e)}
+
+    if urls:
+        info += "\n\n**Sources / liens**\n\n" + "\n".join(f"- {u}" for u in urls)
+    return {"info": info, "urls": urls}
+
+
+# ── Structured document (map-reduce) ────────────────────────────────────────
+# "One AI per portion + a mother AI": each chunk is analysed independently
+# (MAP), then a single synthesis pass (REDUCE) merges everything into a coherent
+# structured note. Handles long content (no 8k truncation) and yields a real
+# document skeleton instead of a flat bullet list.
+
+class StructureDocRequest(BaseModel):
+    model: Optional[str] = None
+    content: str
+    title: Optional[str] = ""
+    lang: Optional[str] = "fr"
+    length: Optional[str] = "long"  # "short" | "long"
+
+
+def _chunk_for_map(text: str, target_chars: int = 6000, max_chunks: int = 10) -> list[str]:
+    """Split on paragraph boundaries into ~target_chars chunks, capped."""
+    text = (text or "").strip()
+    if not text:
+        return []
+    paras = re.split(r"\n\s*\n", text)
+    chunks: list[str] = []
+    cur = ""
+    for p in paras:
+        if cur and len(cur) + len(p) > target_chars:
+            chunks.append(cur.strip())
+            cur = ""
+        cur += p + "\n\n"
+    if cur.strip():
+        chunks.append(cur.strip())
+    if len(chunks) > max_chunks:
+        group = math.ceil(len(chunks) / max_chunks)
+        chunks = ["\n\n".join(chunks[i:i + group]) for i in range(0, len(chunks), group)]
+    return chunks
+
+
+def _parse_json_obj(raw: str) -> dict:
+    """Tolerant: pull the first {...} block out of a model reply."""
+    raw = re.sub(r"<think>[\s\S]*?</think>", "", raw or "")
+    start, end = raw.find("{"), raw.rfind("}") + 1
+    if start >= 0 and end > start:
+        try:
+            return json.loads(raw[start:end])
+        except Exception:
+            return {}
+    return {}
+
+
+async def _map_chunk(client, model: str, idx: int, chunk: str, lang: str) -> tuple[int, dict]:
+    instr = "en français" if lang == "fr" else "in English"
+    prompt = (
+        f"Tu analyses UNE portion d'un document plus long. Extrais uniquement ce qui est dans cette portion, {instr}.\n"
+        "Réponds STRICTEMENT en JSON, rien d'autre :\n"
+        '{"summary": "2-3 phrases", "points": ["..."], "entities": ["..."], "quotes": ["..."]}\n'
+        "N'invente rien. `quotes` = citations verbatim courtes (0-2), sinon [].\n\n"
+        f"Portion :\n{chunk}"
+    )
+    try:
+        resp = await client.post(
+            f"{OLLAMA_URL}/api/chat",
+            json={"model": model, "messages": [{"role": "user", "content": prompt}],
+                  "stream": False, "format": "json"},
+        )
+        resp.raise_for_status()
+        data = _parse_json_obj(resp.json().get("message", {}).get("content", ""))
+        return idx, {
+            "summary": str(data.get("summary", "")).strip(),
+            "points": [str(x).strip() for x in (data.get("points") or []) if str(x).strip()][:6],
+            "entities": [str(x).strip() for x in (data.get("entities") or []) if str(x).strip()][:8],
+            "quotes": [str(x).strip() for x in (data.get("quotes") or []) if str(x).strip()][:2],
+        }
+    except Exception:
+        return idx, {"summary": "", "points": [], "entities": [], "quotes": []}
+
+
+async def _reduce_chunks(client, model: str, results: list[dict], title: str, lang: str,
+                         length: str = "long") -> str:
+    digest = json.dumps(results, ensure_ascii=False)[:12000]
+    short = length == "short"
+    if lang == "fr":
+        sections = (
+            "## TL;DR\n(2-3 phrases)\n## Points clés\n(3-5 puces)\n## À retenir\n(puces actionnables)"
+            if short else
+            "## TL;DR\n(2-3 phrases)\n## Points clés\n(puces)\n## Plan détaillé\n(sections ### thématiques avec le détail)\n"
+            "## Intervenants / entités\n(puces)\n## Citations notables\n(> citations, ou « — »)\n## À retenir\n(puces actionnables)"
+        )
+        prompt = (
+            "Tu es un éditeur. À partir des analyses de portions ci-dessous (JSON), rédige UNE note Markdown "
+            "cohérente et structurée en français. Fusionne, dédoublonne, ordonne logiquement. N'invente rien.\n"
+            f"Produis EXACTEMENT ces sections (garde les titres, omets une section si vraiment vide) :\n{sections}\n\n"
+            f"{'Sois CONCIS.' if short else 'Sois complet et détaillé.'} "
+            "Commence DIRECTEMENT par « ## TL;DR », sans aucune phrase d'introduction.\n\n"
+            f"Titre du document : {title}\n\nAnalyses :\n{digest}"
+        )
+    else:
+        sections = (
+            "## TL;DR\n## Key points\n## Takeaways"
+            if short else
+            "## TL;DR\n## Key points\n## Detailed outline\n(thematic ### sections)\n## People / entities\n"
+            "## Notable quotes\n## Takeaways"
+        )
+        prompt = (
+            "You are an editor. From the per-portion analyses below (JSON), write ONE coherent, structured "
+            "Markdown note in English. Merge, dedupe, order logically. Do not invent.\n"
+            f"Produce EXACTLY these sections (keep the headings, omit one only if truly empty):\n{sections}\n\n"
+            f"{'Be CONCISE.' if short else 'Be thorough and detailed.'} "
+            "Start DIRECTLY with \"## TL;DR\", no introductory sentence.\n\n"
+            f"Document title: {title}\n\nAnalyses:\n{digest}"
+        )
+    resp = await client.post(
+        f"{OLLAMA_URL}/api/chat",
+        json={"model": model, "messages": [{"role": "user", "content": prompt}], "stream": False},
+    )
+    resp.raise_for_status()
+    out = re.sub(r"<think>[\s\S]*?</think>", "", resp.json().get("message", {}).get("content", "")).strip()
+    # Drop any chatty preamble before the first Markdown heading.
+    h = out.find("## ")
+    return out[h:].strip() if h > 0 else out
+
+
+@ai_router.post("/structure-document")
+async def structure_document(body: StructureDocRequest, _: UserSession = Depends(require_auth)):
+    """Map-reduce structured summary. Streams progress, then the final Markdown."""
+    model = body.model or OLLAMA_DEFAULT_MODEL
+    lang = body.lang or "fr"
+    title = body.title or ""
+    chunks = _chunk_for_map(body.content)
+
+    async def stream():
+        def evt(kind: str, **kw) -> str:
+            return f"data: {json.dumps({'kind': kind, **kw})}\n\n"
+
+        if not chunks:
+            yield evt("document", content="")
+            yield "data: [DONE]\n\n"
+            return
+
+        try:
+            async with httpx.AsyncClient(timeout=180) as client:
+                results: list[Optional[dict]] = [None] * len(chunks)
+                yield evt("progress", msg=f"Découpage en {len(chunks)} portion(s)…")
+
+                # MAP — concurrent; stream progress as each portion completes.
+                tasks = [asyncio.ensure_future(_map_chunk(client, model, i, c, lang))
+                         for i, c in enumerate(chunks)]
+                done = 0
+                for fut in asyncio.as_completed(tasks):
+                    idx, res = await fut
+                    results[idx] = res
+                    done += 1
+                    yield evt("progress", msg=f"Analyse {done}/{len(chunks)}…")
+
+                clean = [r for r in results if r]
+                # Short content (single portion): skip the reduce, format directly.
+                yield evt("progress", msg="Synthèse (IA mère)…")
+                body_md = await _reduce_chunks(client, model, clean, title, lang, body.length or "long")
+                yield evt("document", content=body_md)
+                yield "data: [DONE]\n\n"
+        except Exception as e:
+            yield evt("error", error=str(e))
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
 # ── Web clipper ────────────────────────────────────────────────────────────────
 
 class ClipRequest(BaseModel):
@@ -817,6 +1032,27 @@ def _cosine(a: list[float], b: list[float]) -> float:
     return dot / (na * nb)
 
 
+def _rank_rows(q_vec: list[float], rows: list) -> list:
+    """Score every chunk row against the query and return them sorted desc.
+
+    Pure CPU work (cosine over every chunk) — run via run_in_threadpool so it
+    never blocks the async event loop. `rows` come from
+    PadEmbedding.get_all_for_owner: (pad_id, chunk_text, embedding, display_name).
+    """
+    qn = math.sqrt(sum(x * x for x in q_vec))
+    scored = []
+    for r in rows:
+        emb = r.embedding
+        rn = math.sqrt(sum(x * x for x in emb))
+        if qn == 0 or rn == 0:
+            score = 0.0
+        else:
+            score = sum(x * y for x, y in zip(q_vec, emb)) / (qn * rn)
+        scored.append((score, r))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return scored
+
+
 async def _embed(text: str, model: str = _EMBED_MODEL) -> list[float]:
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
@@ -923,27 +1159,12 @@ async def semantic_search(
     """Find the top-k most relevant pad chunks for a question."""
     q_vec = await _embed(body.question)
 
-    rows = await PadEmbedding.get_all(session)
+    rows = await PadEmbedding.get_all_for_owner(session, user.id)
     if not rows:
         return {"results": []}
 
-    # Load pad metadata for display
-    pad_ids = list({r.pad_id for r in rows})
-    stmt = _sa_select(PadStore).where(
-        PadStore.id.in_(pad_ids),
-        PadStore.owner_id == user.id,
-    )
-    result = await session.execute(stmt)
-    pads_by_id = {p.id: p for p in result.scalars().all()}
-
-    scored = []
-    for row in rows:
-        if row.pad_id not in pads_by_id:
-            continue
-        score = _cosine(q_vec, row.embedding)
-        scored.append((score, row))
-
-    scored.sort(key=lambda x: x[0], reverse=True)
+    # Cosine over every chunk is pure CPU — keep it off the event loop.
+    scored = await run_in_threadpool(_rank_rows, q_vec, rows)
     top = scored[:body.top_k]
 
     return {
@@ -951,7 +1172,7 @@ async def semantic_search(
             {
                 "score": round(score, 4),
                 "pad_id": str(row.pad_id),
-                "pad_name": pads_by_id[row.pad_id].display_name,
+                "pad_name": row.display_name,
                 "excerpt": row.chunk_text[:300],
             }
             for score, row in top
@@ -969,31 +1190,19 @@ async def rag_chat(
     """RAG-augmented chat: retrieves relevant chunks, then answers via Ollama."""
     model = OLLAMA_DEFAULT_MODEL
 
-    # 1. Embed question & retrieve top-k chunks
+    # 1. Embed question & retrieve top-k chunks (scoped to this user)
     q_vec = await _embed(body.question)
-    rows = await PadEmbedding.get_all(session)
+    rows = await PadEmbedding.get_all_for_owner(session, user.id)
 
-    pad_ids = list({r.pad_id for r in rows})
-    pads_by_id: dict = {}
-    if pad_ids:
-        stmt = _sa_select(PadStore).where(
-            PadStore.id.in_(pad_ids),
-            PadStore.owner_id == user.id,
-        )
-        result = await session.execute(stmt)
-        pads_by_id = {p.id: p for p in result.scalars().all()}
-
-    scored = sorted(
-        [((_cosine(q_vec, r.embedding), r)) for r in rows if r.pad_id in pads_by_id],
-        key=lambda x: x[0], reverse=True,
-    )
+    # Cosine over every chunk is pure CPU — keep it off the event loop.
+    scored = await run_in_threadpool(_rank_rows, q_vec, rows) if rows else []
     top = [(s, r) for s, r in scored[:body.top_k] if s > 0.3]
 
     # 2. Build context
     if top:
         ctx_parts = []
         for score, row in top:
-            pad_name = pads_by_id[row.pad_id].display_name
+            pad_name = row.display_name
             ctx_parts.append(f"[{pad_name}]\n{row.chunk_text}")
         context = "\n\n---\n\n".join(ctx_parts)
         if body.lang == "fr":
@@ -1018,7 +1227,7 @@ async def rag_chat(
             system = "You are an assistant. No relevant notes were found for this question."
 
     sources = [
-        {"pad_id": str(r.pad_id), "pad_name": pads_by_id[r.pad_id].display_name, "score": round(s, 3)}
+        {"pad_id": str(r.pad_id), "pad_name": r.display_name, "score": round(s, 3)}
         for s, r in top
     ]
 

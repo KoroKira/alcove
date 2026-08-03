@@ -1,21 +1,31 @@
 import React, { useState } from 'react';
-import { PenLine, FileText, Columns3, GanttChart, ArrowRight, Zap } from 'lucide-react';
+import { PenLine, FileText, Columns3, GanttChart, ArrowRight, Zap, BookOpen } from 'lucide-react';
 import './Onboarding.scss';
 
 interface Props {
   onDone: () => void;
   onCreatePad: (type: 'canvas' | 'document' | 'kanban' | 'gantt') => void;
+  /** Seed the "Guide Alcove" pad. `open: true` selects it right away. */
+  onSeedWelcome: (opts: { open: boolean }) => void;
 }
 
 const STEPS = 3;
 
-export default function Onboarding({ onDone, onCreatePad }: Props) {
+export default function Onboarding({ onDone, onCreatePad, onSeedWelcome }: Props) {
   const [step, setStep] = useState(0);
   const [picked, setPicked] = useState<string | null>(null);
 
   const next = () => {
     if (step < STEPS - 1) setStep(s => s + 1);
-    else { localStorage.setItem('alcove_onboarded', '1'); onDone(); }
+    else finish({ open: false });
+  };
+
+  // Always seed the guide once (so it's discoverable later); only open it now
+  // when the user explicitly asks to.
+  const finish = ({ open }: { open: boolean }) => {
+    onSeedWelcome({ open });
+    localStorage.setItem('alcove_onboarded', '1');
+    onDone();
   };
 
   const skip = () => { localStorage.setItem('alcove_onboarded', '1'); onDone(); };
@@ -91,8 +101,11 @@ export default function Onboarding({ onDone, onCreatePad }: Props) {
               </div>
             ))}
           </div>
-          <button className="onboarding__btn onboarding__btn--primary" onClick={next}>
-            C'est parti !
+          <button className="onboarding__btn onboarding__btn--primary" onClick={() => finish({ open: true })}>
+            <BookOpen size={16} /> Ouvrir le guide de démarrage
+          </button>
+          <button className="onboarding__skip" onClick={() => finish({ open: false })}>
+            Explorer par moi-même
           </button>
         </div>
       )}

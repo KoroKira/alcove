@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { X, Plus, FileText, PenLine, Search, Grid2X2, Layers } from 'lucide-react';
 import { Tab } from '../hooks/usePadTabs';
 import { CANVAS_TEMPLATES, CanvasTemplate } from '../constants/templates';
+import { cardTint } from '../lib/cardTint';
 import './Dashboard.scss';
 
 interface Props {
@@ -242,6 +243,7 @@ const Dashboard: React.FC<Props> = ({
                 <button
                   key={tab.id}
                   className={`dashboard__card ${selectedTabId === tab.id ? 'active' : ''} ${tab.isScratch ? 'scratch' : ''}`}
+                  style={{ '--card-tint': cardTint(tab.id) } as React.CSSProperties}
                   onClick={() => handleSelect(tab.id)}
                 >
                   <div className="dashboard__card-header">

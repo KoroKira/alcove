@@ -17,7 +17,7 @@ export interface Tab {
     updatedAt: string;
     theme?: 'light' | 'dark';
     isScratch?: boolean;
-    padType?: 'canvas' | 'document' | 'kanban' | 'gantt' | 'latex';
+    padType?: 'canvas' | 'document' | 'kanban' | 'gantt' | 'latex' | 'database';
     tags?: string[];
     folder?: string;
 }
@@ -78,7 +78,7 @@ const fetchUserPads = async (): Promise<PadResponse> => {
         // undefined = no per-pad override, follow the app-wide theme
         theme: (pad.theme as 'light' | 'dark' | undefined) || undefined,
         isScratch: !!pad.is_scratch,
-        padType: (pad.pad_type as 'canvas' | 'document' | 'kanban' | 'gantt' | 'latex') || 'canvas',
+        padType: (pad.pad_type as 'canvas' | 'document' | 'kanban' | 'gantt' | 'latex' | 'database') || 'canvas',
         tags: pad.tags || [],
         folder: pad.folder || undefined,
     }));
@@ -110,9 +110,9 @@ interface NewPadApiResponse {
     pad_type?: string;
 }
 
-type PadType = 'canvas' | 'document' | 'kanban' | 'gantt' | 'latex';
+type PadType = 'canvas' | 'document' | 'kanban' | 'gantt' | 'latex' | 'database';
 const PAD_DEFAULT_NAMES: Record<PadType, string> = {
-    canvas: 'New pad', document: 'New document', kanban: 'New kanban', gantt: 'New gantt', latex: 'New LaTeX',
+    canvas: 'New pad', document: 'New document', kanban: 'New kanban', gantt: 'New gantt', latex: 'New LaTeX', database: 'New database',
 };
 
 const createNewPad = async (padType: PadType = 'canvas'): Promise<Tab> => {
@@ -143,7 +143,7 @@ const createNewPad = async (padType: PadType = 'canvas'): Promise<Tab> => {
         sharingPolicy: newPadResponse.sharing_policy as SharingPolicy,
         createdAt: newPadResponse.created_at,
         updatedAt: newPadResponse.updated_at,
-        padType: (newPadResponse.pad_type as 'canvas' | 'document' | 'kanban' | 'gantt' | 'latex') || padType,
+        padType: (newPadResponse.pad_type as 'canvas' | 'document' | 'kanban' | 'gantt' | 'latex' | 'database') || padType,
     };
 };
 
@@ -191,7 +191,7 @@ export const usePadTabs = (isAuthenticated?: boolean) => {
                 sharingPolicy: SharingPolicy.PRIVATE,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
-                padType: (padType as 'canvas' | 'document' | 'kanban' | 'gantt' | 'latex') || 'canvas',
+                padType: (padType as 'canvas' | 'document' | 'kanban' | 'gantt' | 'latex' | 'database') || 'canvas',
             };
 
             queryClient.setQueryData<PadResponse>(['padTabs'], (old) => {
@@ -573,6 +573,7 @@ export const usePadTabs = (isAuthenticated?: boolean) => {
         createNewDocument: () => createPadMutation.mutate('document'),
         createNewDocumentAsync: () => createPadMutation.mutateAsync('document'),
         createNewKanban: () => createPadMutation.mutateAsync('kanban'),
+        createNewDatabase: () => createPadMutation.mutateAsync('database'),
         createNewGantt: () => createPadMutation.mutateAsync('gantt'),
         createNewLatex: () => createPadMutation.mutateAsync('latex'),
         createDailyNote,

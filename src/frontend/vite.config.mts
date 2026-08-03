@@ -1,5 +1,9 @@
 import { defineConfig, loadEnv } from "vite";
 import { VitePWA } from 'vite-plugin-pwa';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -27,6 +31,14 @@ export default defineConfig(({ mode }) => {
       },
     },
     publicDir: "public",
+    resolve: {
+      // monaco-editor 0.5x's `exports` map hides its deep `esm/vs/...` files, which
+      // monaco-vim (and our editor.api import) need. Alias the prefix to the real
+      // files so we bundle only Monaco's core + markdown (not all 60+ languages).
+      alias: [
+        { find: /^monaco-editor\/esm\//, replacement: path.resolve(HERE, 'node_modules/monaco-editor/esm') + '/' },
+      ],
+    },
     optimizeDeps: {
       esbuildOptions: {
         target: "es2022",

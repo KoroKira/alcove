@@ -73,9 +73,9 @@ async def create_new_pad(
     """Create a new pad for the authenticated user"""
     try:
         req = body or NewPadRequest()
-        VALID_PAD_TYPES = ("canvas", "document", "kanban", "gantt", "latex")
+        VALID_PAD_TYPES = ("canvas", "document", "kanban", "gantt", "latex", "database")
         pad_type = req.pad_type if req.pad_type in VALID_PAD_TYPES else "canvas"
-        default_names = {"document": "New document", "kanban": "New kanban", "gantt": "New gantt", "latex": "New LaTeX"}
+        default_names = {"document": "New document", "kanban": "New kanban", "gantt": "New gantt", "latex": "New LaTeX", "database": "New database"}
         display_name = req.display_name or default_names.get(pad_type, "New pad")
         pad = await Pad.create(
             session=session,
@@ -95,6 +95,19 @@ async def create_new_pad(
             pad.data = {"tasks": []}
         elif pad_type == "latex":
             pad.data = {"source": ""}
+        elif pad_type == "database":
+            pad.data = {
+                "columns": [
+                    {"id": "c-name", "name": "Nom"},
+                    {"id": "c-status", "name": "Statut"},
+                    {"id": "c-notes", "name": "Notes"},
+                ],
+                "rows": [
+                    {"id": "r-1", "cells": {"c-name": "", "c-status": "À faire", "c-notes": ""}},
+                    {"id": "r-2", "cells": {"c-name": "", "c-status": "À faire", "c-notes": ""}},
+                ],
+                "groupBy": "c-status",
+            }
         await pad.save(session)
         return pad.to_dict()
     except Exception as e:
@@ -217,33 +230,43 @@ async def get_knowledge_graph(
 ) -> Dict[str, Any]:
     """Return graph nodes (pads) and edges (wikilinks) for the knowledge graph."""
     import re as _re
-    from database.models.pad_model import PadStore as _PadStore
     from sqlalchemy import select as _sa_select
 
-    stmt = _sa_select(_PadStore).where(_PadStore.owner_id == user.id)
-    result = await session.execute(stmt)
-    stores = result.scalars().all()
+    # Nodes: only the metadata columns — never pull the (potentially huge) JSONB
+    # canvas scene, which we don't need to draw a node.
+    node_stmt = _sa_select(
+        PadStore.id, PadStore.display_name, PadStore.pad_type, PadStore.is_scratch,
+    ).where(PadStore.owner_id == user.id)
+    node_rows = (await session.execute(node_stmt)).all()
 
     nodes = [{
-        "id": str(s.id),
-        "label": s.display_name,
-        "type": getattr(s, "pad_type", "canvas") or "canvas",
-        "is_scratch": getattr(s, "is_scratch", False),
-    } for s in stores]
+        "id": str(r.id),
+        "label": r.display_name,
+        "type": r.pad_type or "canvas",
+        "is_scratch": bool(r.is_scratch),
+    } for r in node_rows]
 
-    name_to_id = {s.display_name.lower(): str(s.id) for s in stores}
+    # Wikilinks may target any pad type, so the name→id map covers every node.
+    name_to_id = {(r.display_name or "").lower(): str(r.id) for r in node_rows}
+
+    # Edges: only document pads carry wikilinks. Extract just the `content`
+    # string out of the JSONB (data->>'content') instead of the whole blob.
+    edge_stmt = _sa_select(
+        PadStore.id, PadStore.data["content"].astext,
+    ).where(
+        PadStore.owner_id == user.id,
+        PadStore.pad_type == "document",
+    )
+    edge_rows = (await session.execute(edge_stmt)).all()
+
     wikilink_re = _re.compile(r"\[\[([^\]]+)\]\]")
     edges = []
     seen = set()
 
-    for s in stores:
-        if (getattr(s, "pad_type", "canvas") or "canvas") != "document":
-            continue
-        data = s.data or {}
-        content = data.get("content", "") if isinstance(data, dict) else ""
+    for pad_id, content in edge_rows:
         if not content:
             continue
-        src = str(s.id)
+        src = str(pad_id)
         for m in wikilink_re.finditer(content):
             tgt = name_to_id.get(m.group(1).lower())
             if tgt and tgt != src and (src, tgt) not in seen:
@@ -253,49 +276,70 @@ async def get_knowledge_graph(
     return {"nodes": nodes, "edges": edges}
 
 
+def _match_pad(pad_type: str, data: Any, display_name: str, query: str):
+    """Match one pad against a lowercase `query`.
+
+    Returns ``(name_match, matches)`` when the title or body matches, else
+    ``None``. Documents match on their `content`, canvas pads on element text —
+    the previous implementation only ever looked at canvas elements, so document
+    bodies were silently unsearchable. Pure function → unit-tested.
+    """
+    data = data if isinstance(data, dict) else {}
+    matches = []
+    if pad_type == "document":
+        content = data.get("content", "") or ""
+        idx = content.lower().find(query)
+        if idx != -1:
+            start = max(0, idx - 40)
+            excerpt = content[start:idx + 80].replace("\n", " ").strip()
+            matches.append({"element_id": "", "text": content[idx:idx + 60], "excerpt": excerpt})
+    else:
+        for elem in data.get("elements", []):
+            text = elem.get("text", "") or (elem.get("label") or {}).get("text", "")
+            if text and query in text.lower():
+                matches.append({"element_id": elem.get("id", ""), "text": text[:60], "excerpt": text[:120]})
+
+    name_match = query in (display_name or "").lower()
+    if name_match or matches:
+        return name_match, matches[:5]
+    return None
+
+
 @pad_router.get("/search")
 async def search_pads(
     q: str,
     user: UserSession = Depends(require_auth),
     session: AsyncSession = Depends(get_session)
 ):
-    """Full-text search across pad names and text elements."""
-    from uuid import UUID as _UUID
-    from domain.user import User as _User
+    """Full-text search across pad names, document bodies and canvas text.
+
+    Scans *all* of the user's pads in a single query (previously only the
+    currently-open tabs), and matches document `content` — not just canvas
+    text elements — so notes are actually searchable.
+    """
+    from sqlalchemy import select as _sel
 
     if not q or len(q.strip()) < 2:
         return []
 
     query = q.strip().lower()
-    user_obj = await _User.get_by_id(session, user.id)
-    if not user_obj:
-        return []
 
-    open_pad_ids = [str(pid) for pid in (user_obj._store.open_pads or [])]
+    stmt = _sel(PadStore).where(PadStore.owner_id == user.id)
+    stores = (await session.execute(stmt)).scalars().all()
+
     results = []
-
-    for pad_id_str in open_pad_ids:
-        try:
-            pad = await Pad.get_by_id(session, _UUID(pad_id_str))
-        except Exception:
+    for store in stores:
+        pad_type = getattr(store, "pad_type", "canvas") or "canvas"
+        matched = _match_pad(pad_type, store.data, store.display_name, query)
+        if matched is None:
             continue
-        if not pad:
-            continue
-
-        matches = []
-        for elem in pad.data.get("elements", []):
-            text = elem.get("text", "") or elem.get("label", {}).get("text", "")
-            if text and query in text.lower():
-                excerpt = text[:120]
-                matches.append({"element_id": elem.get("id", ""), "text": text[:60], "excerpt": excerpt})
-        name_match = query in pad.display_name.lower()
-        if name_match or matches:
-            results.append({
-                "pad_id": str(pad.id),
-                "pad_name": pad.display_name,
-                "name_match": name_match,
-                "matches": matches[:5],
-            })
+        name_match, matches = matched
+        results.append({
+            "pad_id": str(store.id),
+            "pad_name": store.display_name,
+            "name_match": name_match,
+            "matches": matches,
+        })
 
     return results
 

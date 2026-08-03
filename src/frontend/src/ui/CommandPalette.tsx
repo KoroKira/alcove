@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Search, FileText, CalendarDays, Network,
-  Grid2X2, Grid3X3, Plus, Columns3, GanttChart, Zap, Upload, BookOpen,
+  Grid2X2, Grid3X3, Plus, Columns3, GanttChart, Zap, Upload, BookOpen, LifeBuoy, Link2, Telescope, Table2,
 } from 'lucide-react';
 import { Tab } from '../hooks/usePadTabs';
 import { fuzzyFilter } from '../lib/fuzzy';
@@ -24,6 +24,7 @@ interface Props {
   onNewDocument: () => void;
   onNewKanban?: () => void;
   onNewGantt?: () => void;
+  onNewDatabase?: () => void;
   onDailyNote: () => void;
   onGraph: () => void;
   onDashboard: () => void;
@@ -32,12 +33,16 @@ interface Props {
   onQuickCapture?: () => void;
   onImportObsidian?: () => void;
   onFlashcardStudio?: () => void;
+  onOpenGuide?: () => void;
+  onAddFromLink?: () => void;
+  onSmartResearch?: () => void;
 }
 
 const CommandPalette: React.FC<Props> = ({
   tabs, onSelectPad, onClose,
-  onNewCanvas, onNewDocument, onNewKanban, onNewGantt, onDailyNote, onGraph,
+  onNewCanvas, onNewDocument, onNewKanban, onNewGantt, onNewDatabase, onDailyNote, onGraph,
   onDashboard, onSearch, onToggleGrid, onQuickCapture, onImportObsidian, onFlashcardStudio,
+  onOpenGuide, onAddFromLink, onSmartResearch,
 }) => {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
@@ -54,14 +59,18 @@ const CommandPalette: React.FC<Props> = ({
     { id: 'new-doc',      label: t('command.newNote'),      icon: <FileText size={15} />,      action: wrap(onNewDocument) },
     ...(onNewKanban ? [{ id: 'new-kanban', label: 'Nouveau Kanban',  icon: <Columns3 size={15} />, action: wrap(onNewKanban) }] : []),
     ...(onNewGantt  ? [{ id: 'new-gantt',  label: 'Nouveau Gantt',   icon: <GanttChart size={15} />, action: wrap(onNewGantt) }] : []),
+    ...(onNewDatabase ? [{ id: 'new-database', label: 'Nouvelle base de données (Table / Board)', icon: <Table2 size={15} />, action: wrap(onNewDatabase) }] : []),
     { id: 'daily',        label: t('command.dailyNote'),    icon: <CalendarDays size={15} />, kbd: '⌘T',  action: wrap(onDailyNote) },
     { id: 'graph',        label: t('command.graph'),        icon: <Network size={15} />,      kbd: '⌘⇧G', action: wrap(onGraph) },
     { id: 'dashboard',    label: t('command.dashboard'),    icon: <Grid2X2 size={15} />,      kbd: '⌘D',  action: wrap(onDashboard) },
     { id: 'search',       label: t('command.search'),       icon: <Search size={15} />,       kbd: '⌘K',  action: wrap(onSearch) },
     { id: 'grid',         label: t('command.toggleGrid'),   icon: <Grid3X3 size={15} />,      kbd: '⌘G',  action: wrap(onToggleGrid) },
     ...(onQuickCapture    ? [{ id: 'quick-capture', label: 'Capture rapide', icon: <Zap size={15} />, kbd: '⌘⇧N', action: wrap(onQuickCapture) }] : []),
+    ...(onAddFromLink     ? [{ id: 'add-from-link', label: 'Ajouter depuis un lien (web / PDF / YouTube)', icon: <Link2 size={15} />, action: wrap(onAddFromLink) }] : []),
+    ...(onSmartResearch   ? [{ id: 'smart-research', label: 'Smart Research (recherche web → note citée)', icon: <Telescope size={15} />, action: wrap(onSmartResearch) }] : []),
     ...(onImportObsidian  ? [{ id: 'import-obsidian', label: 'Importer depuis Obsidian', icon: <Upload size={15} />, action: wrap(onImportObsidian) }] : []),
     ...(onFlashcardStudio ? [{ id: 'flashcard-studio', label: 'Studio de révision (flashcards)', icon: <BookOpen size={15} />, action: wrap(onFlashcardStudio) }] : []),
+    ...(onOpenGuide       ? [{ id: 'open-guide', label: 'Ouvrir le guide Alcove', icon: <LifeBuoy size={15} />, action: wrap(onOpenGuide) }] : []),
   ];
 
   const q = query.trim();

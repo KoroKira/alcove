@@ -17,11 +17,14 @@ import {
   Sparkles,
   Columns3,
   GanttChart,
+  Table2,
   Home,
   Palette,
   Keyboard,
   Zap,
   Upload,
+  Link2,
+  Telescope,
   BookOpen,
   Sigma,
   Trash2,
@@ -47,6 +50,7 @@ interface PadSidebarProps {
   onNewCanvas: () => Promise<Tab | null | undefined>;
   onNewKanban?: () => void;
   onNewGantt?: () => void;
+  onNewDatabase?: () => void;
   onDailyNote: () => void;
   onGraph: () => void;
   onTemplates: () => void;
@@ -73,6 +77,8 @@ interface PadSidebarProps {
   user?: { id?: string; name?: string; email?: string } | null;
   onQuickCapture?: () => void;
   onImportObsidian?: () => void;
+  onAddFromLink?: () => void;
+  onSmartResearch?: () => void;
   onFlashcardStudio?: () => void;
   onNewLatex?: () => void;
 }
@@ -91,6 +97,7 @@ const PadIcon: React.FC<{ tab: Tab }> = ({ tab }) => {
   if (tab.padType === 'kanban') return <Columns3 size={13} />;
   if (tab.padType === 'gantt') return <GanttChart size={13} />;
   if (tab.padType === 'latex') return <Sigma size={13} />;
+  if (tab.padType === 'database') return <Table2 size={13} />;
   return <PenLine size={13} />;
 };
 
@@ -105,6 +112,7 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
   onNewCanvas,
   onNewKanban,
   onNewGantt,
+  onNewDatabase,
   onDailyNote,
   onGraph,
   onTemplates,
@@ -131,6 +139,8 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
   user,
   onQuickCapture,
   onImportObsidian,
+  onAddFromLink,
+  onSmartResearch,
   onFlashcardStudio,
   onNewLatex,
 }) => {
@@ -411,6 +421,16 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
                   <GanttChart size={14} />
                 </button>
               )}
+              {onNewDatabase && (
+                <button
+                  className="pad-sidebar__icon-btn"
+                  onClick={onNewDatabase}
+                  disabled={isCreatingPad}
+                  title="Nouvelle base de données (Table / Board)"
+                >
+                  <Table2 size={14} />
+                </button>
+              )}
               {onNewLatex && (
                 <button
                   className="pad-sidebar__icon-btn"
@@ -593,6 +613,16 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
         {onQuickCapture && (
           <button className="pad-sidebar__icon-btn" onClick={onQuickCapture} title="Capture rapide (⌘⇧N)">
             <Zap size={15} />
+          </button>
+        )}
+        {onAddFromLink && (
+          <button className="pad-sidebar__icon-btn" onClick={onAddFromLink} title="Ajouter depuis un lien (web / PDF / YouTube)">
+            <Link2 size={15} />
+          </button>
+        )}
+        {onSmartResearch && (
+          <button className="pad-sidebar__icon-btn" onClick={onSmartResearch} title="Smart Research (recherche web → note citée)">
+            <Telescope size={15} />
           </button>
         )}
         {onImportObsidian && (

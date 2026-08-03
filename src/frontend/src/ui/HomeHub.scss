@@ -155,22 +155,26 @@
 }
 
 .home-hub__recent-card {
+  --card-tint: 203, 166, 247;
   align-items: flex-start;
-  background: var(--ap-bg2, var(--ap-bg2));
-  border: 1px solid rgba(var(--ap-text0-rgb), 0.06);
+  // Crumbs-style pastel tint, theme-aware (same treatment as the Dashboard).
+  background: color-mix(in srgb, rgb(var(--card-tint)) 14%, var(--ap-bg2));
+  border: 1px solid color-mix(in srgb, rgb(var(--card-tint)) 40%, transparent);
   border-radius: var(--ap-radius-lg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
   cursor: pointer;
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding: 14px;
   text-align: left;
-  transition: all 0.15s;
+  transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s, background 0.14s;
 
   &:hover {
-    background: var(--ap-bg3, var(--ap-bg3));
-    border-color: color-mix(in srgb, var(--card-accent) 40%, transparent);
-    transform: translateY(-1px);
+    background: color-mix(in srgb, rgb(var(--card-tint)) 20%, var(--ap-bg2));
+    border-color: color-mix(in srgb, rgb(var(--card-tint)) 68%, transparent);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.26);
+    transform: translateY(-3px) rotate(-0.4deg);
   }
 }
 

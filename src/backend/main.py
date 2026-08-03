@@ -27,6 +27,8 @@ from routers.pad_router import pad_router
 from routers.app_router import app_router
 from routers.ws_router import ws_router
 from routers.ai_router import ai_router
+from routers.ingest_router import ingest_router
+from routers.research_router import research_router
 from routers.latex_router import latex_router
 from database.database import get_session
 from database.models.user_model import UserStore
@@ -158,6 +160,8 @@ app.include_router(pad_router, prefix="/api/pad")
 app.include_router(app_router, prefix="/api/app")
 app.include_router(ws_router)
 app.include_router(ai_router)
+app.include_router(ingest_router)
+app.include_router(research_router)
 app.include_router(latex_router)
 
 

@@ -1,3 +1,15 @@
+.document-pad__vim-status {
+  background: var(--color-surface-mid, var(--ap-bg2, #313244));
+  border-top: 1px solid rgba(var(--ap-text0-rgb, 205, 214, 244), 0.08);
+  color: var(--color-on-surface-low, var(--ap-text2, #a6adc8));
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 11px;
+  padding: 3px 12px;
+  white-space: pre;
+
+  .vim-mode { font-weight: 700; color: rgb(var(--ap-accent2-rgb, 203, 166, 247)); }
+}
+
 .document-pad {
   display: flex;
   flex-direction: column;

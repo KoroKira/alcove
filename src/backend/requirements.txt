@@ -15,3 +15,8 @@ psycopg2-binary
 python-multipart
 websockets
 cryptography
+pypdf
+yt-dlp
+faster-whisper
+
+ddgs

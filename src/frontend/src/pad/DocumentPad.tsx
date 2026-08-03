@@ -1,11 +1,21 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import Editor from '@monaco-editor/react';
+import Editor, { loader } from '@monaco-editor/react';
+// Bundle only Monaco's core editor API (+ markdown highlighting) instead of the
+// full package (all 60+ languages OOMs the build). This local instance is shared
+// with monaco-vim and works offline (PWA), and stays in the lazy DocumentPad chunk.
+import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
+import 'monaco-editor/esm/vs/basic-languages/monaco.contribution'; // syntax highlighting (incl. markdown)
+import { initVimMode } from 'monaco-vim';
+
+// Markdown/LaTeX need no language worker; stub it to silence the worker error.
+(self as any).MonacoEnvironment = { getWorker: () => ({ postMessage() {}, terminate() {}, addEventListener() {}, removeEventListener() {} }) };
+loader.config({ monaco });
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import katex from 'katex';
 import mermaid from 'mermaid';
-import { Link, History, Bookmark, Download, FileText, List, Maximize2, Minimize2, BookOpen, Save, Play, Globe } from 'lucide-react';
+import { Link, History, Bookmark, Download, FileText, List, Maximize2, Minimize2, BookOpen, Save, Play, Globe, Terminal } from 'lucide-react';
 import { saveUserTemplate } from '../constants/userTemplates';
 import { registerSlashCommands } from '../lib/slashCommands';
 import HistoryPanel from './HistoryPanel';
@@ -310,6 +320,24 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
   const previewRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const monacoRef = useRef<any>(null);
+  const vimStatusRef = useRef<HTMLDivElement>(null);
+  const [vimMode, setVimMode] = useState(() => localStorage.getItem('alcove_vim_mode') === '1');
+  const [editorNonce, setEditorNonce] = useState(0);
+
+  // Attach / detach monaco-vim whenever the toggle flips or the editor remounts.
+  useEffect(() => {
+    const editor = monacoRef.current;
+    if (!editor || isLatex || !vimMode || !vimStatusRef.current) return;
+    let vim: any = null;
+    try { vim = initVimMode(editor, vimStatusRef.current); } catch { /* noop */ }
+    return () => { try { vim?.dispose(); } catch { /* noop */ } };
+  }, [vimMode, editorNonce, isLatex]);
+
+  const toggleVim = () => setVimMode(v => {
+    const next = !v;
+    localStorage.setItem('alcove_vim_mode', next ? '1' : '0');
+    return next;
+  });
 
   const tocItems = useMemo(() => extractToc(content), [content]);
   const wordCount = useMemo(() => content.trim().split(/\s+/).filter(Boolean).length, [content]);
@@ -877,6 +905,13 @@ ${renderedHtml}
                   <List size={14} />
                 </button>
               )}
+              <button
+                className={`document-pad__toolbar-btn${vimMode ? ' active' : ''}`}
+                onClick={toggleVim}
+                title={vimMode ? 'Mode Vim activé' : 'Activer le mode Vim'}
+              >
+                <Terminal size={14} />
+              </button>
               <button className="document-pad__toolbar-btn" onClick={() => setHistoryOpen(v => !v)} title={t('editor.history')}>
                 <History size={14} />
               </button>
@@ -934,9 +969,10 @@ ${renderedHtml}
             <Editor
               value={content}
               onChange={handleChange}
-              onMount={(editor, monaco) => {
+              onMount={(editor, monacoInstance) => {
                 monacoRef.current = editor;
-                if (!isLatex) registerSlashCommands(monaco);
+                if (!isLatex) registerSlashCommands(monacoInstance);
+                setEditorNonce(n => n + 1);
               }}
               language={isLatex ? 'latex' : 'markdown'}
               theme={monacoTheme}
@@ -957,6 +993,11 @@ ${renderedHtml}
                 lineNumbersMinChars: 0,
                 fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace',
               }}
+            />
+            <div
+              ref={vimStatusRef}
+              className="document-pad__vim-status"
+              style={{ display: vimMode && !isLatex ? 'block' : 'none' }}
             />
           </div>
         )}
