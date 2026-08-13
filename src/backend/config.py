@@ -17,6 +17,27 @@ FRONTEND_URL = os.getenv("FRONTEND_URL")
 PAD_DEV_MODE = os.getenv("PAD_DEV_MODE", "false").lower() == "true"
 DEV_FRONTEND_URL = os.getenv("DEV_FRONTEND_URL", "http://localhost:3003")
 
+# Comma-separated allowed CORS origins. In dev this defaults to the Vite
+# dev server + the FastAPI origin so the app just works; in prod, force the
+# operator to pin exact origins because we serve session cookies with
+# credentials (a wildcard is silently unsafe with credentials).
+def _default_allowed_origins() -> list[str]:
+    if PAD_DEV_MODE:
+        return [
+            "http://localhost:8000",
+            "http://127.0.0.1:8000",
+            DEV_FRONTEND_URL,
+            FRONTEND_URL or "http://localhost:8000",
+        ]
+    return [FRONTEND_URL] if FRONTEND_URL else []
+
+_raw_allowed = os.getenv("ALLOWED_ORIGINS", "")
+ALLOWED_ORIGINS = (
+    [o.strip() for o in _raw_allowed.split(",") if o.strip()]
+    if _raw_allowed
+    else _default_allowed_origins()
+)
+
 # Local folder where canvas pads are mirrored as .excalidraw files after each save
 SYNC_DIR = os.path.expanduser(os.getenv("SYNC_DIR", ""))
 

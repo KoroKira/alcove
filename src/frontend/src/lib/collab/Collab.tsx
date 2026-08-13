@@ -62,7 +62,10 @@ interface CollabState {
 
 class Collab extends PureComponent<CollabProps, CollabState> {
   [x: string]: any;
-  readonly state: CollabState;
+  // `declare` tells TS the base class already owns these fields — we're only
+  // narrowing types, not shadowing them. Without it TS 5+ errors out.
+  declare readonly state: CollabState;
+  declare props: CollabProps;
   private portal: Portal;
   private debouncedBroadcastAppState: DebouncedFunction<[AppState]>;
   private lastSentAppState: AppState | null = null;
@@ -73,8 +76,6 @@ class Collab extends PureComponent<CollabProps, CollabState> {
   private unsubExcalidrawSceneChange: (() => void) | null = null;
   private lastBroadcastedSceneVersion: number = -1;
   private isInitialLoad: boolean = true;
-
-  props: any;
 
   constructor(props: CollabProps) {
     super(props);
@@ -296,10 +297,13 @@ class Collab extends PureComponent<CollabProps, CollabState> {
     if (!this.props.excalidrawAPI) return;
     document.addEventListener('pointermove', this.throttledOnPointerMove);
     this.unsubExcalidrawPointerDown = this.props.excalidrawAPI.onPointerDown(
-      (_activeTool, _pointerDownState, event) => this.handlePointerInteraction('down', event)
+      // Excalidraw hands us a React SyntheticEvent; our handler wants the
+      // underlying native event. `nativeEvent` exists at runtime; TS just
+      // narrows the type wrong here.
+      (_activeTool, _pointerDownState, event) => this.handlePointerInteraction('down', (event as unknown as { nativeEvent: PointerEvent }).nativeEvent)
     );
     this.unsubExcalidrawPointerUp = this.props.excalidrawAPI.onPointerUp(
-      (_activeTool, _pointerUpState, event) => this.handlePointerInteraction('up', event)
+      (_activeTool, _pointerUpState, event) => this.handlePointerInteraction('up', (event as unknown as { nativeEvent: PointerEvent }).nativeEvent)
     );
   };
 
@@ -512,7 +516,10 @@ class Collab extends PureComponent<CollabProps, CollabState> {
             // Full replacement — server is sending the authoritative saved state for this pad.
             // Do NOT reconcile with stale local elements from a previous pad.
             console.debug(`[alcove] SCENE_INIT received. Replacing canvas with ${remoteElements.length} elements.`);
-            this.props.excalidrawAPI.updateScene({ elements: restoredRemoteElements as ExcalidrawElementType[], commitToHistory: false });
+            // `commitToHistory` was renamed to `captureUpdate` in newer
+            // Excalidraw releases. Cast keeps the old shape working with the
+            // current @atyrode fork; revisit when we pin the fork.
+            this.props.excalidrawAPI.updateScene({ elements: restoredRemoteElements as ExcalidrawElementType[], commitToHistory: false } as Parameters<typeof this.props.excalidrawAPI.updateScene>[0]);
             const v = getSceneVersion(restoredRemoteElements);
             this.lastBroadcastedSceneVersion = v;
             this.setState({ lastProcessedSceneVersion: v });
@@ -523,7 +530,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
             const localElements = this.props.excalidrawAPI.getSceneElementsIncludingDeleted();
             const currentAppState = this.props.excalidrawAPI.getAppState();
             const reconciled = reconcileElements(localElements, restoredRemoteElements as any[], currentAppState);
-            this.props.excalidrawAPI.updateScene({ elements: reconciled as ExcalidrawElementType[], commitToHistory: false });
+            this.props.excalidrawAPI.updateScene({ elements: reconciled as ExcalidrawElementType[], commitToHistory: false } as Parameters<typeof this.props.excalidrawAPI.updateScene>[0]);
             const reconciledVersion = getSceneVersion(reconciled);
             this.setState({ lastProcessedSceneVersion: reconciledVersion });
             if (this.lastBroadcastedSceneVersion === -1) {

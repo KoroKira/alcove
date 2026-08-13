@@ -1,5 +1,6 @@
 import json
 import asyncio
+import logging
 import uuid
 from uuid import UUID
 from typing import Optional, Any, Dict, List, Tuple
@@ -15,6 +16,9 @@ from cache import RedisClient
 from domain.pad import Pad
 from database.database import async_session
 from workers.canvas_worker import CanvasWorker
+
+logger = logging.getLogger(__name__)
+
 ws_router = APIRouter()
 
 STREAM_EXPIRY = 3600
@@ -70,7 +74,7 @@ async def get_ws_user(websocket: WebSocket) -> Optional[UserSession]:
             session_domain=current_session_domain
         )
     except Exception as e:
-        print(f"Error in WebSocket authentication: {str(e)}")
+        logger.exception("Error in WebSocket authentication")
         return None
 
 async def publish_event_to_redis(redis_client: aioredis.Redis, stream_key: str, event_model: WebSocketMessage):
@@ -96,8 +100,8 @@ async def publish_event_to_redis(redis_client: aioredis.Redis, stream_key: str, 
             # Set expiration on the stream key
             await pipe.expire(stream_key, STREAM_EXPIRY)
             await pipe.execute()
-    except Exception as e:
-        print(f"Error publishing event to Redis stream {stream_key}: {str(e)}")
+    except Exception:
+        logger.exception("Error publishing event to Redis stream %s", stream_key)
 
 async def publish_pointer_update(redis_client: aioredis.Redis, pad_id: UUID, message: WebSocketMessage):
     """
@@ -110,8 +114,8 @@ async def publish_pointer_update(redis_client: aioredis.Redis, pad_id: UUID, mes
         # Serialize the message and publish it
         message_json = message.model_dump_json()
         await redis_client.publish(channel, message_json)
-    except Exception as e:
-        print(f"Error publishing pointer update to Redis pub/sub {pad_id}: {str(e)}")
+    except Exception:
+        logger.exception("Error publishing pointer update to Redis pub/sub for pad %s", pad_id)
 
 async def check_pad_access(pad_id: UUID, user: UserSession, session: AsyncSession) -> Tuple[bool, Optional[str]]:
     """Check if user still has access to the pad. Returns (has_access, error_reason)."""
@@ -155,11 +159,15 @@ async def periodic_auth_check(
                 break
                 
         except Exception as e:
-            print(f"Error in periodic auth check for {connection_id[:5]}: {e}")
+            logger.exception("Error in periodic auth check for %s", connection_id[:5])
             break
             
-        # Wait for 1 second before next check
-        await asyncio.sleep(1)
+        # Wait between checks. Was 1s — that meant a DB round-trip every
+        # second per open WebSocket, per pad, and per user. At 30s we still
+        # kick users promptly if access is revoked (sharing change, delete)
+        # without hammering the DB. If we ever need tighter revocation, do
+        # it via Redis pub/sub instead.
+        await asyncio.sleep(30)
 
 async def _handle_received_data(raw_data: str, pad_id: UUID, user: UserSession, 
                                redis_client: aioredis.Redis, stream_key: str, connection_id: str,
@@ -188,9 +196,9 @@ async def _handle_received_data(raw_data: str, pad_id: UUID, user: UserSession,
     except WebSocketDisconnect:
         raise
     except json.JSONDecodeError:
-        print(f"Invalid JSON received from {connection_id[:5]}")
-    except Exception as e:
-        print(f"Error processing message from {connection_id[:5]}: {e}")
+        logger.warning("Invalid JSON received (conn %s)", connection_id[:5])
+    except Exception:
+        logger.exception("Error processing message from conn %s", connection_id[:5])
 
 async def consume_redis_stream(redis_client: aioredis.Redis, stream_key: str, 
                               websocket: WebSocket, connection_id: str, last_id: str = '$'):
@@ -233,13 +241,13 @@ async def consume_redis_stream(redis_client: aioredis.Redis, stream_key: str,
                     if message_to_send.connection_id != connection_id and websocket.client_state.CONNECTED and message_to_send.type != 'appstate_update':
                         await websocket.send_text(message_to_send.model_dump_json())
                 except Exception as e:
-                    print(f"Error sending message from Redis: {e}")
+                    logger.exception("Error sending message from Redis")
                 
                 last_id = message_id
                 
         except Exception as e:
             if websocket.client_state.CONNECTED:
-                print(f"Error in Redis stream consumer for {stream_key}: {e}")
+                logger.exception("Error in Redis stream consumer for %s", stream_key)
             return
 
 
@@ -266,14 +274,14 @@ async def consume_pointer_updates(redis_client: aioredis.Redis, pad_id: UUID,
                     if pointer_message.connection_id != connection_id and websocket.client_state.CONNECTED:
                         await websocket.send_text(message["data"])
                 except Exception as e:
-                    print(f"Error processing pointer update: {e}")
+                    logger.exception("Error processing pointer update")
 
             # Prevent CPU hogging
             await asyncio.sleep(0)
     
     except Exception as e:
         if websocket.client_state.CONNECTED:
-            print(f"Error in pointer update consumer for {pad_id}: {e}")
+            logger.exception("Error in pointer update consumer for %s", pad_id)
     finally:
         # Clean up the subscription
         try:
@@ -308,7 +316,7 @@ async def add_connection(redis_client: aioredis.Redis, pad_id: UUID, user_id: st
         # Set expiry on the hash
         await redis_client.expire(key, PAD_USERS_EXPIRY)
     except Exception as e:
-        print(f"Error adding connection to Redis: {e}")
+        logger.exception("Error adding connection to Redis")
 
 async def remove_connection(redis_client: aioredis.Redis, pad_id: UUID, user_id: str, 
                            connection_id: str) -> None:
@@ -336,7 +344,7 @@ async def remove_connection(redis_client: aioredis.Redis, pad_id: UUID, user_id:
             if await redis_client.exists(key):
                 await redis_client.expire(key, PAD_USERS_EXPIRY)
     except Exception as e:
-        print(f"Error removing connection from Redis: {e}")
+        logger.exception("Error removing connection from Redis")
 
 @ws_router.websocket("/ws/pad/{pad_id}")
 async def websocket_endpoint(
@@ -425,17 +433,17 @@ async def websocket_endpoint(
                         data = await websocket.receive_text()
                         await _handle_received_data(data, pad_id, user, redis_client, stream_key, connection_id, session)
                     except WebSocketDisconnect as e:
-                        print(f"WebSocket disconnected for user {str(user.id)[:5]} conn {connection_id[:5]}: {e.reason}")
+                        logger.info("WS disconnected (user %s conn %s): %s", str(user.id)[:5], connection_id[:5], e.reason)
                         break
-                    except json.JSONDecodeError as e:
-                        print(f"Invalid JSON received from {connection_id[:5]}: {e}")
+                    except json.JSONDecodeError:
+                        logger.warning("Invalid JSON received from conn %s", connection_id[:5])
                         await websocket.send_text(WebSocketMessage(
                             type="error",
                             pad_id=str(pad_id),
                             data={"message": "Invalid message format. Please send valid JSON."}
                         ).model_dump_json())
                     except Exception as e:
-                        print(f"Error in WebSocket connection for {connection_id[:5]}: {e}")
+                        logger.exception("Error in WebSocket connection for %s", connection_id[:5])
                         break
 
             # Set up tasks for message handling
@@ -465,7 +473,7 @@ async def websocket_endpoint(
                     pass
                 
     except Exception as e:
-        print(f"Error in WebSocket connection: {e}")
+        logger.exception("Error in WebSocket connection")
         
     finally:
         if connection_id:  # Only try to clean up if connection_id was set
@@ -473,15 +481,15 @@ async def websocket_endpoint(
             try:
                 worker = await CanvasWorker.get_instance()
                 await worker.save_pad(pad_id)
-            except Exception as e:
-                print(f"Error saving pad {pad_id} on disconnect: {e}")
+            except Exception:
+                logger.exception("Error saving pad %s on disconnect", pad_id)
 
             # Remove the connection from Redis
             if redis_client:
                 try:
                     await remove_connection(redis_client, pad_id, str(user.id), connection_id)
                 except Exception as e:
-                    print(f"Error removing connection from Redis: {e}")
+                    logger.exception("Error removing connection from Redis")
                 
                 # Send user left message
                 try:
@@ -494,7 +502,7 @@ async def websocket_endpoint(
                     )
                     await publish_event_to_redis(redis_client, stream_key, leave_message)
                 except Exception as e:
-                    print(f"Error publishing leave message: {e}")
+                    logger.exception("Error publishing leave message")
         
         # Close the WebSocket if still connected
         if websocket.client_state.CONNECTED:

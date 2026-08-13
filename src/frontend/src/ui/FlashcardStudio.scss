@@ -367,9 +367,10 @@
     transition: all 0.12s;
     &:hover { filter: brightness(1.15); transform: translateY(-1px); }
 
-    &--ko { background: rgba(var(--ap-red-rgb),0.15); border: 1px solid rgba(var(--ap-red-rgb),0.25); color: var(--ap-red, var(--ap-red)); }
-    &--ok { background: rgba(var(--ap-green-rgb),0.15); border: 1px solid rgba(var(--ap-green-rgb),0.25); color: var(--ap-green, var(--ap-green)); }
-    &--ez { background: rgba(var(--ap-yellow-rgb),0.15); border: 1px solid rgba(var(--ap-yellow-rgb),0.25); color: var(--ap-yellow, var(--ap-yellow)); }
+    &--ko   { background: rgba(var(--ap-red-rgb),0.15);    border: 1px solid rgba(var(--ap-red-rgb),0.25);    color: var(--ap-red); }
+    &--hard { background: rgba(var(--ap-orange-rgb, var(--ap-yellow-rgb)),0.12); border: 1px solid rgba(var(--ap-orange-rgb, var(--ap-yellow-rgb)),0.22); color: var(--ap-orange, var(--ap-yellow)); }
+    &--ok   { background: rgba(var(--ap-green-rgb),0.15);  border: 1px solid rgba(var(--ap-green-rgb),0.25);  color: var(--ap-green); }
+    &--ez   { background: rgba(var(--ap-yellow-rgb),0.15); border: 1px solid rgba(var(--ap-yellow-rgb),0.25); color: var(--ap-yellow); }
   }
 
   // ── Done screen ────────────────────────────────────────────────────────────

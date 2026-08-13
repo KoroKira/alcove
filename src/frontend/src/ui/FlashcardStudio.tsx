@@ -1,38 +1,54 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, BookOpen, Sparkles, RotateCcw, ChevronRight, Check, Zap, AlertCircle } from 'lucide-react';
+import { X, BookOpen, Sparkles, RotateCcw, ChevronRight, Check, Zap, AlertCircle, Meh } from 'lucide-react';
 import type { Tab } from '../hooks/usePadTabs';
+import { FSRSCard, Rating, review, today, newCard, migrateFromSM2 } from '../lib/fsrs';
 import './FlashcardStudio.scss';
 
 interface Card { q: string; a: string; padId?: string; padName?: string; }
 interface Deck { padId: string; padName: string; cards: Card[]; }
 
-interface SM2Card { n: number; ef: number; interval: number; due: number; }
+// New key — the payload shape changed from SM-2 to FSRS. The old key
+// `alcove-quiz-sm2` is read once during migration below then left alone (users
+// can always clear it manually; keeping it makes rollback trivial).
+const FSRS_KEY = 'alcove-quiz-fsrs';
+const LEGACY_SM2_KEY = 'alcove-quiz-sm2';
 
-const SM2_KEY = 'alcove-quiz-sm2';
-const today = () => Math.floor(Date.now() / 86400000);
-
-function loadSM2(cards: Card[]): SM2Card[] {
-  const raw = localStorage.getItem(SM2_KEY);
-  let saved: Record<string, SM2Card> = {};
-  try { saved = raw ? JSON.parse(raw) : {}; } catch { /* empty */ }
-  return cards.map((c, i) => saved[`${c.padId}-${i}-${c.q.slice(0,16)}`] ?? { n: 0, ef: 2.5, interval: 1, due: today() });
+function cardKey(c: Card, idx: number): string {
+  return `${c.padId}-${idx}-${c.q.slice(0, 16)}`;
 }
 
-function saveSM2(cards: Card[], sm2: SM2Card[]) {
-  const raw = localStorage.getItem(SM2_KEY);
-  let saved: Record<string, SM2Card> = {};
-  try { saved = raw ? JSON.parse(raw) : {}; } catch { /* empty */ }
-  cards.forEach((c, i) => { saved[`${c.padId}-${i}-${c.q.slice(0,16)}`] = sm2[i]; });
-  localStorage.setItem(SM2_KEY, JSON.stringify(saved));
+function loadFSRS(cards: Card[]): FSRSCard[] {
+  let saved: Record<string, FSRSCard> = {};
+  try {
+    const raw = localStorage.getItem(FSRS_KEY);
+    saved = raw ? JSON.parse(raw) : {};
+  } catch { /* empty */ }
+
+  // One-time migration from the old SM-2 payload — read the legacy key on the
+  // first FSRS load and fill in any missing keys. We don't delete the old
+  // record so rolling back stays possible.
+  let legacy: Record<string, { n: number; ef: number; interval: number; due: number }> = {};
+  try {
+    const raw = localStorage.getItem(LEGACY_SM2_KEY);
+    legacy = raw ? JSON.parse(raw) : {};
+  } catch { /* empty */ }
+
+  return cards.map((c, i) => {
+    const k = cardKey(c, i);
+    if (saved[k]) return saved[k];
+    if (legacy[k]) return migrateFromSM2(legacy[k]);
+    return newCard();
+  });
 }
 
-function updateSM2(sm2: SM2Card[], idx: number, quality: number): SM2Card[] {
-  const next = [...sm2];
-  const c = next[idx];
-  const ef = Math.max(1.3, c.ef + 0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
-  const interval = c.n === 0 ? 1 : c.n === 1 ? 6 : Math.round(c.interval * ef);
-  next[idx] = { n: c.n + 1, ef, interval, due: today() + interval };
-  return next;
+function saveFSRS(cards: Card[], state: FSRSCard[]) {
+  let saved: Record<string, FSRSCard> = {};
+  try {
+    const raw = localStorage.getItem(FSRS_KEY);
+    saved = raw ? JSON.parse(raw) : {};
+  } catch { /* empty */ }
+  cards.forEach((c, i) => { saved[cardKey(c, i)] = state[i]; });
+  localStorage.setItem(FSRS_KEY, JSON.stringify(saved));
 }
 
 function parseFlashcards(raw: string, padId = 'generated', padName = 'IA'): Card[] {
@@ -53,7 +69,7 @@ export default function FlashcardStudio({ tabs, onClose, onSelectPad }: Props) {
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [cards, setCards] = useState<Card[]>([]);
-  const [sm2, setSm2] = useState<SM2Card[]>([]);
+  const [srsState, setSrsState] = useState<FSRSCard[]>([]);
   const [dueOnly, setDueOnly] = useState(false);
   const [queue, setQueue] = useState<number[]>([]);
   const [queueIdx, setQueueIdx] = useState(0);
@@ -71,11 +87,12 @@ export default function FlashcardStudio({ tabs, onClose, onSelectPad }: Props) {
   });
 
   const startSession = useCallback((allCards: Card[]) => {
-    const newSm2 = loadSM2(allCards);
-    setSm2(newSm2);
+    const loaded = loadFSRS(allCards);
+    setSrsState(loaded);
+    const now = today();
     const q = allCards
       .map((_, i) => i)
-      .filter(i => !dueOnly || newSm2[i].due <= today())
+      .filter(i => !dueOnly || loaded[i].due <= now)
       .sort(() => Math.random() - 0.5);
     setCards(allCards);
     setQueue(q);
@@ -124,19 +141,27 @@ export default function FlashcardStudio({ tabs, onClose, onSelectPad }: Props) {
   const currentCardIdx = queue[queueIdx] ?? -1;
   const currentCard = currentCardIdx >= 0 ? cards[currentCardIdx] : null;
 
-  const answer = (quality: number) => {
+  const answer = (rating: Rating) => {
     if (currentCardIdx < 0 || !flipped) return;
-    const next = updateSM2(sm2, currentCardIdx, quality);
-    setSm2(next);
-    saveSM2(cards, next);
-    setScore(s => ({ ...s, ok: quality >= 3 ? s.ok + 1 : s.ok, ko: quality < 3 ? s.ko + 1 : s.ko }));
+    const updatedCard = review(srsState[currentCardIdx], rating);
+    const nextState = [...srsState];
+    nextState[currentCardIdx] = updatedCard;
+    setSrsState(nextState);
+    saveFSRS(cards, nextState);
+    // "Again" counts as ko, everything else as ok (Hard still means recalled).
+    setScore(s => ({
+      ...s,
+      ok: rating >= 2 ? s.ok + 1 : s.ok,
+      ko: rating === 1 ? s.ko + 1 : s.ko,
+    }));
     const nextIdx = queueIdx + 1;
     if (nextIdx >= queue.length) { setDone(true); return; }
     setQueueIdx(nextIdx);
     setFlipped(false);
   };
 
-  const dueCount = sm2.filter(c => c.due <= today()).length;
+  const nowDay = today();
+  const dueCount = srsState.filter(c => c.due <= nowDay).length;
   const progress = queue.length ? Math.round((queueIdx / queue.length) * 100) : 0;
 
   return (
@@ -253,16 +278,19 @@ export default function FlashcardStudio({ tabs, onClose, onSelectPad }: Props) {
                   </div>
                 </div>
 
-                {/* Answer buttons */}
+                {/* Answer buttons — FSRS 4-rating scale */}
                 {flipped && (
                   <div className="fc-studio__btns">
                     <button className="fc-studio__ans fc-studio__ans--ko" onClick={() => answer(1)}>
                       <AlertCircle size={14} /> Raté
                     </button>
+                    <button className="fc-studio__ans fc-studio__ans--hard" onClick={() => answer(2)}>
+                      <Meh size={14} /> Dur
+                    </button>
                     <button className="fc-studio__ans fc-studio__ans--ok" onClick={() => answer(3)}>
                       <Check size={14} /> Bien
                     </button>
-                    <button className="fc-studio__ans fc-studio__ans--ez" onClick={() => answer(5)}>
+                    <button className="fc-studio__ans fc-studio__ans--ez" onClick={() => answer(4)}>
                       <Zap size={14} /> Facile
                     </button>
                   </div>

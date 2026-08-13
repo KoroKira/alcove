@@ -459,10 +459,12 @@ const ActionButton: React.FC<ActionButtonProps> = ({
             <div className="action-button__right">
               <span className="action-button__action-text">{getButtonLabelParts().actionText}</span>
               <span className="action-button__action-icon">
+                {/* Cast because Lucide's LucideProps type doesn't declare
+                    data-* attrs even though React forwards them to the DOM. */}
                 {React.createElement(getActionIcon(), {
                   className: "action-button__action-icon-svg",
-                  'data-action-type': selectedAction
-                })}
+                  'data-action-type': selectedAction,
+                } as React.ComponentProps<'svg'>)}
               </span>
               {settingsEnabled && (
                 <span className="action-button__settings-icon" onClick={toggleOptions}>

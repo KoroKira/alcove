@@ -548,6 +548,44 @@
       background: rgba(var(--ap-accent2-rgb), 0.2);
     }
   }
+
+  &__related {
+    margin-top: 8px;
+
+    // Distinct accent from backlinks so both blocks read as separate signals.
+    .document-pad__backlink-item {
+      background: rgba(var(--ap-accent-rgb), 0.08);
+      border-color: rgba(var(--ap-accent-rgb), 0.22);
+      color: var(--ap-accent);
+
+      &:hover { background: rgba(var(--ap-accent-rgb), 0.18); }
+    }
+  }
+
+  &__related-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  &__related-score {
+    font-size: 10px;
+    font-weight: 600;
+    opacity: 0.75;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: rgba(var(--ap-accent-rgb), 0.18);
+  }
+
+  &__related--hint {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--ap-overlay0);
+    padding: 10px 14px;
+    background: none;
+  }
 }
 
 /* ── Habit tracker ── */

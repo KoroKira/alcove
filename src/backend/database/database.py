@@ -2,6 +2,7 @@
 Database connection and session management.
 """
 
+import logging
 import os
 from typing import AsyncGenerator
 from urllib.parse import quote_plus as urlquote
@@ -14,6 +15,8 @@ from fastapi import Depends
 from .models import Base, SCHEMA_NAME
 
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -35,25 +38,36 @@ async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False
 
 
 async def init_db() -> None:
-    """Initialize the database with required tables"""
+    """Bring the database to a runnable state.
+
+    On a fresh DB (no tables at all) we create the schema and every table from
+    the ORM metadata — that keeps the local-first "just launch it" flow
+    working without asking the user to run alembic first. On a DB that
+    already has our tables, we do NOTHING here: Alembic (invoked separately
+    via `alembic upgrade head` in the deploy scripts) is the single source of
+    truth for schema evolution. This kills the previous drift where
+    `init_db` shipped its own `ALTER TABLE ADD COLUMN IF NOT EXISTS` while
+    Alembic also tracked the same columns.
+    """
+    from sqlalchemy import inspect
+
     try:
-        # Create schema if it doesn't exist
         async with engine.begin() as conn:
             await conn.execute(CreateSchema(SCHEMA_NAME, if_not_exists=True))
-            
-        # Create tables
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
 
-        # Column migrations for existing DBs (idempotent)
-        async with engine.begin() as conn:
-            from sqlalchemy import text
-            await conn.execute(text(
-                "ALTER TABLE pad_ws.pads ADD COLUMN IF NOT EXISTS tags TEXT[] DEFAULT '{}'"
-            ))
+            def _needs_bootstrap(sync_conn) -> bool:
+                insp = inspect(sync_conn)
+                return "pads" not in insp.get_table_names(schema=SCHEMA_NAME)
 
-    except Exception as e:
-        print(f"Error initializing database: {str(e)}")
+            fresh = await conn.run_sync(_needs_bootstrap)
+            if fresh:
+                logger.info("Fresh database detected — bootstrapping schema from ORM metadata")
+                await conn.run_sync(Base.metadata.create_all)
+            else:
+                logger.debug("Database already provisioned — skipping create_all (Alembic owns migrations)")
+
+    except Exception:
+        logger.exception("Error initializing database")
         raise
     
 

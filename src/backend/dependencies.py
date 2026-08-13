@@ -1,5 +1,6 @@
 import jwt
 import time
+import logging
 from typing import Optional, Dict, Any, Tuple
 from uuid import UUID
 import os
@@ -14,6 +15,8 @@ from domain.user import User
 from domain.pad import Pad
 from coder import CoderAPI
 from database.database import get_session
+
+logger = logging.getLogger(__name__)
 
 # oidc_config for session creation and user sessions
 oidc_config = {
@@ -67,8 +70,11 @@ class UserSession:
             )
 
         except jwt.InvalidTokenError as e:
-            print(f"Invalid token: {str(e)}")
-            raise ValueError(f"Invalid authentication token: {str(e)}")
+            # NEVER log the exception message: PyJWT often includes token
+            # bytes / claim values in `str(e)`, which would end up in log
+            # aggregation. Log the class only.
+            logger.warning("Invalid authentication token (%s)", e.__class__.__name__)
+            raise ValueError("Invalid authentication token")
 
     @property
     def is_authenticated(self) -> bool:

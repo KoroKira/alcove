@@ -1,10 +1,14 @@
 from typing import Optional, Dict, Any, Tuple
 import json
+import logging
 import time
 import jwt
 from jwt.jwks_client import PyJWKClient
 import httpx
 from redis.asyncio import Redis as AsyncRedis
+
+logger = logging.getLogger(__name__)
+
 
 class Session:
     """Domain class for managing user sessions"""
@@ -35,10 +39,10 @@ class Session:
             session_data = await self.redis_client.get(f"session:{session_id}")
             if session_data:
                 return json.loads(session_data)
-        except json.JSONDecodeError as e:
-            print(f"Error decoding session data for {session_id}: {str(e)}")
-        except Exception as e:
-            print(f"Error retrieving session {session_id}: {str(e)}")
+        except json.JSONDecodeError:
+            logger.exception("Error decoding session data")
+        except Exception:
+            logger.exception("Error retrieving session")
         return None
 
     async def set(self, session_id: str, data: Dict[str, Any], expiry: int) -> bool:
@@ -60,8 +64,8 @@ class Session:
                 json.dumps(data)
             )
             return True
-        except Exception as e:
-            print(f"Error storing session {session_id}: {str(e)}")
+        except Exception:
+            logger.exception("Error storing session")
             return False
 
     async def delete(self, session_id: str) -> bool:
@@ -77,8 +81,8 @@ class Session:
         try:
             await self.redis_client.delete(f"session:{session_id}")
             return True
-        except Exception as e:
-            print(f"Error deleting session {session_id}: {str(e)}")
+        except Exception:
+            logger.exception("Error deleting session")
             return False
 
     def get_auth_url(self) -> str:
@@ -143,8 +147,8 @@ class Session:
             return current_time + buffer_seconds >= exp_time
         except jwt.ExpiredSignatureError:
             return True
-        except Exception as e:
-            print(f"Error checking token expiration: {str(e)}")
+        except Exception:
+            logger.exception("Error checking token expiration")
             return True
 
     async def refresh_token(self, session_id: str, token_data: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
@@ -174,7 +178,9 @@ class Session:
                 )
                 
                 if refresh_response.status_code != 200:
-                    print(f"Token refresh failed: {refresh_response.text}")
+                    # response body may include refresh_token payload — log
+                    # status only.
+                    logger.warning("Token refresh failed (HTTP %s)", refresh_response.status_code)
                     return False, token_data
                     
                 # Get new token data
@@ -187,8 +193,8 @@ class Session:
                     return False, token_data
                 
                 return True, new_token_data
-        except Exception as e:
-            print(f"Error refreshing token: {str(e)}")
+        except Exception:
+            logger.exception("Error refreshing token")
             return False, token_data
 
     def _get_jwks_client(self) -> PyJWKClient:
@@ -232,6 +238,6 @@ class Session:
                 # Update session with new event
                 return await self.set(session_id, session_data, session_data.get('expires_in', 3600))
             return False
-        except Exception as e:
-            print(f"Error tracking event {event_type} for session {session_id}: {str(e)}")
+        except Exception:
+            logger.exception("Error tracking event %s", event_type)
             return False 

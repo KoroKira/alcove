@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from database import init_db, engine
 from config import (
     STATIC_DIR, ASSETS_DIR, POSTHOG_API_KEY, POSTHOG_HOST,
-    PAD_DEV_MODE, DEV_FRONTEND_URL, SYNC_DIR, FRONTEND_URL
+    PAD_DEV_MODE, DEV_FRONTEND_URL, SYNC_DIR, FRONTEND_URL, ALLOWED_ORIGINS,
 )
 from cache import RedisClient
 from dependencies import UserSession, optional_auth
@@ -26,7 +26,7 @@ from routers.workspace_router import workspace_router
 from routers.pad_router import pad_router
 from routers.app_router import app_router
 from routers.ws_router import ws_router
-from routers.ai_router import ai_router
+from routers.ai import ai_router
 from routers.ingest_router import ingest_router
 from routers.research_router import research_router
 from routers.latex_router import latex_router
@@ -75,11 +75,19 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# CORS is permissive because authentication is enforced via httpOnly session cookies,
-# not Origin headers. Restrict this if you expose the app to the internet.
+# CORS: `allow_origins=["*"]` with `allow_credentials=True` is silently unsafe
+# — the browser strips the credentials on wildcarded responses, so it *seems*
+# to work locally while breaking real cross-origin auth. We now use an explicit
+# allowlist from config; the operator can override via ALLOWED_ORIGINS env.
+if not ALLOWED_ORIGINS:
+    logger.warning(
+        "CORS: ALLOWED_ORIGINS is empty. Same-origin requests still work, "
+        "but any browser-side cross-origin call will be blocked. Set "
+        "FRONTEND_URL or ALLOWED_ORIGINS in the env."
+    )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

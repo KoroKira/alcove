@@ -88,37 +88,43 @@ select:focus-visible,
   outline-offset: 1px;
 }
 
-/* ── Light theme (Latte) overrides ── */
-html[data-theme="latte"] {
+/* ── Light-theme shared overrides ──
+   Applied to every light theme (Latte, GitHub Light, Solarized Light,
+   pad-light, ...). Selector matches on data-dark="0" — set by applyTheme()
+   from the theme's `dark: false` flag — so any new light theme benefits
+   automatically. Colors here are driven by CSS vars so they follow whichever
+   light theme is active; only the *contrast values* (rgba blacks-on-light
+   instead of whites-on-dark) are hardcoded. */
+html[data-dark="0"] {
   color-scheme: light;
 
   /* Recolor rgba borders that use the dark-optimised lavender */
   .kanban, .gantt { color: var(--ap-text0); }
 
   .kanban__col {
-    background: rgba(188, 192, 204, 0.35);
-    border-color: rgba(76, 79, 105, 0.15);
+    background: rgba(0, 0, 0, 0.04);
+    border-color: rgba(0, 0, 0, 0.08);
   }
   .kanban__card {
-    background: #e6e9ef;
-    border-color: rgba(76, 79, 105, 0.12);
-    color: #4c4f69;
-    &:hover { border-color: rgba(136, 57, 239, 0.35); }
+    background: var(--ap-bg1);
+    border-color: rgba(0, 0, 0, 0.08);
+    color: var(--ap-text0);
+    &:hover { border-color: rgba(var(--ap-accent-rgb), 0.35); }
   }
   .card-modal {
-    background: #e6e9ef;
-    border-color: rgba(76, 79, 105, 0.2);
-    color: #4c4f69;
+    background: var(--ap-bg1);
+    border-color: rgba(0, 0, 0, 0.12);
+    color: var(--ap-text0);
   }
-  .card-modal__backdrop { background: rgba(76, 79, 105, 0.4); }
-  .card-modal__title { color: #4c4f69; }
-  .card-modal__desc { color: #5c5f77; }
-  .card-modal__section-label { color: #6c6f85; }
+  .card-modal__backdrop { background: rgba(0, 0, 0, 0.35); }
+  .card-modal__title { color: var(--ap-text0); }
+  .card-modal__desc { color: var(--ap-text1); }
+  .card-modal__section-label { color: var(--ap-text2); }
 
-  .gantt__detail { background: #e6e9ef; color: #4c4f69; }
-  .gantt__labels-header { background: #dce0e8; }
-  .gantt__row { &:hover { background: rgba(136, 57, 239, 0.05); } }
-  .gantt__row-name-text { color: #4c4f69; }
+  .gantt__detail { background: var(--ap-bg1); color: var(--ap-text0); }
+  .gantt__labels-header { background: var(--ap-bg2); }
+  .gantt__row { &:hover { background: rgba(var(--ap-accent-rgb), 0.05); } }
+  .gantt__row-name-text { color: var(--ap-text0); }
 
   .document-pad, .document-pad--dark {
     background: var(--ap-bg0);
@@ -162,56 +168,56 @@ html[data-theme="latte"] {
   /* ── Light sidebar ── */
   .pad-sidebar {
     background: var(--ap-sidebar-bg);
-    border-right-color: rgba(76, 79, 105, 0.15);
+    border-right-color: rgba(0, 0, 0, 0.08);
   }
   .pad-sidebar__icon-btn {
-    color: #6c6f85;
-    &:hover { color: #4c4f69; background: rgba(76, 79, 105, 0.1); }
-    &--active { color: #8839ef; background: rgba(136, 57, 239, 0.1); }
+    color: var(--ap-text2);
+    &:hover { color: var(--ap-text0); background: rgba(0, 0, 0, 0.06); }
+    &--active { color: var(--ap-accent); background: rgba(var(--ap-accent-rgb), 0.1); }
   }
   .pad-sidebar__filter-input {
-    background: rgba(76, 79, 105, 0.08);
-    border-color: rgba(76, 79, 105, 0.2);
-    color: #4c4f69;
-    &::placeholder { color: #9ca0b0; }
+    background: rgba(0, 0, 0, 0.05);
+    border-color: rgba(0, 0, 0, 0.12);
+    color: var(--ap-text0);
+    &::placeholder { color: var(--ap-text2); }
   }
-  .pad-sidebar__section-label { color: #6c6f85; }
+  .pad-sidebar__section-label { color: var(--ap-text2); }
   .pad-sidebar__item {
-    color: #5c5f77;
-    &:hover { background: rgba(76, 79, 105, 0.08); }
+    color: var(--ap-text1);
+    &:hover { background: rgba(0, 0, 0, 0.05); }
     &--active {
-      background: rgba(136, 57, 239, 0.08);
-      border-left-color: #8839ef;
-      color: #4c4f69;
+      background: rgba(var(--ap-accent-rgb), 0.08);
+      border-left-color: var(--ap-accent);
+      color: var(--ap-text0);
     }
   }
-  .pad-sidebar__item-more { color: #9ca0b0; }
-  .pad-sidebar__item-dot { background: #9ca0b0; }
+  .pad-sidebar__item-more { color: var(--ap-text2); }
+  .pad-sidebar__item-dot { background: var(--ap-text2); }
   .pad-sidebar__tag {
-    background: rgba(76, 79, 105, 0.08);
-    color: #6c6f85;
-    &--active { background: rgba(136, 57, 239, 0.12); color: #8839ef; }
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--ap-text2);
+    &--active { background: rgba(var(--ap-accent-rgb), 0.12); color: var(--ap-accent); }
   }
   .pad-sidebar__bottom {
-    border-top-color: rgba(76, 79, 105, 0.12);
+    border-top-color: rgba(0, 0, 0, 0.08);
   }
   .pad-sidebar__bottom-bar {
-    border-top-color: rgba(76, 79, 105, 0.12);
+    border-top-color: rgba(0, 0, 0, 0.08);
   }
   .pad-sidebar__bar-btn {
-    background: rgba(76, 79, 105, 0.08);
-    border-color: rgba(76, 79, 105, 0.15);
-    color: #6c6f85;
-    &:hover { background: rgba(76, 79, 105, 0.14); color: #4c4f69; }
+    background: rgba(0, 0, 0, 0.05);
+    border-color: rgba(0, 0, 0, 0.1);
+    color: var(--ap-text2);
+    &:hover { background: rgba(0, 0, 0, 0.1); color: var(--ap-text0); }
   }
   .pad-sidebar__lang-flag { opacity: 0.5; &--active { opacity: 1; } }
 
   /* Kanban buttons */
   .kanban__col-add {
     background: none;
-    border-color: rgba(76, 79, 105, 0.2);
-    color: #6c6f85;
-    &:hover { background: rgba(136, 57, 239, 0.07); color: #8839ef; }
+    border-color: rgba(0, 0, 0, 0.12);
+    color: var(--ap-text2);
+    &:hover { background: rgba(var(--ap-accent-rgb), 0.07); color: var(--ap-accent); }
   }
 }
 

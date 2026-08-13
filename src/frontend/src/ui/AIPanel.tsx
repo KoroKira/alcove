@@ -3,9 +3,10 @@ import { useTranslation } from 'react-i18next';
 import {
   X, Sparkles, Send, FileText, Tag, Pencil, Bot, Settings,
   Search, Link, Zap, ArrowDownToLine, Loader, ChevronDown, ChevronUp, Workflow,
-  MessageSquare, Plus, Trash2,
+  MessageSquare, Plus, Trash2, Brain, Check,
 } from 'lucide-react';
 import { useOllamaModels, streamOllamaChat } from '../hooks/useOllama';
+import { useAgentMemory, MemoryProposal } from '../hooks/useAgentMemory';
 import OllamaSetup from './OllamaSetup';
 import ModelManager from './ModelManager';
 import './AIPanel.scss';
@@ -46,7 +47,7 @@ interface Props {
   onInsertContent?: (content: string) => void;
 }
 
-type PanelMode = 'chat' | 'rag';
+type PanelMode = 'chat' | 'rag' | 'memory';
 
 const SAVED_MODEL_KEY = 'pad-ws-ai-model';
 const CUSTOM_PROMPT_KEY = 'alcove-ai-custom-prompt';
@@ -117,6 +118,12 @@ export default function AIPanel({
 
   /* ── Diagram gen state ── */
   const [generatingDiagram, setGeneratingDiagram] = useState(false);
+
+  /* ── Agent memory (wiki-LLM) ── */
+  const memory = useAgentMemory();
+  const [proposal, setProposal] = useState<MemoryProposal | null>(null);
+  const [proposalSaving, setProposalSaving] = useState(false);
+  const proposalCheckRef = useRef(0);
 
   /* ── Conversation memory (persisted per pad) ── */
   const [conversations, setConversations] = useState<ConvSummary[]>([]);
@@ -208,6 +215,43 @@ export default function AIPanel({
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
   useEffect(() => { ragBottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [ragMessages]);
+
+  /* Whenever a full assistant turn just settled, ask the model if anything
+     durable is worth saving to memory. Runs at most once per turn thanks to
+     the ref-based dedup. */
+  useEffect(() => {
+    if (streaming) return;
+    if (messages.length < 2) return;
+    const last = messages[messages.length - 1];
+    if (last.role !== 'assistant' || !last.content.trim()) return;
+    // Dedup: only run once per settled turn.
+    const stamp = messages.length;
+    if (proposalCheckRef.current === stamp) return;
+    proposalCheckRef.current = stamp;
+    const timer = setTimeout(async () => {
+      const p = await memory.extract(
+        messages.map(m => ({ role: m.role, content: m.content })),
+      );
+      if (p) setProposal(p);
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [messages, streaming, memory]);
+
+  const acceptProposal = useCallback(async () => {
+    if (!proposal) return;
+    setProposalSaving(true);
+    const ok = await memory.write(
+      proposal.target,
+      proposal.section ? 'replace_section' : 'append',
+      proposal.content,
+      proposal.section,
+      proposal.reason,
+    );
+    setProposalSaving(false);
+    if (ok) setProposal(null);
+  }, [proposal, memory]);
+
+  const dismissProposal = useCallback(() => setProposal(null), []);
 
   /* ── Chat send ── */
   const send = useCallback(async (userContent: string, systemPrefix?: string) => {
@@ -492,6 +536,13 @@ export default function AIPanel({
             >
               <Search size={12} /> {t('ai.ragMode')}
             </button>
+            <button
+              className={`ai-panel__mode-tab${panelMode === 'memory' ? ' ai-panel__mode-tab--active' : ''}`}
+              onClick={() => setPanelMode('memory')}
+              title={t('ai.memoryTabTitle', 'Mémoire persistante de l\'assistant')}
+            >
+              <Brain size={12} /> {t('ai.memoryMode', 'Mémoire')}
+            </button>
           </div>
 
           {/* ── CHAT MODE ── */}
@@ -684,6 +735,48 @@ export default function AIPanel({
                 <div ref={bottomRef} />
               </div>
 
+              {/* Memory proposal chip — appears after a turn if the model
+                  detected a durable fact worth saving. */}
+              {proposal && (
+                <div className="ai-panel__memory-proposal">
+                  <div className="ai-panel__memory-proposal-head">
+                    <Brain size={12} />
+                    <span>
+                      {t('ai.memoryProposeIntro', 'À ajouter à')}{' '}
+                      <strong>[[{proposal.target}]]</strong>
+                      {proposal.section && <> · <em>{proposal.section}</em></>}
+                    </span>
+                  </div>
+                  <div className="ai-panel__memory-proposal-body">
+                    {proposal.content}
+                  </div>
+                  {proposal.reason && (
+                    <div className="ai-panel__memory-proposal-reason">
+                      {proposal.reason}
+                    </div>
+                  )}
+                  <div className="ai-panel__memory-proposal-actions">
+                    <button
+                      className="ai-panel__memory-btn ai-panel__memory-btn--primary"
+                      onClick={acceptProposal}
+                      disabled={proposalSaving}
+                    >
+                      {proposalSaving
+                        ? <Loader size={11} className="ai-spin" />
+                        : <Check size={11} />}
+                      {' '}{t('ai.memoryAccept', 'Mémoriser')}
+                    </button>
+                    <button
+                      className="ai-panel__memory-btn"
+                      onClick={dismissProposal}
+                      disabled={proposalSaving}
+                    >
+                      {t('ai.memoryDismiss', 'Ignorer')}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Input */}
               <div className="ai-panel__input-area">
                 <textarea
@@ -796,6 +889,59 @@ export default function AIPanel({
                 </button>
               </div>
             </>
+          )}
+
+          {/* ── MEMORY MODE ── */}
+          {panelMode === 'memory' && (
+            <div className="ai-panel__memory-pane">
+              <div className="ai-panel__memory-intro">
+                {t(
+                  'ai.memoryIntro',
+                  "Notes durables que l'assistant garde d'une conversation à l'autre. Chaque entrée est un pad Markdown dans le dossier _agent — modifiable à la main, versionné, jamais synchronisé ailleurs.",
+                )}
+              </div>
+              {memory.loading && memory.slots.length === 0 && (
+                <div className="ai-panel__memory-loading">
+                  <Loader size={14} className="ai-spin" />
+                </div>
+              )}
+              {memory.slots.map(slot => {
+                const trimmed = slot.content.trim();
+                // Strip the seed header for the preview — same logic as the
+                // backend prompt injection.
+                const body = trimmed
+                  .replace(/^#\s+.*\n+(_.*_\n+)?/, '')
+                  .trim();
+                return (
+                  <div key={slot.slug} className="ai-panel__memory-slot">
+                    <div className="ai-panel__memory-slot-head">
+                      <Brain size={12} />
+                      <span className="ai-panel__memory-slot-name">
+                        {slot.display_name}
+                      </span>
+                      {slot.pad_id && (
+                        <a
+                          className="ai-panel__memory-slot-open"
+                          href={`/pad/${slot.pad_id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={t('ai.memoryOpen', 'Ouvrir le pad')}
+                        >
+                          <ArrowDownToLine size={11} />
+                        </a>
+                      )}
+                    </div>
+                    <div className="ai-panel__memory-slot-body">
+                      {body || (
+                        <span className="ai-panel__memory-slot-empty">
+                          {t('ai.memoryEmpty', '(vide — sera rempli par l\'assistant au fil des conversations)')}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </>
       )}

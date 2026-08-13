@@ -1,5 +1,5 @@
 """Tests for the map-reduce structuring helpers (pure functions)."""
-from routers.ai_router import _chunk_for_map, _parse_json_obj
+from routers.ai.generation import _chunk_for_map, _parse_json_obj
 
 
 def test_chunk_empty():

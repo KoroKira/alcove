@@ -287,6 +287,64 @@ textarea.addlink__input {
   gap: 6px;
 }
 
+.addlink__queue {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.addlink__queue-item {
+  align-items: center;
+  background: rgba(var(--ap-text0-rgb), 0.04);
+  border: 1px solid rgba(var(--ap-text0-rgb), 0.08);
+  border-radius: var(--ap-radius-sm, 8px);
+  display: flex;
+  font-size: 12px;
+  gap: 8px;
+  padding: 7px 10px;
+
+  &--done { border-color: rgba(var(--ap-accent2-rgb), 0.25); }
+  &--error { border-color: rgba(var(--ap-red-rgb, 243, 139, 168), 0.35); }
+}
+
+.addlink__queue-icon { display: flex; flex-shrink: 0; }
+
+.addlink__queue-label {
+  color: var(--color-on-surface, var(--ap-text0));
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.addlink__queue-msg {
+  color: var(--color-on-surface-low, var(--ap-text2));
+  flex-shrink: 0;
+  font-size: 11px;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.addlink__queue-err { color: var(--ap-red, #f38ba8); flex-shrink: 0; }
+
+.addlink__queue-open {
+  background: none;
+  border: 1px solid rgba(var(--ap-accent2-rgb), 0.35);
+  border-radius: var(--ap-radius-xs, 6px);
+  color: rgb(var(--ap-accent2-rgb));
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+
+  &:hover { background: rgba(var(--ap-accent2-rgb), 0.12); }
+}
+
 .addlink__logs {
   display: flex;
   flex-direction: column;

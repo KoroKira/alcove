@@ -1,7 +1,11 @@
 import React, { useState, useRef } from 'react';
-import { X, Link2, FileText, Youtube, Globe, Loader2, CheckCircle, AlertCircle, Sparkles, Mic } from 'lucide-react';
+import {
+  X, Link2, FileText, Youtube, Globe, Loader2, CheckCircle, AlertCircle, Sparkles, Mic,
+  PlayCircle, XCircle,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Tab } from '../hooks/usePadTabs';
+import { serializeVideoMeta, VideoMeta } from '../lib/videoMeta';
 import './AddFromLink.scss';
 
 interface Props {
@@ -15,17 +19,32 @@ interface Ingested {
   title: string;
   markdown: string;
   metadata: Record<string, any>;
-  source_type: 'web' | 'pdf' | 'youtube';
+  source_type: 'web' | 'pdf' | 'youtube' | 'media';
 }
 
 type ActionKey = 'summarize' | 'extractinfo' | 'tags' | 'flashcards' | 'links' | 'rag';
 
+type Source = { kind: 'file'; file: File } | { kind: 'url'; url: string };
+
+interface QueueItem {
+  id: string;
+  source: Source;
+  label: string;
+  status: 'pending' | 'running' | 'done' | 'error';
+  message?: string;
+  padId?: string;
+}
+
 const SOURCE_ICON = {
-  web: <Globe size={14} />, pdf: <FileText size={14} />, youtube: <Youtube size={14} />,
+  web: <Globe size={14} />, pdf: <FileText size={14} />, youtube: <Youtube size={14} />, media: <Mic size={14} />,
 };
 
 function detectType(url: string): 'youtube' | 'web' {
   return /youtube\.com|youtu\.be/.test(url) ? 'youtube' : 'web';
+}
+
+function isMediaFile(f: File): boolean {
+  return f.type.startsWith('audio/') || f.type.startsWith('video/');
 }
 
 function fmtDate(d?: string): string {
@@ -34,16 +53,21 @@ function fmtDate(d?: string): string {
   return m ? `${m[1]}-${m[2]}-${m[3]}` : d;
 }
 
-// Consume the /api/ai/structure-document SSE stream (map-reduce): forwards
-// progress messages and returns the final structured Markdown body.
-async function structureDocument(
-  content: string, title: string, lang: string, length: string, onProgress: (msg: string) => void,
+/** Generic SSE consumer for the report-generating endpoints — they all speak
+ * the same `{kind: 'progress'|'document'|'error', msg?, content?, error?}`
+ * dialect, so a single helper covers both /structure-document and
+ * /video-report. */
+async function consumeReportStream(
+  endpoint: string,
+  payload: unknown,
+  onProgress: (msg: string) => void,
 ): Promise<string> {
-  const resp = await fetch('/api/ai/structure-document', {
+  const resp = await fetch(endpoint, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content, title, lang, length }),
+    body: JSON.stringify(payload),
   });
-  const reader = resp.body!.getReader();
+  if (!resp.ok || !resp.body) throw new Error(`report error ${resp.status}`);
+  const reader = resp.body.getReader();
   const dec = new TextDecoder();
   let buf = '', doc = '';
   while (true) {
@@ -59,10 +83,35 @@ async function structureDocument(
         const o = JSON.parse(d);
         if (o.kind === 'progress' && o.msg) onProgress(o.msg);
         else if (o.kind === 'document') doc = o.content || '';
-      } catch { /* ignore */ }
+        else if (o.kind === 'error') throw new Error(o.error || 'report failed');
+      } catch { /* ignore malformed events */ }
     }
   }
   return doc.trim();
+}
+
+async function structureDocument(
+  content: string, title: string, lang: string, length: string, onProgress: (msg: string) => void,
+): Promise<string> {
+  return consumeReportStream('/api/ai/structure-document', { content, title, lang, length }, onProgress);
+}
+
+/** Video-specific report: feeds the timestamped transcript + chapters to the
+ * dedicated endpoint so the model can cite [MM:SS] anchors. */
+async function videoReport(
+  ing: Ingested, lang: string, onProgress: (msg: string) => void,
+): Promise<string> {
+  const md = ing.metadata || {};
+  return consumeReportStream('/api/ai/video-report', {
+    title: ing.title,
+    url: md.source_url,
+    description: md.description ?? '',
+    author: md.author ?? '',
+    duration: md.duration,
+    chapters: md.chapters || [],
+    transcript_segments: md.transcript_segments || [],
+    lang,
+  }, onProgress);
 }
 
 export default function AddFromLink({ onClose, onCreated, tabs }: Props) {
@@ -70,11 +119,11 @@ export default function AddFromLink({ onClose, onCreated, tabs }: Props) {
   const lang = i18n.language.startsWith('fr') ? 'fr' : 'en';
 
   const [url, setUrl] = useState('');
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [ingested, setIngested] = useState<Ingested | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [step, setStep] = useState<'input' | 'preview' | 'processing' | 'done'>('input');
+  const [step, setStep] = useState<'input' | 'preview' | 'processing' | 'done' | 'queue'>('input');
   const [logs, setLogs] = useState<string[]>([]);
   const [transcribing, setTranscribing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -84,32 +133,75 @@ export default function AddFromLink({ onClose, onCreated, tabs }: Props) {
   });
   const [target, setTarget] = useState<string>('new'); // 'new' | padId
   const [length, setLength] = useState<'short' | 'long'>('long');
+  // Speaker diarization: only offered when the server tells us it's set up
+  // (pyannote installed + HF_TOKEN present). Silently hidden otherwise so
+  // we don't tease a feature the user can't actually enable.
+  const [diarizeAvailable, setDiarizeAvailable] = useState<null | { on: boolean; reason?: string }>(null);
+  const [diarize, setDiarize] = useState(false);
+  React.useEffect(() => {
+    fetch('/api/ai/diarization-status')
+      .then(r => r.json())
+      .then(d => setDiarizeAvailable({ on: !!d.available, reason: d.reason }))
+      .catch(() => setDiarizeAvailable({ on: false, reason: 'offline' }));
+  }, []);
+
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [queueRunning, setQueueRunning] = useState(false);
 
   const toggle = (k: ActionKey) => setActions(a => ({ ...a, [k]: !a[k] }));
+  const file = files[0] ?? null;
 
-  /* ── Step 1: ingest ── */
-  const ingest = async () => {
-    setError(null);
-    setLoading(true);
-    try {
-      let resp: Response;
-      if (file) {
-        const fd = new FormData(); fd.append('file', file);
-        resp = await fetch('/api/ingest/pdf', { method: 'POST', body: fd });
-      } else {
-        const clean = url.trim();
-        if (!clean) { setLoading(false); return; }
-        const type = detectType(clean);
-        resp = await fetch(`/api/ingest/${type}`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: clean }),
-        });
-      }
+  /* ── Fetch a single source (file or url) → Ingested. No state side-effects,
+   *    so it's usable both for the single-item flow and the batch queue. ── */
+  const ingestOne = async (source: Source): Promise<Ingested> => {
+    if (source.kind === 'file' && isMediaFile(source.file)) {
+      const fd = new FormData();
+      fd.append('file', source.file);
+      if (diarize) fd.append('diarize', 'true');
+      const resp = await fetch('/api/ingest/media/transcribe', { method: 'POST', body: fd });
       if (!resp.ok) {
         const e = await resp.json().catch(() => ({}));
         throw new Error(e.detail || `Erreur ${resp.status}`);
       }
-      const data: Ingested = await resp.json();
+      const d = await resp.json();
+      return {
+        title: source.file.name.replace(/\.[^/.]+$/, ''),
+        markdown: d.transcript,
+        metadata: {
+          filename: source.file.name,
+          language: d.language,
+          transcript_segments: Array.isArray(d.segments) ? d.segments : [],
+          diarized: !!d.diarized,
+        },
+        source_type: 'media',
+      };
+    }
+    let resp: Response;
+    if (source.kind === 'file') {
+      const fd = new FormData(); fd.append('file', source.file);
+      resp = await fetch('/api/ingest/pdf', { method: 'POST', body: fd });
+    } else {
+      const type = detectType(source.url);
+      resp = await fetch(`/api/ingest/${type}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: source.url }),
+      });
+    }
+    if (!resp.ok) {
+      const e = await resp.json().catch(() => ({}));
+      throw new Error(e.detail || `Erreur ${resp.status}`);
+    }
+    return await resp.json();
+  };
+
+  /* ── Step 1 (single item): ingest ── */
+  const ingest = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const urlLines = url.split('\n').map(s => s.trim()).filter(Boolean);
+      const source: Source = file ? { kind: 'file', file } : { kind: 'url', url: urlLines[0] };
+      const data = await ingestOne(source);
       setIngested(data);
       setStep('preview');
     } catch (e: any) {
@@ -127,17 +219,25 @@ export default function AddFromLink({ onClose, onCreated, tabs }: Props) {
     try {
       const r = await fetch('/api/ingest/youtube/transcribe', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: ingested.metadata.source_url }),
+        body: JSON.stringify({ url: ingested.metadata.source_url, diarize }),
       });
       if (!r.ok) {
         const e = await r.json().catch(() => ({}));
         throw new Error(e.detail || `Erreur ${r.status}`);
       }
       const d = await r.json();
+      // Persist the timestamped segments so the video-report endpoint can
+      // consume them; keep the plain transcript in the visible markdown for
+      // the source note that gets archived.
       setIngested({
         ...ingested,
         markdown: `${ingested.markdown}\n\n## Transcription (Whisper)\n\n${d.transcript}`,
-        metadata: { ...ingested.metadata, has_transcript: true },
+        metadata: {
+          ...ingested.metadata,
+          has_transcript: true,
+          transcript_segments: Array.isArray(d.segments) ? d.segments : (ingested.metadata.transcript_segments || []),
+          whisper_language: d.language,
+        },
       });
     } catch (e: any) {
       setError(e.message || String(e));
@@ -157,8 +257,27 @@ export default function AddFromLink({ onClose, onCreated, tabs }: Props) {
 
   // The clean digest note. The raw transcript lives in a separate source note
   // (in the "Sources" folder) that we wikilink to — keeping this note readable.
+  //
+  // For YouTube sources we also emit an `<!-- alcove:video … -->` comment as
+  // the very first line so DocumentPad can mount the inline player and turn
+  // `[MM:SS]` anchors into jump-to-time buttons. The comment is invisible in
+  // the rendered preview (browsers hide comment nodes).
   const buildDigest = (ing: Ingested, body: string, sourceTitle: string): string => {
-    const parts = [`# ${ing.title}`, buildHeader(ing)];
+    const md = ing.metadata || {};
+    const parts: string[] = [];
+    if (ing.source_type === 'youtube') {
+      const meta: VideoMeta = {
+        id: md.video_id || undefined,
+        url: md.source_url || undefined,
+        thumbnail: md.thumbnail || undefined,
+        duration: typeof md.duration === 'number' ? md.duration : undefined,
+        author: md.author || undefined,
+        chapters: Array.isArray(md.chapters) ? md.chapters : undefined,
+      };
+      if (meta.id || meta.url) parts.push(serializeVideoMeta(meta));
+    }
+    parts.push(`# ${ing.title}`);
+    parts.push(buildHeader(ing));
     if (body) parts.push(body);
     parts.push('## Notes\n\n');
     parts.push(`---\n\n> 📄 Source complète (transcript brut) : [[${sourceTitle}]]`);
@@ -167,91 +286,146 @@ export default function AddFromLink({ onClose, onCreated, tabs }: Props) {
 
   // The source note: the full raw content, archived and citable.
   const buildSourceNote = (ing: Ingested): string => {
-    const label = ing.source_type === 'youtube' ? 'Transcript' : 'Contenu brut';
+    const label = ing.source_type === 'youtube' || ing.source_type === 'media' ? 'Transcript' : 'Contenu brut';
     return [`# ${ing.title} — source`, buildHeader(ing), `## ${label}\n\n${ing.markdown}`].join('\n\n');
   };
 
   const log = (s: string) => setLogs(l => [...l, s]);
 
-  /* ── Step 2: create pad + run actions ── */
+  /* ── Shared: summarize + extract-info + archive source note + flashcards +
+   *    links → final Markdown content, ready to be written into a pad.
+   *    Used by both the single-item flow and the batch queue. ── */
+  const buildContent = async (
+    ing: Ingested, actionsSel: Record<ActionKey, boolean>, len: 'short' | 'long', onStep: (s: string) => void,
+  ): Promise<string> => {
+    let body = '';
+    if (actionsSel.summarize) {
+      // Video sources get the dedicated pipeline: chapter-aware chunking,
+      // timestamped citations, quotes with anchor points. Falls back to the
+      // generic map-reduce if there are no transcript segments (rare).
+      const md = ing.metadata || {};
+      const hasVideoSegments = ing.source_type === 'youtube'
+        && Array.isArray(md.transcript_segments)
+        && md.transcript_segments.length > 0;
+      if (hasVideoSegments) {
+        onStep('🎬 Analyse vidéo (avec timestamps)…');
+        try {
+          body = await videoReport(ing, lang, onStep);
+        } catch (e) {
+          onStep('  ⚠️ Rapport vidéo indisponible, retour au mode générique');
+          body = await structureDocument(ing.markdown, ing.title, lang, len, onStep);
+        }
+      } else {
+        onStep('✨ Analyse structurée…');
+        body = await structureDocument(ing.markdown, ing.title, lang, len, onStep);
+      }
+    }
+
+    if (actionsSel.extractinfo) {
+      onStep('📋 Extraction des infos clés…');
+      try {
+        const r = await fetch('/api/ai/extract-info', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: ing.markdown, lang }),
+        });
+        const d = await r.json();
+        if (d.info) body += `\n\n## Infos clés\n\n${d.info}`;
+      } catch { onStep('  ⚠️ Infos clés indisponibles'); }
+    }
+
+    // Archive the raw content as a separate "source" note in a Sources folder,
+    // wikilinked from the digest.
+    onStep('🗂️ Note source (transcript)…');
+    const sourceTitle = `${ing.title} — source`.slice(0, 100);
+    try {
+      const sr = await fetch('/api/pad/new', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pad_type: 'document', display_name: sourceTitle }),
+      });
+      if (sr.ok) {
+        const sourceId = (await sr.json()).id;
+        await fetch(`/api/pad/${sourceId}/doc`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: buildSourceNote(ing), format: 'markdown' }),
+        });
+        await fetch(`/api/pad/${sourceId}/folder`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ folder: 'Sources' }),
+        });
+      }
+    } catch { onStep('  ⚠️ Note source non créée'); }
+
+    let content = buildDigest(ing, body, sourceTitle);
+
+    if (actionsSel.flashcards) {
+      onStep('🧠 Génération de flashcards…');
+      try {
+        const r = await fetch('/api/ai/generate-flashcards', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: ing.markdown, lang }),
+        });
+        const d = await r.json();
+        if (d.flashcards) content += `\n\n---\n\n## Flashcards\n\n${d.flashcards}`;
+      } catch { onStep('  ⚠️ Flashcards indisponibles'); }
+    }
+
+    if (actionsSel.links && tabs.length) {
+      onStep('🔗 Recherche de liens…');
+      try {
+        const r = await fetch('/api/ai/suggest-links', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: ing.markdown, pad_titles: tabs.map(t => t.title), lang }),
+        });
+        const d = await r.json();
+        const suggs: string[] = d.suggestions ?? [];
+        if (suggs.length) content += `\n\n## Liens\n\n${suggs.map(s => `- [[${s}]]`).join('\n')}`;
+      } catch { onStep('  ⚠️ Liens indisponibles'); }
+    }
+
+    return content;
+  };
+
+  /* ── Shared: tags + RAG indexing, applied after a pad already exists. ── */
+  const applyPostActions = async (
+    padId: string, ing: Ingested, actionsSel: Record<ActionKey, boolean>, onStep: (s: string) => void,
+  ): Promise<void> => {
+    if (actionsSel.tags) {
+      onStep('🏷️ Tags automatiques…');
+      try {
+        const r = await fetch('/api/ai/suggest-tags', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: ing.markdown, title: ing.title, lang }),
+        });
+        const d = await r.json();
+        const tags: string[] = d.tags ?? [];
+        if (tags.length) {
+          await fetch(`/api/pad/${padId}/tags`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tags }),
+          });
+        }
+      } catch { onStep('  ⚠️ Tags indisponibles'); }
+    }
+
+    if (actionsSel.rag) {
+      onStep('📇 Indexation RAG…');
+      try {
+        await fetch('/api/ai/index', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pad_id: padId }),
+        });
+      } catch { onStep('  ⚠️ Indexation indisponible'); }
+    }
+  };
+
+  /* ── Step 2 (single item): create pad + run actions ── */
   const run = async () => {
     if (!ingested) return;
     setStep('processing');
     setLogs([]);
     try {
-      // 1. Structured summary via map-reduce (one AI per portion + a mother AI).
-      let body = '';
-      if (actions.summarize) {
-        log('✨ Analyse structurée…');
-        body = await structureDocument(ingested.markdown, ingested.title, lang, length, log);
-      }
+      const content = await buildContent(ingested, actions, length, log);
 
-      // 1b. Optional key-info extraction (people / theme / sources).
-      if (actions.extractinfo) {
-        log('📋 Extraction des infos clés…');
-        try {
-          const r = await fetch('/api/ai/extract-info', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: ingested.markdown, lang }),
-          });
-          const d = await r.json();
-          if (d.info) body += `\n\n## Infos clés\n\n${d.info}`;
-        } catch { log('  ⚠️ Infos clés indisponibles'); }
-      }
-
-      // 1c. Archive the raw content as a separate "source" note in a Sources
-      // folder, wikilinked from the digest (the user's idea).
-      log('🗂️ Note source (transcript)…');
-      const sourceTitle = `${ingested.title} — source`.slice(0, 100);
-      try {
-        const sr = await fetch('/api/pad/new', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pad_type: 'document', display_name: sourceTitle }),
-        });
-        if (sr.ok) {
-          const sourceId = (await sr.json()).id;
-          await fetch(`/api/pad/${sourceId}/doc`, {
-            method: 'PUT', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: buildSourceNote(ingested), format: 'markdown' }),
-          });
-          await fetch(`/api/pad/${sourceId}/folder`, {
-            method: 'PUT', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ folder: 'Sources' }),
-          });
-        }
-      } catch { log('  ⚠️ Note source non créée'); }
-
-      // Assemble the clean digest (links to the source note).
-      let content = buildDigest(ingested, body, sourceTitle);
-
-      // 2. Optional flashcards → appended.
-      if (actions.flashcards) {
-        log('🧠 Génération de flashcards…');
-        try {
-          const r = await fetch('/api/ai/generate-flashcards', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: ingested.markdown, lang }),
-          });
-          const d = await r.json();
-          if (d.flashcards) content += `\n\n---\n\n## Flashcards\n\n${d.flashcards}`;
-        } catch { log('  ⚠️ Flashcards indisponibles'); }
-      }
-
-      // 3. Optional suggested links → appended.
-      if (actions.links && tabs.length) {
-        log('🔗 Recherche de liens…');
-        try {
-          const r = await fetch('/api/ai/suggest-links', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: ingested.markdown, pad_titles: tabs.map(t => t.title), lang }),
-          });
-          const d = await r.json();
-          const suggs: string[] = d.suggestions ?? [];
-          if (suggs.length) content += `\n\n## Liens\n\n${suggs.map(s => `- [[${s}]]`).join('\n')}`;
-        } catch { log('  ⚠️ Liens indisponibles'); }
-      }
-
-      // 4. Create a new pad, or append to an existing one.
       let padId: string;
       if (target === 'new') {
         log('📄 Création du pad…');
@@ -276,35 +450,8 @@ export default function AddFromLink({ onClose, onCreated, tabs }: Props) {
         });
       }
 
-      // 5. Optional auto-tags.
-      if (actions.tags) {
-        log('🏷️ Tags automatiques…');
-        try {
-          const r = await fetch('/api/ai/suggest-tags', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: ingested.markdown, title: ingested.title, lang }),
-          });
-          const d = await r.json();
-          const tags: string[] = d.tags ?? [];
-          if (tags.length) {
-            await fetch(`/api/pad/${padId}/tags`, {
-              method: 'PUT', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ tags }),
-            });
-          }
-        } catch { log('  ⚠️ Tags indisponibles'); }
-      }
-
-      // 6. Optional RAG indexing.
-      if (actions.rag) {
-        log('📇 Indexation RAG…');
-        try {
-          await fetch('/api/ai/index', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pad_id: padId }),
-          });
-        } catch { log('  ⚠️ Indexation indisponible'); }
-      }
+      await applyPostActions(padId, ingested, actions, log);
+      await persistVideoMeta(padId, ingested);
 
       log('✅ Terminé');
       setStep('done');
@@ -315,7 +462,94 @@ export default function AddFromLink({ onClose, onCreated, tabs }: Props) {
     }
   };
 
+  /** Attach the video block (chapters + segments + ids) to a pad so the
+   * DocumentPad Regenerate button can re-run /video-report without needing
+   * to re-hit YouTube. No-op for non-video ingests. */
+  const persistVideoMeta = async (padId: string, ing: Ingested): Promise<void> => {
+    const md = ing.metadata || {};
+    const hasSegments = Array.isArray(md.transcript_segments) && md.transcript_segments.length > 0;
+    if (ing.source_type !== 'youtube' && ing.source_type !== 'media') return;
+    if (!hasSegments && !md.video_id) return;
+    try {
+      await fetch(`/api/pad/${padId}/video-meta`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          video_id: md.video_id ?? null,
+          url: md.source_url ?? null,
+          thumbnail: md.thumbnail ?? null,
+          duration: typeof md.duration === 'number' ? md.duration : null,
+          author: md.author ?? null,
+          chapters: md.chapters ?? null,
+          transcript_segments: md.transcript_segments ?? null,
+          language: md.language ?? md.whisper_language ?? null,
+          diarized: md.diarized ?? null,
+        }),
+      });
+    } catch { /* non-fatal — regenerate button will fall back to a plain re-fetch */ }
+  };
+
+  /* ── Batch: ingest + process one queue item into its own new pad. ── */
+  const processOne = async (
+    ing: Ingested, onStep: (s: string) => void,
+  ): Promise<string> => {
+    const content = await buildContent(ing, actions, length, onStep);
+    onStep('📄 Création du pad…');
+    const cr = await fetch('/api/pad/new', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pad_type: 'document', display_name: ing.title.slice(0, 100) }),
+    });
+    if (!cr.ok) throw new Error('Création du pad échouée');
+    const padId = (await cr.json()).id;
+    await fetch(`/api/pad/${padId}/doc`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, format: 'markdown' }),
+    });
+    await applyPostActions(padId, ing, actions, onStep);
+    return padId;
+  };
+
+  const updateQueueItem = (id: string, patch: Partial<QueueItem>) => {
+    setQueue(q => q.map(it => (it.id === id ? { ...it, ...patch } : it)));
+  };
+
+  /* ── Build the queue from selected files + pasted URL lines, and show it. ── */
+  const startQueue = () => {
+    const urlLines = url.split('\n').map(s => s.trim()).filter(Boolean);
+    const items: QueueItem[] = [
+      ...files.map((f, i) => ({
+        id: `f${i}`, source: { kind: 'file', file: f } as Source, label: f.name, status: 'pending' as const,
+      })),
+      ...urlLines.map((u, i) => ({
+        id: `u${i}`, source: { kind: 'url', url: u } as Source, label: u, status: 'pending' as const,
+      })),
+    ];
+    setQueue(items);
+    setStep('queue');
+  };
+
+  /* ── Process the queue sequentially — one item at a time, matching the
+   *    backend's whisper lock (concurrent transcriptions don't parallelize on
+   *    CPU, they just contend). Each item gets its own pad. ── */
+  const runQueue = async () => {
+    setQueueRunning(true);
+    for (const item of queue) {
+      updateQueueItem(item.id, { status: 'running', message: 'Ingestion…' });
+      try {
+        const ing = await ingestOne(item.source);
+        const padId = await processOne(ing, msg => updateQueueItem(item.id, { message: msg }));
+        updateQueueItem(item.id, { status: 'done', message: undefined, padId });
+      } catch (e: any) {
+        updateQueueItem(item.id, { status: 'error', message: e.message || String(e) });
+      }
+    }
+    setQueueRunning(false);
+  };
+
   const m = ingested?.metadata || {};
+  const urlLineCount = url.split('\n').map(s => s.trim()).filter(Boolean).length;
+  const totalSelected = files.length + urlLineCount;
+  const queueDone = queue.length > 0 && queue.every(it => it.status === 'done' || it.status === 'error');
 
   return (
     <div className="addlink__backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
@@ -327,33 +561,43 @@ export default function AddFromLink({ onClose, onCreated, tabs }: Props) {
 
         {step === 'input' && (
           <div className="addlink__body">
-            <label className="addlink__label">Lien (page web ou vidéo YouTube)</label>
+            <label className="addlink__label">Liens (page web ou vidéo YouTube — un par ligne)</label>
             <div className="addlink__url-row">
-              <input
+              <textarea
                 className="addlink__input"
-                placeholder="https://…"
+                placeholder={'https://…\nun lien par ligne pour traiter plusieurs contenus'}
                 value={url}
                 autoFocus
-                onChange={e => { setUrl(e.target.value); setFile(null); }}
-                onKeyDown={e => { if (e.key === 'Enter' && url.trim()) ingest(); }}
+                onChange={e => setUrl(e.target.value)}
               />
             </div>
-            <div className="addlink__or">ou</div>
+            <div className="addlink__or">et/ou</div>
             <button className="addlink__file-btn" onClick={() => fileRef.current?.click()}>
-              <FileText size={14} /> {file ? file.name : 'Choisir un fichier PDF'}
+              {file && isMediaFile(file) ? <Mic size={14} /> : <FileText size={14} />}
+              {files.length === 0 && 'Choisir un ou plusieurs fichiers (PDF, audio, vidéo)'}
+              {files.length === 1 && files[0].name}
+              {files.length > 1 && `${files.length} fichiers sélectionnés`}
             </button>
             <input
-              ref={fileRef} type="file" accept="application/pdf" style={{ display: 'none' }}
-              onChange={e => { const f = e.target.files?.[0]; if (f) { setFile(f); setUrl(''); } }}
+              ref={fileRef} type="file" multiple accept="application/pdf,audio/*,video/*" style={{ display: 'none' }}
+              onChange={e => { setFiles(Array.from(e.target.files || [])); }}
             />
+            {files.some(isMediaFile) && (
+              <div className="addlink__hint-row">🎙️ Transcription locale (Whisper) — peut prendre un moment selon la durée.</div>
+            )}
+            {totalSelected > 1 && (
+              <div className="addlink__hint-row">📋 {totalSelected} éléments seront traités en file, un par un.</div>
+            )}
             {error && <div className="addlink__error"><AlertCircle size={12} /> {error}</div>}
             <div className="addlink__footer">
               <button
                 className="addlink__primary"
-                disabled={loading || (!url.trim() && !file)}
-                onClick={ingest}
+                disabled={loading || totalSelected === 0}
+                onClick={() => (totalSelected > 1 ? startQueue() : ingest())}
               >
-                {loading ? <><Loader2 size={14} className="addlink__spin" /> Analyse…</> : <>Analyser</>}
+                {loading
+                  ? <><Loader2 size={14} className="addlink__spin" /> {file && isMediaFile(file) ? 'Transcription…' : 'Analyse…'}</>
+                  : <>Analyser{totalSelected > 1 ? ` (${totalSelected})` : ''}</>}
               </button>
             </div>
           </div>
@@ -368,6 +612,7 @@ export default function AddFromLink({ onClose, onCreated, tabs }: Props) {
                 {m.author && <span>👤 {m.author}</span>}
                 {m.upload_date && <span>📅 {fmtDate(m.upload_date)}</span>}
                 {ingested.source_type === 'youtube' && <span>{m.has_transcript ? '📝 transcription OK' : '⚠️ pas de sous-titres'}</span>}
+                {ingested.source_type === 'media' && m.language && <span>🌐 {m.language}</span>}
                 <span>{Math.round(ingested.markdown.length / 1000)}k caractères</span>
               </div>
               <div className="addlink__preview-snippet">{ingested.markdown.slice(0, 240)}…</div>
@@ -387,6 +632,19 @@ export default function AddFromLink({ onClose, onCreated, tabs }: Props) {
               <button className={`addlink__seg-btn${length === 'short' ? ' addlink__seg-btn--on' : ''}`} onClick={() => setLength('short')}>Court</button>
               <button className={`addlink__seg-btn${length === 'long' ? ' addlink__seg-btn--on' : ''}`} onClick={() => setLength('long')}>Détaillé</button>
             </div>
+
+            {/* Speaker diarization: only shown when pyannote + HF_TOKEN are
+                set up server-side. Hidden entirely otherwise — no point
+                offering a checkbox the user can't tick meaningfully. */}
+            {diarizeAvailable?.on && (
+              <>
+                <label className="addlink__label">Intervenants</label>
+                <label className={`addlink__action${diarize ? ' addlink__action--on' : ''}`}>
+                  <input type="checkbox" checked={diarize} onChange={e => setDiarize(e.target.checked)} />
+                  🎙️ Détecter les intervenants (Whisper + pyannote — ajoute ~30s / minute audio)
+                </label>
+              </>
+            )}
 
             <label className="addlink__label">Que veux-tu en faire ?</label>
             <div className="addlink__actions">
@@ -419,6 +677,64 @@ export default function AddFromLink({ onClose, onCreated, tabs }: Props) {
               <button className="addlink__primary" onClick={run}>
                 <Sparkles size={14} /> Créer
               </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'queue' && (
+          <div className="addlink__body">
+            <label className="addlink__label">File d'attente ({queue.length} éléments)</label>
+            <div className="addlink__queue">
+              {queue.map(item => (
+                <div key={item.id} className={`addlink__queue-item addlink__queue-item--${item.status}`}>
+                  <span className="addlink__queue-icon">
+                    {item.status === 'done' && <CheckCircle size={13} className="addlink__log-ok" />}
+                    {item.status === 'error' && <XCircle size={13} className="addlink__queue-err" />}
+                    {item.status === 'running' && <Loader2 size={13} className="addlink__spin" />}
+                    {item.status === 'pending' && (item.source.kind === 'file' ? <FileText size={13} /> : <Link2 size={13} />)}
+                  </span>
+                  <span className="addlink__queue-label" title={item.label}>{item.label}</span>
+                  {item.status === 'done' && item.padId && (
+                    <button className="addlink__queue-open" onClick={() => onCreated(item.padId!)}>Ouvrir</button>
+                  )}
+                  {item.message && <span className="addlink__queue-msg">{item.message}</span>}
+                </div>
+              ))}
+            </div>
+
+            <label className="addlink__label">Longueur du résumé</label>
+            <div className="addlink__seg">
+              <button className={`addlink__seg-btn${length === 'short' ? ' addlink__seg-btn--on' : ''}`} onClick={() => setLength('short')} disabled={queueRunning}>Court</button>
+              <button className={`addlink__seg-btn${length === 'long' ? ' addlink__seg-btn--on' : ''}`} onClick={() => setLength('long')} disabled={queueRunning}>Détaillé</button>
+            </div>
+
+            <label className="addlink__label">Que veux-tu en faire ? (appliqué à chaque élément)</label>
+            <div className="addlink__actions">
+              {([
+                ['summarize', '✨ Résumé IA'],
+                ['extractinfo', '📋 Infos clés'],
+                ['tags', '🏷️ Tags auto'],
+                ['flashcards', '🧠 Flashcards'],
+                ['links', '🔗 Liens suggérés'],
+                ['rag', '📇 Ajouter au RAG'],
+              ] as [ActionKey, string][]).map(([k, label]) => (
+                <label key={k} className={`addlink__action${actions[k] ? ' addlink__action--on' : ''}`}>
+                  <input type="checkbox" checked={actions[k]} disabled={queueRunning} onChange={() => toggle(k)} />
+                  {label}
+                </label>
+              ))}
+            </div>
+
+            {error && <div className="addlink__error"><AlertCircle size={12} /> {error}</div>}
+            <div className="addlink__footer">
+              <button className="addlink__ghost" disabled={queueRunning} onClick={() => { setStep('input'); setQueue([]); }}>Retour</button>
+              {queueDone ? (
+                <button className="addlink__primary" onClick={onClose}>Fermer</button>
+              ) : (
+                <button className="addlink__primary" disabled={queueRunning} onClick={runQueue}>
+                  <PlayCircle size={14} /> {queueRunning ? 'File en cours…' : 'Lancer la file'}
+                </button>
+              )}
             </div>
           </div>
         )}

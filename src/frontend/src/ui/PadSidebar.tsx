@@ -616,7 +616,7 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
           </button>
         )}
         {onAddFromLink && (
-          <button className="pad-sidebar__icon-btn" onClick={onAddFromLink} title="Ajouter depuis un lien (web / PDF / YouTube)">
+          <button className="pad-sidebar__icon-btn" onClick={onAddFromLink} title="Ajouter depuis un lien (web / PDF / YouTube / audio / vidéo)">
             <Link2 size={15} />
           </button>
         )}

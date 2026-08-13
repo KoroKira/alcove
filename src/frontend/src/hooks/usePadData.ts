@@ -50,7 +50,10 @@ export const usePad = (
 
         if (isTemporaryPad && excalidrawAPI) {
             console.debug(`[alcove] Initializing new temporary pad ${padId}`);
-            const normalizedData = normalizeCanvasData(applyThemeOverride(INITIAL_APP_DATA));
+            // INITIAL_APP_DATA only specifies the fields we actually care about;
+            // Excalidraw fills the ~80 other AppState fields with defaults at
+            // runtime. Cast is safe — this has been the behavior forever.
+            const normalizedData = normalizeCanvasData(applyThemeOverride(INITIAL_APP_DATA as unknown as PadData));
             excalidrawAPI.updateScene(normalizedData);
             return;
         }

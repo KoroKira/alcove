@@ -140,7 +140,7 @@ async def callback(
             except Exception as e:
                 # Handle duplicate key violations gracefully - this means user already exists
                 if "duplicate key value violates unique constraint" in str(e) or "already exists" in str(e):
-                    print(f"User {user_info.get('sub')} already exists in database (race condition handled)")
+                    logger.debug("User %s already exists (race condition handled)", user_info.get('sub'))
                 else:
                     raise e
         
@@ -149,8 +149,8 @@ async def callback(
                 user_info
             )
             coder_api.ensure_workspace_exists(user_data['username'])
-        except Exception as e:
-            print(f"Error in user/workspace setup: {str(e)}")
+        except Exception:
+            logger.exception("Error in user/workspace setup")
             # Continue with login even if Coder API fails
 
     if state == "popup":
@@ -177,7 +177,7 @@ async def logout(request: Request, session_domain: Session = Depends(get_session
     # Delete the session from Redis
     success = await session_domain.delete(session_id)
     if not success:
-        print(f"Warning: Failed to delete session {session_id}")
+        logger.warning("Failed to delete session")
     
     # Create the Keycloak logout URL with redirect back to our app
     logout_url = f"{session_domain.oidc_config['server_url']}/realms/{session_domain.oidc_config['realm']}/protocol/openid-connect/logout"

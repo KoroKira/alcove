@@ -11,6 +11,7 @@ from database.models.version_model import PadVersion
 from database.database import get_session
 from domain.pad import Pad
 from domain.user import User
+from services.rag_indexer import schedule_reindex
 
 pad_router = APIRouter()
 
@@ -396,12 +397,18 @@ async def get_pad(
         if user_obj:
             await user_obj.set_last_selected_pad(session, pad.id)
 
-        # Document pads: return content directly
+        # Document pads: return content directly. Also surface `video` when
+        # present so the frontend can offer the Regenerate button without
+        # a second round-trip.
         if pad.pad_type == "document":
-            return {
-                "content": pad.data.get("content", "") if isinstance(pad.data, dict) else "",
-                "format": pad.data.get("format", "markdown") if isinstance(pad.data, dict) else "markdown",
+            data = pad.data if isinstance(pad.data, dict) else {}
+            resp = {
+                "content": data.get("content", ""),
+                "format": data.get("format", "markdown"),
             }
+            if data.get("video"):
+                resp["video"] = data["video"]
+            return resp
 
         # Structured pads (kanban, gantt): return raw data
         if pad.pad_type in ("kanban", "gantt"):
@@ -622,10 +629,14 @@ async def save_doc_content(
     pad_access: Tuple[Pad, UserSession] = Depends(require_pad_owner),
     session: AsyncSession = Depends(get_session)
 ) -> Dict[str, Any]:
-    """Save document content for a document-type pad."""
+    """Save document content for a document-type pad. Preserves any
+    non-content keys already on `pad.data` (e.g. `video` — see the
+    /video-meta endpoint) so structured metadata attached to a doc pad
+    survives every content save."""
     pad, _ = pad_access
-    old_content = pad.data.get('content', '') if isinstance(pad.data, dict) else ''
-    pad.data = {"content": doc.content, "format": doc.format}
+    existing = pad.data if isinstance(pad.data, dict) else {}
+    old_content = existing.get('content', '')
+    pad.data = {**existing, "content": doc.content, "format": doc.format}
     await pad.cache()
     await pad.save(session)
     # Auto-snapshot every time content changes significantly (>50 chars diff)
@@ -649,6 +660,8 @@ async def save_doc_content(
             await _asyncio.get_running_loop().run_in_executor(None, _write_md)
     except Exception:
         pass
+    # Debounced background re-index so RAG search stays in sync with edits.
+    schedule_reindex(pad.id)
     return {"ok": True}
 
 class PadDataSaveRequest(BaseModel):
@@ -665,7 +678,45 @@ async def save_pad_data(
     pad.data = body.data
     await pad.cache()
     await pad.save(session)
+    schedule_reindex(pad.id)
     return {"ok": True}
+
+
+class VideoMetaPayload(BaseModel):
+    """Bag of video-specific fields — everything that would be prohibitively
+    heavy to embed in the markdown itself (transcript_segments) or that we
+    want structured for the "Regenerate" button. Free-form: the frontend
+    controls the shape, backend just persists."""
+    video_id: Optional[str] = None
+    url: Optional[str] = None
+    thumbnail: Optional[str] = None
+    duration: Optional[float] = None
+    author: Optional[str] = None
+    chapters: Optional[list] = None
+    transcript_segments: Optional[list] = None
+    language: Optional[str] = None
+    diarized: Optional[bool] = None
+
+
+@pad_router.put("/{pad_id}/video-meta")
+async def save_video_meta(
+    body: VideoMetaPayload,
+    pad_access: Tuple[Pad, UserSession] = Depends(require_pad_owner),
+    session: AsyncSession = Depends(get_session),
+) -> Dict[str, Any]:
+    """Attach (or replace) the video block on a document pad. Stored under
+    `pad.data.video` — a document save via /doc will preserve it. Used so
+    the "Regenerate report" button can re-run /api/ai/video-report without
+    needing to re-hit YouTube or re-run Whisper."""
+    pad, _ = pad_access
+    existing = pad.data if isinstance(pad.data, dict) else {}
+    # Drop empty keys so we don't clobber existing values with None on partial
+    # updates.
+    payload = {k: v for k, v in body.model_dump().items() if v is not None}
+    pad.data = {**existing, "video": {**(existing.get("video") or {}), **payload}}
+    await pad.cache()
+    await pad.save(session)
+    return {"ok": True, "video": pad.data["video"]}
 
 
 @pad_router.put("/{pad_id}/tags")

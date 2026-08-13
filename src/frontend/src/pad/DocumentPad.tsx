@@ -15,7 +15,27 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import katex from 'katex';
 import mermaid from 'mermaid';
-import { Link, History, Bookmark, Download, FileText, List, Maximize2, Minimize2, BookOpen, Save, Play, Globe, Terminal } from 'lucide-react';
+import { Link, History, Bookmark, Download, FileText, List, Maximize2, Minimize2, BookOpen, Save, Play, Globe, Terminal, Sparkles } from 'lucide-react';
+import { useRelatedPads } from '../hooks/useRelatedPads';
+import { readVideoMeta, stripVideoMeta, parseTimestamp, replaceReportBody } from '../lib/videoMeta';
+import VideoEmbed, { VideoEmbedHandle } from '../ui/VideoEmbed';
+
+/** Server-persisted video block: transcript segments + chapters + language.
+ * Distinct from `readVideoMeta` (which parses the inline HTML comment): this
+ * one carries the heavy `transcript_segments` array needed to re-run
+ * /api/ai/video-report from a Regenerate click. Loaded from
+ * pad.data.video (see pad_router `/{id}/video-meta`). */
+interface StoredVideoBundle {
+  video_id?: string | null;
+  url?: string | null;
+  thumbnail?: string | null;
+  duration?: number | null;
+  author?: string | null;
+  chapters?: Array<{ title: string; start_time?: number | null; end_time?: number | null }> | null;
+  transcript_segments?: Array<{ start: number; end: number; text: string; speaker?: string | null }> | null;
+  language?: string | null;
+  diarized?: boolean | null;
+}
 import { saveUserTemplate } from '../constants/userTemplates';
 import { registerSlashCommands } from '../lib/slashCommands';
 import HistoryPanel from './HistoryPanel';
@@ -307,6 +327,17 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
   const [loading, setLoading] = useState(true);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
+  const { related, notIndexed } = useRelatedPads(padId, 5);
+  // Video pads: embedded player + timestamp navigation. `videoMeta` is
+  // extracted from a leading HTML comment (see `lib/videoMeta.ts`) so it
+  // travels with the markdown and requires no schema change.
+  const videoMeta = useMemo(() => readVideoMeta(content), [content]);
+  const videoRef = useRef<VideoEmbedHandle | null>(null);
+  // Server-persisted video bundle (heavy: transcript segments) — the
+  // Regenerate button needs it. Loaded alongside the pad content.
+  const [videoBundle, setVideoBundle] = useState<StoredVideoBundle | null>(null);
+  const [regenBusy, setRegenBusy] = useState(false);
+  const [regenProgress, setRegenProgress] = useState<string | null>(null);
   const [transcluded, setTranscluded] = useState<Transcluded>({});
   const [historyOpen, setHistoryOpen] = useState(false);
   const [tocOpen, setTocOpen] = useState(false);
@@ -381,6 +412,7 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
         if (!loaded && isLatex && !pendingContent) scheduleSave(LATEX_DEFAULT);
         setSaveStatus('saved');
         setBacklinks(blData?.backlinks || []);
+        setVideoBundle((padData?.video as StoredVideoBundle | undefined) ?? null);
         // onContentChange only otherwise fires on edits (handleChange) — without this,
         // opening a pad and immediately using an AI action (tags, summary) would send
         // the PREVIOUS pad's stale content, since the parent's copy was never refreshed.
@@ -489,6 +521,66 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
     scheduleSave(text);
     onContentChange?.(text);
   };
+
+  /** Re-run /api/ai/video-report using the persisted bundle, then splice the
+   * new report body into the current markdown (preserves the user's own
+   * `## Notes`, Flashcards, and source-note wikilink). */
+  const regenerateReport = useCallback(async () => {
+    if (!videoBundle || !videoBundle.transcript_segments?.length || regenBusy) return;
+    setRegenBusy(true);
+    setRegenProgress('Démarrage…');
+    try {
+      const resp = await fetch('/api/ai/video-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: videoBundle.author ? `${videoBundle.author}` : '',
+          url: videoBundle.url ?? undefined,
+          author: videoBundle.author ?? '',
+          duration: videoBundle.duration ?? undefined,
+          chapters: videoBundle.chapters ?? [],
+          transcript_segments: videoBundle.transcript_segments,
+          lang: 'fr',
+        }),
+      });
+      if (!resp.ok || !resp.body) throw new Error(`HTTP ${resp.status}`);
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '', report = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n'); buf = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const d = line.slice(6);
+          if (d === '[DONE]') continue;
+          try {
+            const o = JSON.parse(d);
+            if (o.kind === 'progress' && o.msg) setRegenProgress(o.msg);
+            else if (o.kind === 'document') report = o.content || '';
+            else if (o.kind === 'error') throw new Error(o.error || 'regen failed');
+          } catch { /* ignore malformed events */ }
+        }
+      }
+      if (!report) throw new Error('Rapport vide');
+      // Splice: keep the video-meta comment + header + user's ## Notes block.
+      setContent(prev => {
+        const next = replaceReportBody(prev, report);
+        scheduleSave(next);
+        onContentChange?.(next);
+        return next;
+      });
+    } catch (e) {
+      setRegenProgress('Erreur — voir la console');
+      console.error('[alcove] regenerate report failed:', e);
+    } finally {
+      setRegenBusy(false);
+      // Clear the progress line after a beat so the button label reverts.
+      setTimeout(() => setRegenProgress(null), 1500);
+    }
+  }, [videoBundle, regenBusy, scheduleSave, onContentChange]);
 
   // Web clipper: fetch a URL server-side and append its content as Markdown
   const [clipping, setClipping] = useState(false);
@@ -606,8 +698,81 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
     setTocOpen(false);
   };
 
-  const renderedHtml = renderContent(content, tabs, transcluded);
+  // Strip the video meta comment before render so its JSON payload never
+  // shows up in the preview (browsers hide HTML comments, but marked can
+  // occasionally break them across paragraphs during transclusion).
+  const renderedHtml = renderContent(
+    videoMeta ? stripVideoMeta(content) : content,
+    tabs, transcluded,
+  );
   const monacoTheme = (theme === 'light' || !globalThemeDark) ? 'light' : 'vs-dark';
+
+  // Wire `[MM:SS]` / `[H:MM:SS]` timestamps in the rendered preview to seek
+  // the embedded video. We walk the DOM text nodes (not innerHTML.replace)
+  // so we don't destroy any surrounding link/code/emphasis markup. Only
+  // active when the pad actually has a video attached.
+  useEffect(() => {
+    const el = previewRef.current;
+    if (!el || !videoMeta) return;
+    const TS_RE = /\[((?:\d{1,2}:)?\d{1,2}:\d{2})\]/g;
+
+    // Collect text nodes upfront — mutating during traversal would skip nodes.
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) => {
+        // Skip inside code blocks + existing timestamp buttons.
+        let p: Node | null = node.parentNode;
+        while (p && p !== el) {
+          const tag = (p as HTMLElement).tagName;
+          if (tag === 'CODE' || tag === 'PRE' || (p as HTMLElement).classList?.contains?.('video-timestamp')) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          p = p.parentNode;
+        }
+        return TS_RE.test(node.nodeValue || '') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+      },
+    });
+
+    const targets: Text[] = [];
+    let n: Node | null;
+    while ((n = walker.nextNode())) targets.push(n as Text);
+
+    for (const textNode of targets) {
+      const text = textNode.nodeValue || '';
+      TS_RE.lastIndex = 0;
+      const frag = document.createDocumentFragment();
+      let last = 0;
+      for (const m of text.matchAll(TS_RE)) {
+        const idx = m.index ?? 0;
+        if (idx > last) frag.appendChild(document.createTextNode(text.slice(last, idx)));
+        const seconds = parseTimestamp(m[1]);
+        if (seconds == null) {
+          frag.appendChild(document.createTextNode(m[0]));
+        } else {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'video-timestamp';
+          btn.dataset.seek = String(seconds);
+          btn.textContent = m[1];
+          btn.title = `Jump to ${m[1]}`;
+          frag.appendChild(btn);
+        }
+        last = idx + m[0].length;
+      }
+      if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+      textNode.parentNode?.replaceChild(frag, textNode);
+    }
+
+    // Delegated click handler — one listener per preview render.
+    const onClick = (e: MouseEvent) => {
+      const btn = (e.target as HTMLElement | null)?.closest?.('button.video-timestamp') as HTMLButtonElement | null;
+      if (!btn) return;
+      e.preventDefault();
+      const s = parseInt(btn.dataset.seek || '0', 10);
+      if (Number.isFinite(s)) videoRef.current?.seekTo(s);
+    };
+    el.addEventListener('click', onClick);
+    return () => el.removeEventListener('click', onClick);
+  }, [renderedHtml, videoMeta]);
 
   // Render mermaid diagrams after preview updates
   useEffect(() => {
@@ -1048,6 +1213,17 @@ ${renderedHtml}
                     </nav>
                   </div>
                 )}
+                {videoMeta && (
+                  <div className="document-pad__video-wrap">
+                    <VideoEmbed
+                      ref={videoRef}
+                      meta={videoMeta}
+                      onRegenerate={videoBundle?.transcript_segments?.length ? regenerateReport : undefined}
+                      regenerateBusy={regenBusy}
+                      regenerateProgress={regenProgress}
+                    />
+                  </div>
+                )}
                 <div
                   ref={previewRef}
                   className="document-pad__preview"
@@ -1070,6 +1246,35 @@ ${renderedHtml}
                         </button>
                       ))}
                     </div>
+                  </div>
+                )}
+                {related && related.length > 0 && (
+                  <div className="document-pad__backlinks document-pad__related">
+                    <div className="document-pad__backlinks-title">
+                      <Sparkles size={13} />
+                      Notes reliées ({related.length})
+                    </div>
+                    <div className="document-pad__backlinks-list">
+                      {related.map(r => (
+                        <button
+                          key={r.pad_id}
+                          className="document-pad__backlink-item document-pad__related-item"
+                          onClick={() => onSelectPad?.(r.pad_id)}
+                          title={`Similarité ${Math.round(r.score * 100)}%`}
+                        >
+                          <span>{r.pad_name}</span>
+                          <span className="document-pad__related-score">
+                            {Math.round(r.score * 100)}%
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {related && related.length === 0 && notIndexed && (
+                  <div className="document-pad__backlinks document-pad__related document-pad__related--hint">
+                    <Sparkles size={13} />
+                    <span>Notes reliées : indexe ce pad depuis le panneau IA (mode RAG → Indexer tout) pour voir les correspondances sémantiques.</span>
                   </div>
                 )}
               </>
