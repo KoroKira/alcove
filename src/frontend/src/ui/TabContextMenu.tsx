@@ -320,16 +320,12 @@ class TabActionManager implements ActionManager {
         window.alert(i18n.t('contextMenu.aiRenameEmpty'));
         return;
       }
-      const model = localStorage.getItem('pad-ws-ai-model') ?? undefined;
+      const model = localStorage.getItem('pad-ws-ai-model') || 'llama3.2';
       const lang = i18n.language.startsWith('fr') ? 'fr' : 'en';
-      const titleResp = await fetch('/api/ai/title', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, model, lang }),
-      });
-      const { title, error } = await titleResp.json();
+      const { suggestTitle } = await import('../lib/aiPrompts');
+      const title = await suggestTitle(model, content, lang);
       if (title) this.onRename(this.padId, title);
-      else window.alert(error || i18n.t('contextMenu.aiRenameFailed'));
+      else window.alert(i18n.t('contextMenu.aiRenameFailed'));
     } catch (e) {
       window.alert(i18n.t('contextMenu.aiRenameFailed'));
     }

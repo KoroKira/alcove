@@ -159,56 +159,6 @@ export async function streamLocalOllamaChat(
 }
 
 
-/**
- * Legacy: server-proxied Ollama stream. Still used by DocumentPad and other
- * pad AI actions that hit /api/ai/summarize, /api/ai/generate-flashcards, etc.
- * Those endpoints require the server to have OLLAMA_URL configured. In the
- * self-host setup they return errors until Phase 3B migrates them to the
- * client. Kept here so existing callers still compile; will be removed once
- * the last one is migrated.
- */
-export async function streamOllamaChat(
-  model: string,
-  messages: { role: string; content: string }[],
-  onChunk: (text: string) => void,
-  endpoint: string,
-  extraBody: Record<string, unknown> = {},
-  signal?: AbortSignal,
-): Promise<void> {
-  const resp = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, messages, ...extraBody }),
-    signal,
-  });
-
-  if (!resp.ok || !resp.body) throw new Error(`AI error ${resp.status}`);
-
-  const reader = resp.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const lines = buf.split('\n');
-    buf = lines.pop() ?? '';
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const payload = line.slice(6);
-      if (payload === '[DONE]') return;
-      try {
-        const json = JSON.parse(payload);
-        if (json.error) throw new Error(json.error);
-        const text: string = json.message?.content ?? '';
-        if (text) onChunk(text);
-      } catch (e: unknown) {
-        if (e instanceof Error && e.message !== 'Unexpected end of JSON input') throw e;
-      }
-    }
-  }
-}
 
 /**
  * Fetch the merged system prompt (BASE + agent-memory pads) from the server.
@@ -220,4 +170,36 @@ export async function fetchChatPreamble(): Promise<{ system: string; defaultMode
   if (!r.ok) throw new Error(`Preamble fetch failed (${r.status})`);
   const j = await r.json();
   return { system: j.system || '', defaultModel: j.default_model || 'llama3.2' };
+}
+
+
+/**
+ * One-shot (non-streaming) chat completion against local Ollama. Returns the
+ * full assistant `content` string. Used by pad AI actions that don't need
+ * incremental UI updates (tags, title, JSON extraction, single-diagram gen).
+ *
+ * `format` maps to Ollama's structured-output flag: pass `'json'` to force
+ * strict JSON, else omit for free-form text.
+ */
+export async function oneShotLocalOllama(
+  model: string,
+  messages: { role: string; content: string }[],
+  opts: { format?: 'json'; timeoutMs?: number } = {},
+): Promise<string> {
+  const url = getOllamaUrl();
+  const ctrl = new AbortController();
+  const timeoutId = opts.timeoutMs ? setTimeout(() => ctrl.abort(), opts.timeoutMs) : null;
+  try {
+    const resp = await fetch(`${url}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages, stream: false, ...(opts.format ? { format: opts.format } : {}) }),
+      signal: ctrl.signal,
+    });
+    if (!resp.ok) throw new Error(`Ollama one-shot failed (${resp.status})`);
+    const j = await resp.json();
+    return (j.message?.content ?? '') as string;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
 }

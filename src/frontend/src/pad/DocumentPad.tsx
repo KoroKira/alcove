@@ -444,10 +444,10 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
         const resp = await fetch(`/api/pad/${yesterdayId}`);
         const yContent: string = (await resp.json())?.content || '';
         if (!yContent.trim()) throw new Error('empty');
-        const model = localStorage.getItem('pad-ws-ai-model') ?? undefined;
+        const model = localStorage.getItem('pad-ws-ai-model') || 'llama3.2';
         let summary = '';
-        const { streamOllamaChat } = await import('../hooks/useOllama');
-        await streamOllamaChat(model ?? '', [], (chunk) => { summary += chunk; }, '/api/ai/summarize', { content: yContent, lang: 'fr' });
+        const { summarize } = await import('../lib/aiPrompts');
+        await summarize(model, yContent, 'fr', (chunk) => { summary += chunk; });
         summary = summary.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
         setContent(prev => {
           const next = prev.replace(marker, summary || '');

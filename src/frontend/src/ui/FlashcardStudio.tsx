@@ -124,14 +124,10 @@ export default function FlashcardStudio({ tabs, onClose, onSelectPad }: Props) {
     if (!selectedIds.size) return;
     setStatus('generating'); setError('');
     try {
-      const resp = await fetch('/api/ai/quiz/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pad_ids: [...selectedIds], topic: topic || undefined, lang: 'fr', n: 8 }),
-      });
-      const data = await resp.json();
-      if (data.error) { setError(data.error); setStatus('idle'); return; }
-      const all = parseFlashcards(data.flashcards);
+      const { quizGenerate } = await import('../lib/aiPrompts');
+      const model = localStorage.getItem('pad-ws-ai-model') || 'llama3.2';
+      const raw = await quizGenerate(model, [...selectedIds], topic || undefined, 8, 'fr');
+      const all = parseFlashcards(raw);
       if (!all.length) { setError("L'IA n'a pas produit de flashcards. Réessaie."); setStatus('idle'); return; }
       startSession(all);
     } catch { setError('Erreur : Ollama non joignable.'); }

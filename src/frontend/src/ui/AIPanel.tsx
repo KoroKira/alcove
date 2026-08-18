@@ -6,6 +6,7 @@ import {
   MessageSquare, Plus, Trash2, Brain, Check,
 } from 'lucide-react';
 import { useOllamaModels, streamLocalOllamaChat, fetchChatPreamble } from '../hooks/useOllama';
+import { suggestTags, suggestLinks, generateFlashcards, generateDiagram } from '../lib/aiPrompts';
 import { useAgentMemory, MemoryProposal } from '../hooks/useAgentMemory';
 import OllamaSetup from './OllamaSetup';
 import ModelManager from './ModelManager';
@@ -328,12 +329,7 @@ export default function AIPanel({
     if (!docContext || !onSuggestTags) return;
     try {
       setStreaming(true);
-      const resp = await fetch('/api/ai/suggest-tags', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, content: docContext, title: padTitle ?? '', lang }),
-      });
-      const data = await resp.json();
-      const tags: string[] = data.tags ?? [];
+      const tags = await suggestTags(model, docContext, padTitle ?? '', lang);
       onSuggestTags(tags);
       setMessages(prev => [...prev, { role: 'assistant', content: tags.length
         ? `${t('ai.tagsApplied')} : ${tags.map(tg => `#${tg}`).join(', ')}`
@@ -356,12 +352,7 @@ export default function AIPanel({
     setSuggestingLinks(true);
     setLinkSuggestions(null);
     try {
-      const resp = await fetch('/api/ai/suggest-links', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: docContext, pad_titles: padTitles, lang }),
-      });
-      const data = await resp.json();
-      const suggs: string[] = data.suggestions ?? [];
+      const suggs = await suggestLinks(model, docContext, padTitles, lang);
       setLinkSuggestions(suggs.map(name => ({ name, accepted: null })));
     } catch { setLinkSuggestions([]); }
     finally { setSuggestingLinks(false); }
@@ -381,12 +372,8 @@ export default function AIPanel({
     if (!docContext || !onInsertContent) return;
     setGeneratingFlashcards(true);
     try {
-      const resp = await fetch('/api/ai/generate-flashcards', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: docContext, lang }),
-      });
-      const data = await resp.json();
-      if (data.flashcards) onInsertContent(data.flashcards);
+      const cards = await generateFlashcards(model, docContext, lang);
+      if (cards) onInsertContent(cards);
     } finally { setGeneratingFlashcards(false); }
   };
 
@@ -395,13 +382,9 @@ export default function AIPanel({
     if (!docContext || !onInsertContent) return;
     setGeneratingDiagram(true);
     try {
-      const resp = await fetch('/api/ai/generate-diagram', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, content: docContext, lang }),
-      });
-      const data = await resp.json();
-      if (data.diagram) onInsertContent(`\n\n${data.diagram}\n`);
-      else setMessages(prev => [...prev, { role: 'assistant', content: data.error || t('ai.error') }]);
+      const diagram = await generateDiagram(model, docContext, undefined, lang);
+      if (diagram) onInsertContent(`\n\n${diagram}\n`);
+      else setMessages(prev => [...prev, { role: 'assistant', content: t('ai.error') }]);
     } catch { setMessages(prev => [...prev, { role: 'assistant', content: t('ai.error') }]); }
     finally { setGeneratingDiagram(false); }
   };

@@ -88,15 +88,13 @@ export default function SmartResearch({ onClose, onCreated }: Props) {
 
       log('🏷️ Tags automatiques…');
       try {
-        const r = await fetch('/api/ai/suggest-tags', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: res.content, title: t, lang }),
-        });
-        const d = await r.json();
-        if ((d.tags ?? []).length) {
+        const { suggestTags } = await import('../lib/aiPrompts');
+        const model = localStorage.getItem('pad-ws-ai-model') || 'llama3.2';
+        const tags = await suggestTags(model, res.content, t, lang);
+        if (tags.length) {
           await fetch(`/api/pad/${padId}/tags`, {
             method: 'PUT', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tags: d.tags }),
+            body: JSON.stringify({ tags }),
           });
         }
       } catch { /* non-blocking */ }

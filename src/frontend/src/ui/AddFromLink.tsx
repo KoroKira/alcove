@@ -93,7 +93,22 @@ async function consumeReportStream(
 async function structureDocument(
   content: string, title: string, lang: string, length: string, onProgress: (msg: string) => void,
 ): Promise<string> {
-  return consumeReportStream('/api/ai/structure-document', { content, title, lang, length }, onProgress);
+  // Client-side map-reduce against the local Ollama (Phase 3B). Wraps the
+  // aiPrompts.structureDocument helper into the same "progress log + final
+  // string" shape the surrounding runActions loop already expects.
+  const { structureDocument: runStructure } = await import('../lib/aiPrompts');
+  const model = localStorage.getItem('pad-ws-ai-model') || 'llama3.2';
+  const L: 'fr' | 'en' = lang === 'fr' ? 'fr' : 'en';
+  const LEN: 'short' | 'long' = length === 'short' ? 'short' : 'long';
+  let doc = '';
+  let lastError: string | null = null;
+  await runStructure(model, content, title, L, LEN, (e) => {
+    if (e.kind === 'progress' && e.msg) onProgress(e.msg);
+    else if (e.kind === 'document') doc = e.content || '';
+    else if (e.kind === 'error') lastError = e.error || 'structure failed';
+  });
+  if (lastError && !doc) throw new Error(lastError);
+  return doc.trim();
 }
 
 /** Video-specific report: feeds the timestamped transcript + chapters to the
@@ -324,12 +339,10 @@ export default function AddFromLink({ onClose, onCreated, tabs }: Props) {
     if (actionsSel.extractinfo) {
       onStep('📋 Extraction des infos clés…');
       try {
-        const r = await fetch('/api/ai/extract-info', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: ing.markdown, lang }),
-        });
-        const d = await r.json();
-        if (d.info) body += `\n\n## Infos clés\n\n${d.info}`;
+        const { extractInfo } = await import('../lib/aiPrompts');
+        const model = localStorage.getItem('pad-ws-ai-model') || 'llama3.2';
+        const { info } = await extractInfo(model, ing.markdown, lang as 'fr' | 'en');
+        if (info) body += `\n\n## Infos clés\n\n${info}`;
       } catch { onStep('  ⚠️ Infos clés indisponibles'); }
     }
 
@@ -360,24 +373,19 @@ export default function AddFromLink({ onClose, onCreated, tabs }: Props) {
     if (actionsSel.flashcards) {
       onStep('🧠 Génération de flashcards…');
       try {
-        const r = await fetch('/api/ai/generate-flashcards', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: ing.markdown, lang }),
-        });
-        const d = await r.json();
-        if (d.flashcards) content += `\n\n---\n\n## Flashcards\n\n${d.flashcards}`;
+        const { generateFlashcards } = await import('../lib/aiPrompts');
+        const model = localStorage.getItem('pad-ws-ai-model') || 'llama3.2';
+        const cards = await generateFlashcards(model, ing.markdown, lang as 'fr' | 'en');
+        if (cards) content += `\n\n---\n\n## Flashcards\n\n${cards}`;
       } catch { onStep('  ⚠️ Flashcards indisponibles'); }
     }
 
     if (actionsSel.links && tabs.length) {
       onStep('🔗 Recherche de liens…');
       try {
-        const r = await fetch('/api/ai/suggest-links', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: ing.markdown, pad_titles: tabs.map(t => t.title), lang }),
-        });
-        const d = await r.json();
-        const suggs: string[] = d.suggestions ?? [];
+        const { suggestLinks } = await import('../lib/aiPrompts');
+        const model = localStorage.getItem('pad-ws-ai-model') || 'llama3.2';
+        const suggs = await suggestLinks(model, ing.markdown, tabs.map(t => t.title), lang as 'fr' | 'en');
         if (suggs.length) content += `\n\n## Liens\n\n${suggs.map(s => `- [[${s}]]`).join('\n')}`;
       } catch { onStep('  ⚠️ Liens indisponibles'); }
     }
@@ -392,12 +400,9 @@ export default function AddFromLink({ onClose, onCreated, tabs }: Props) {
     if (actionsSel.tags) {
       onStep('🏷️ Tags automatiques…');
       try {
-        const r = await fetch('/api/ai/suggest-tags', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: ing.markdown, title: ing.title, lang }),
-        });
-        const d = await r.json();
-        const tags: string[] = d.tags ?? [];
+        const { suggestTags } = await import('../lib/aiPrompts');
+        const model = localStorage.getItem('pad-ws-ai-model') || 'llama3.2';
+        const tags = await suggestTags(model, ing.markdown, ing.title, lang as 'fr' | 'en');
         if (tags.length) {
           await fetch(`/api/pad/${padId}/tags`, {
             method: 'PUT', headers: { 'Content-Type': 'application/json' },
