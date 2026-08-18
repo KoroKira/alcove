@@ -39,11 +39,11 @@ services:
       - pad-network
 
   pad:
-    # Image is built on your workstation (fast CPU/RAM) and pulled from GHCR.
-    # `build: .` is kept as a fallback for local dev — compose uses it only when
-    # the image tag is missing. In production, just `docker compose pull && up -d`.
+    # Image is built by GitHub Actions (see .github/workflows/docker-build.yml)
+    # on every push to main, then pulled here. `build: .` is a fallback for local
+    # dev — compose uses it only when the tag is missing.
     build: .
-    image: ghcr.io/korokira/alcove:selfhost
+    image: ghcr.io/korokira/alcove:main
     container_name: alcove-pad
     environment:
       - PAD_DEV_MODE=true
