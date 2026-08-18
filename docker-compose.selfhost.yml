@@ -1,0 +1,73 @@
+# docker-compose.selfhost.yml — home-server deployment (single-user), no in-container AI.
+#
+# Design:
+#   * No Keycloak, no Coder — one user, PAD_DEV_MODE=true.
+#   * No Ollama service — inference runs on the client (browser → its own localhost:11434).
+#   * pad publishes only on the loopback (127.0.0.1:8000); Tailscale serves it in HTTPS
+#     over the tailnet, so nothing is exposed to the LAN or the public internet.
+#   * Persistent data lives under ${DATA_DIR} (bind mounts), so the host's nightly
+#     backup of /srv/appdata picks it up automatically.
+#
+# Deploy (see docs at the bottom of this file for the full walkthrough):
+#   1. git clone <repo> /srv/docker/alcove && cd /srv/docker/alcove
+#   2. cp .env.selfhost.example .env  and edit POSTGRES_PASSWORD + FRONTEND_URL
+#   3. docker compose -f docker-compose.selfhost.yml up -d --build
+#   4. sudo tailscale serve --bg --https=443 / http://localhost:8000
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: alcove-postgres
+    environment:
+      POSTGRES_USER: pad
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: pad
+    volumes:
+      - ${DATA_DIR:-./data}/postgres:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - pad-network
+
+  redis:
+    image: redis:alpine
+    container_name: alcove-redis
+    volumes:
+      - ${DATA_DIR:-./data}/redis:/data
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    networks:
+      - pad-network
+
+  pad:
+    build: .
+    image: alcove:selfhost
+    container_name: alcove-pad
+    environment:
+      - PAD_DEV_MODE=true
+      - STATIC_DIR=/app/frontend/dist
+      - ASSETS_DIR=/app/frontend/dist/assets
+      - FRONTEND_URL=${FRONTEND_URL}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=pad
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=pad
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - SYNC_DIR=/data/pads
+      - API_WORKERS=1
+    volumes:
+      - ${DATA_DIR:-./data}/pads:/data/pads
+    ports:
+      # Loopback only — Tailscale is the ingress. Nothing on eth0.
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - pad-network
+
+networks:
+  pad-network:
+    driver: bridge
