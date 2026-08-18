@@ -9,7 +9,10 @@ RUN yarn install --frozen-lockfile --network-timeout 600000
 # Copy all frontend files
 COPY src/frontend/ ./
 
-# Build the frontend
+# Build the frontend. NODE_OPTIONS bumps V8's old-space cap from ~1.6 GB to 2 GB
+# so Vite can bundle on low-RAM hosts (server deployments). It'll spill to swap
+# if physical RAM is tight, which is slow but finishes.
+ENV NODE_OPTIONS=--max-old-space-size=2048
 RUN yarn build
 
 # Backend stage
