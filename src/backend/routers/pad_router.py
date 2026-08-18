@@ -1,8 +1,9 @@
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Tuple, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import update as sa_update, select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
@@ -49,22 +50,65 @@ class DocSaveRequest(BaseModel):
     expected_updated_at: Optional[datetime] = None
 
 
-def _check_concurrency(pad, expected_updated_at: Optional[datetime]) -> None:
-    """Raise 409 if the caller's baseline is stale. Comparison is tolerant of
-    sub-second drift (Postgres timestamptz vs. JSON round-trip)."""
-    if expected_updated_at is None or pad.updated_at is None:
-        return
-    delta = abs((pad.updated_at - expected_updated_at).total_seconds())
-    if delta > 0.5:
+async def _cas_save_pad_data(
+    session: AsyncSession,
+    pad,
+    new_data: Dict[str, Any],
+    expected_updated_at: Optional[datetime],
+) -> datetime:
+    """Save pad.data with optimistic-concurrency compare-and-swap.
+
+    When `expected_updated_at` is given we use a single atomic UPDATE with a
+    WHERE clause matching the client's baseline — race-safe against two
+    concurrent PUTs from different devices, unlike a "check then save" pair
+    that both readers can pass before either commits.
+
+    When `expected_updated_at` is None we fall back to the legacy save (no
+    concurrency check) so unmigrated clients keep working.
+
+    Returns the new updated_at timestamp so the endpoint can echo it back.
+    Raises HTTPException(409) with a machine-readable body on version mismatch.
+    """
+    from database.models import PadStore  # local import; module-level is already imported below
+
+    if expected_updated_at is None:
+        pad.data = new_data
+        await pad.save(session)
+        return pad.updated_at
+
+    # Always aware-UTC so the value we echo back matches what GET returns
+    # (they end up going through the same isoformat + Postgres timestamptz).
+    new_updated_at = datetime.now(timezone.utc)
+    stmt = (
+        sa_update(PadStore)
+        .where(PadStore.id == pad.id)
+        .where(PadStore.updated_at == expected_updated_at)
+        .values(data=new_data, updated_at=new_updated_at)
+    )
+    result = await session.execute(stmt)
+    if result.rowcount == 0:
+        # Either the pad vanished or (much more likely) a peer wrote first.
+        # Read the current server timestamp so the client can surface the diff.
+        got = (await session.execute(
+            sa_select(PadStore.updated_at).where(PadStore.id == pad.id)
+        )).scalar_one_or_none()
         raise HTTPException(
             status_code=409,
             detail={
                 "code": "stale_write",
                 "message": "The pad was modified by another session since you loaded it.",
-                "server_updated_at": pad.updated_at.isoformat(),
+                "server_updated_at": got.isoformat() if got else None,
                 "client_expected": expected_updated_at.isoformat(),
             },
         )
+    await session.commit()
+    # Keep the in-memory pad in sync so downstream code (auto-snapshot, RAG
+    # reindex, sync-to-disk) sees the fresh data.
+    pad._store.data = new_data
+    pad._store.updated_at = new_updated_at
+    pad.data = new_data
+    await pad.cache()
+    return new_updated_at
 
 @pad_router.post("/scratch")
 async def get_or_create_scratch_pad(
@@ -666,12 +710,10 @@ async def save_doc_content(
     /video-meta endpoint) so structured metadata attached to a doc pad
     survives every content save."""
     pad, _ = pad_access
-    _check_concurrency(pad, doc.expected_updated_at)
     existing = pad.data if isinstance(pad.data, dict) else {}
     old_content = existing.get('content', '')
-    pad.data = {**existing, "content": doc.content, "format": doc.format}
-    await pad.cache()
-    await pad.save(session)
+    new_data = {**existing, "content": doc.content, "format": doc.format}
+    new_updated_at = await _cas_save_pad_data(session, pad, new_data, doc.expected_updated_at)
     # Auto-snapshot every time content changes significantly (>50 chars diff)
     if abs(len(doc.content) - len(old_content)) > 50 or (old_content and not doc.content):
         try:
@@ -695,7 +737,7 @@ async def save_doc_content(
         pass
     # Debounced background re-index so RAG search stays in sync with edits.
     schedule_reindex(pad.id)
-    return {"ok": True, "updated_at": pad.updated_at.isoformat() if pad.updated_at else None}
+    return {"ok": True, "updated_at": new_updated_at.isoformat() if new_updated_at else None}
 
 class PadDataSaveRequest(BaseModel):
     data: Dict[str, Any]
@@ -709,12 +751,9 @@ async def save_pad_data(
 ) -> Dict[str, Any]:
     """Generic data save for kanban, gantt, and other structured pad types."""
     pad, _ = pad_access
-    _check_concurrency(pad, body.expected_updated_at)
-    pad.data = body.data
-    await pad.cache()
-    await pad.save(session)
+    new_updated_at = await _cas_save_pad_data(session, pad, body.data, body.expected_updated_at)
     schedule_reindex(pad.id)
-    return {"ok": True, "updated_at": pad.updated_at.isoformat() if pad.updated_at else None}
+    return {"ok": True, "updated_at": new_updated_at.isoformat() if new_updated_at else None}
 
 
 class VideoMetaPayload(BaseModel):
