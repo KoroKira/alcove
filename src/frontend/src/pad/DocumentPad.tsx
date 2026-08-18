@@ -544,40 +544,24 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
     setRegenBusy(true);
     setRegenProgress('Démarrage…');
     try {
-      const resp = await fetch('/api/ai/video-report', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: videoBundle.author ? `${videoBundle.author}` : '',
-          url: videoBundle.url ?? undefined,
-          author: videoBundle.author ?? '',
-          duration: videoBundle.duration ?? undefined,
-          chapters: videoBundle.chapters ?? [],
-          transcript_segments: videoBundle.transcript_segments,
-          lang: 'fr',
-        }),
+      const { videoReport } = await import('../lib/videoReport');
+      const model = localStorage.getItem('pad-ws-ai-model') || 'llama3.2';
+      let report = '';
+      let regenError: string | null = null;
+      await videoReport(model, {
+        title: videoBundle.author ? `${videoBundle.author}` : '',
+        url: videoBundle.url ?? undefined,
+        author: videoBundle.author ?? '',
+        duration: videoBundle.duration ?? undefined,
+        chapters: videoBundle.chapters ?? [],
+        transcript_segments: videoBundle.transcript_segments,
+        lang: 'fr',
+      }, (e) => {
+        if (e.kind === 'progress' && e.msg) setRegenProgress(e.msg);
+        else if (e.kind === 'document') report = e.content || '';
+        else if (e.kind === 'error') regenError = e.error || 'regen failed';
       });
-      if (!resp.ok || !resp.body) throw new Error(`HTTP ${resp.status}`);
-      const reader = resp.body.getReader();
-      const dec = new TextDecoder();
-      let buf = '', report = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const lines = buf.split('\n'); buf = lines.pop() || '';
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const d = line.slice(6);
-          if (d === '[DONE]') continue;
-          try {
-            const o = JSON.parse(d);
-            if (o.kind === 'progress' && o.msg) setRegenProgress(o.msg);
-            else if (o.kind === 'document') report = o.content || '';
-            else if (o.kind === 'error') throw new Error(o.error || 'regen failed');
-          } catch { /* ignore malformed events */ }
-        }
-      }
+      if (regenError && !report) throw new Error(regenError);
       if (!report) throw new Error('Rapport vide');
       // Splice: keep the video-meta comment + header + user's ## Notes block.
       setContent(prev => {

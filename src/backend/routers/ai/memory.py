@@ -8,23 +8,19 @@ about the user and their projects. These pads:
   - Have fixed slugs so the model knows what to write to (profile / preferences
     / projets)
   - Are auto-injected into every chat/rag system prompt
-  - Are only ever written after user confirmation — the extract endpoint
-    proposes, the UI accepts, the write endpoint records a PadVersion first so
-    every change is undoable via the existing history.
+  - Are only ever written after user confirmation — since Phase 3D the
+    extraction prompt runs in the browser (see aiPrompts.ts::memoryExtract);
+    the server only reads/writes the underlying pads.
 """
 import re
-import json
-from uuid import UUID
-from typing import List, Optional
+from typing import Optional
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import UserSession, require_auth
-from config import OLLAMA_URL, OLLAMA_DEFAULT_MODEL
 from database.database import get_session
 from database.models.pad_model import PadStore
 from database.models.version_model import PadVersion
@@ -257,96 +253,8 @@ async def write_memory(
     }
 
 
-class MemoryExtractMessage(BaseModel):
-    role: str
-    content: str
+# POST /memory/extract was removed in Phase 3D — the extraction prompt now
+# runs in the browser (see aiPrompts.ts::memoryExtract). Server-side reads
+# and writes stay here so the pads themselves remain the single source of
+# truth for the agent's memory.
 
-
-class MemoryExtractRequest(BaseModel):
-    messages: List[MemoryExtractMessage]
-    model: Optional[str] = None
-
-
-@router.post("/memory/extract")
-async def extract_memory(
-    body: MemoryExtractRequest,
-    user: UserSession = Depends(require_auth),
-    session: AsyncSession = Depends(get_session),
-):
-    """Ask the model whether anything DURABLE about the user is worth saving
-    from the recent exchange. Returns a proposal — never writes."""
-    if not body.messages:
-        return {"should_save": False}
-
-    model = body.model or OLLAMA_DEFAULT_MODEL
-
-    # Only look at the last few turns — extraction is about the *recent* signal.
-    tail = body.messages[-6:]
-    convo = "\n\n".join(
-        f"[{m.role}] {m.content[:1500]}" for m in tail if m.content.strip()
-    )
-    if not convo:
-        return {"should_save": False}
-
-    slot_desc = "\n".join(
-        f"- \"{s['slug']}\" : {s['purpose']}" for s in MEMORY_SLOTS
-    )
-    prompt = (
-        "Tu analyses une conversation entre un utilisateur et un assistant. Ta tâche : "
-        "détecter s'il y a UN fait DURABLE sur l'utilisateur, ses préférences ou ses projets "
-        "qui mérite d'être noté dans la mémoire persistante de l'assistant.\n\n"
-        "Cibles possibles :\n" + slot_desc + "\n\n"
-        "N'invente RIEN. Ignore les questions ponctuelles et les demandes d'aide. "
-        "Ne propose que si le fait est nouveau, stable dans le temps, et utile à retenir "
-        "pour de futures conversations.\n\n"
-        "Réponds STRICTEMENT en JSON, rien d'autre :\n"
-        '{"should_save": bool, "target": "profile"|"preferences"|"projets"|null, '
-        '"section": string|null, "content": string, "reason": string}\n\n'
-        "`content` = 1-2 phrases à ajouter, formulées à la 3e personne (« L'utilisateur … »).\n"
-        "`section` = nom d'une section markdown (##) où stocker, ou null pour un append simple.\n"
-        "`reason` = pourquoi ça vaut la peine d'être mémorisé (1 phrase).\n"
-        "Si rien de durable, renvoie {\"should_save\": false}.\n\n"
-        "Conversation :\n" + convo
-    )
-
-    try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(
-                f"{OLLAMA_URL}/api/chat",
-                json={
-                    "model": model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "stream": False,
-                    "format": "json",
-                },
-            )
-            resp.raise_for_status()
-            raw = resp.json().get("message", {}).get("content", "")
-    except Exception as e:
-        return {"should_save": False, "error": str(e)}
-
-    raw = re.sub(r"<think>[\s\S]*?</think>", "", raw or "").strip()
-    start, end = raw.find("{"), raw.rfind("}") + 1
-    data: dict = {}
-    if start >= 0 and end > start:
-        try:
-            data = json.loads(raw[start:end])
-        except Exception:
-            data = {}
-
-    should_save = bool(data.get("should_save"))
-    target = data.get("target")
-    content = (data.get("content") or "").strip()
-
-    # Validate the proposal — the model might target a slug we don't allow, or
-    # return should_save=true with no content.
-    if not should_save or target not in _VALID_SLUGS or not content:
-        return {"should_save": False}
-
-    return {
-        "should_save": True,
-        "target": target,
-        "section": (data.get("section") or None),
-        "content": content,
-        "reason": (data.get("reason") or "").strip() or None,
-    }

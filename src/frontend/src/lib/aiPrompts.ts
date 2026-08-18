@@ -334,6 +334,79 @@ async function reduceChunks(
   return h > 0 ? cleaned.slice(h).trim() : cleaned;
 }
 
+// ── Agent-memory extraction (one-shot, JSON) ───────────────────────────────
+//
+// Mirrors the retired POST /api/ai/memory/extract server route. Slots are
+// duplicated from backend/routers/ai/memory.py::MEMORY_SLOTS — a coordinated
+// change here + there when a slot is added/removed. Wanted-audit: keep short.
+
+const MEMORY_SLOTS_HINT: { slug: string; purpose: string }[] = [
+  { slug: 'profile',     purpose: "Qui est l'utilisateur : rôle, contexte, ce sur quoi il travaille en général." },
+  { slug: 'preferences', purpose: "Comment l'utilisateur aime que l'assistant réponde : longueur, ton, format, langue." },
+  { slug: 'projets',     purpose: 'Projets en cours, objectifs, décisions prises. Une section par projet.' },
+];
+const _VALID_MEMORY_SLUGS = new Set(MEMORY_SLOTS_HINT.map(s => s.slug));
+
+export interface MemoryProposal {
+  should_save: true;
+  target: string;
+  section: string | null;
+  content: string;
+  reason: string | null;
+}
+
+export async function memoryExtract(
+  model: string,
+  messages: { role: string; content: string }[],
+): Promise<MemoryProposal | null> {
+  if (!messages.length) return null;
+  const tail = messages.slice(-6);
+  const convo = tail
+    .filter(m => m.content.trim())
+    .map(m => `[${m.role}] ${m.content.slice(0, 1500)}`)
+    .join('\n\n');
+  if (!convo) return null;
+
+  const slotDesc = MEMORY_SLOTS_HINT.map(s => `- "${s.slug}" : ${s.purpose}`).join('\n');
+  const prompt =
+    "Tu analyses une conversation entre un utilisateur et un assistant. Ta tâche : "
+    + "détecter s'il y a UN fait DURABLE sur l'utilisateur, ses préférences ou ses projets "
+    + "qui mérite d'être noté dans la mémoire persistante de l'assistant.\n\n"
+    + "Cibles possibles :\n" + slotDesc + "\n\n"
+    + "N'invente RIEN. Ignore les questions ponctuelles et les demandes d'aide. "
+    + "Ne propose que si le fait est nouveau, stable dans le temps, et utile à retenir "
+    + "pour de futures conversations.\n\n"
+    + "Réponds STRICTEMENT en JSON, rien d'autre :\n"
+    + '{"should_save": bool, "target": "profile"|"preferences"|"projets"|null, '
+    + '"section": string|null, "content": string, "reason": string}\n\n'
+    + "`content` = 1-2 phrases à ajouter, formulées à la 3e personne (« L'utilisateur … »).\n"
+    + "`section` = nom d'une section markdown (##) où stocker, ou null pour un append simple.\n"
+    + "`reason` = pourquoi ça vaut la peine d'être mémorisé (1 phrase).\n"
+    + "Si rien de durable, renvoie {\"should_save\": false}.\n\n"
+    + "Conversation :\n" + convo;
+
+  let obj: Record<string, unknown>;
+  try {
+    const raw = await oneShotLocalOllama(
+      model, [{ role: 'user', content: prompt }],
+      { format: 'json', timeoutMs: 60_000 },
+    );
+    obj = extractJsonObject(raw);
+  } catch {
+    return null;
+  }
+
+  const shouldSave = Boolean(obj.should_save);
+  const target = typeof obj.target === 'string' ? obj.target : '';
+  const content = typeof obj.content === 'string' ? obj.content.trim() : '';
+  if (!shouldSave || !_VALID_MEMORY_SLUGS.has(target) || !content) return null;
+
+  const section = typeof obj.section === 'string' && obj.section ? obj.section : null;
+  const reason = typeof obj.reason === 'string' && obj.reason.trim() ? obj.reason.trim() : null;
+  return { should_save: true, target, section, content, reason };
+}
+
+
 export async function structureDocument(
   model: string, content: string, title: string, lang: Lang, length: 'short' | 'long',
   onEvent: (e: StructureEvent) => void,

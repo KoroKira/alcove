@@ -74,20 +74,11 @@ export function useAgentMemory(): AgentMemory {
     messages: { role: string; content: string }[],
   ): Promise<MemoryProposal | null> => {
     try {
-      const r = await fetch('/api/ai/memory/extract', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages }),
-      });
-      if (!r.ok) return null;
-      const d = await r.json();
-      if (!d.should_save) return null;
-      return {
-        target: d.target,
-        section: d.section ?? null,
-        content: d.content,
-        reason: d.reason ?? null,
-      };
+      const { memoryExtract } = await import('../lib/aiPrompts');
+      const model = localStorage.getItem('pad-ws-ai-model') || 'llama3.2';
+      const p = await memoryExtract(model, messages);
+      if (!p) return null;
+      return { target: p.target, section: p.section, content: p.content, reason: p.reason };
     } catch { return null; }
   }, []);
 

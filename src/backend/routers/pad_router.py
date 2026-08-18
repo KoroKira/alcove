@@ -783,8 +783,9 @@ async def save_video_meta(
 ) -> Dict[str, Any]:
     """Attach (or replace) the video block on a document pad. Stored under
     `pad.data.video` — a document save via /doc will preserve it. Used so
-    the "Regenerate report" button can re-run /api/ai/video-report without
-    needing to re-hit YouTube or re-run Whisper."""
+    the "Regenerate report" button can re-run the client-side video report
+    (see lib/videoReport.ts) without re-hitting YouTube or re-running
+    Whisper."""
     pad, _ = pad_access
     existing = pad.data if isinstance(pad.data, dict) else {}
     # Drop empty keys so we don't clobber existing values with None on partial

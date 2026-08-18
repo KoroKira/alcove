@@ -117,7 +117,12 @@ async function videoReport(
   ing: Ingested, lang: string, onProgress: (msg: string) => void,
 ): Promise<string> {
   const md = ing.metadata || {};
-  return consumeReportStream('/api/ai/video-report', {
+  const { videoReport: runVideoReport } = await import('../lib/videoReport');
+  const model = localStorage.getItem('pad-ws-ai-model') || 'llama3.2';
+  const L: 'fr' | 'en' = lang === 'fr' ? 'fr' : 'en';
+  let doc = '';
+  let lastError: string | null = null;
+  await runVideoReport(model, {
     title: ing.title,
     url: md.source_url,
     description: md.description ?? '',
@@ -125,8 +130,14 @@ async function videoReport(
     duration: md.duration,
     chapters: md.chapters || [],
     transcript_segments: md.transcript_segments || [],
-    lang,
-  }, onProgress);
+    lang: L,
+  }, (e) => {
+    if (e.kind === 'progress' && e.msg) onProgress(e.msg);
+    else if (e.kind === 'document') doc = e.content || '';
+    else if (e.kind === 'error') lastError = e.error || 'video report failed';
+  });
+  if (lastError && !doc) throw new Error(lastError);
+  return doc.trim();
 }
 
 export default function AddFromLink({ onClose, onCreated, tabs }: Props) {
