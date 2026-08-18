@@ -106,6 +106,28 @@ if [ ! -d "$FRONTEND/node_modules" ]; then
 fi
 success "Node OK"
 
+# ── Bundle frontend (dist/) ───────────────────────────────────────────────────
+# Le backend sert le bundle statique (dist/index.html) sur / en dev mode.
+# Un dist absent ou plus vieux que src/ = utilisateur voit une UI périmée sans
+# le savoir (ex: appels d'API supprimés qui 404 silencieusement). On rebuild
+# automatiquement si le dist n'existe pas ou si une source est plus récente
+# que dist/index.html.
+DIST_INDEX="$FRONTEND/dist/index.html"
+NEEDS_BUILD=0
+if [ ! -f "$DIST_INDEX" ]; then
+  NEEDS_BUILD=1
+  info "dist/ absent — build initial du bundle frontend…"
+elif [ -n "$(find "$FRONTEND/src" -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" -o -name "*.scss" -o -name "*.css" -o -name "*.html" \) -newer "$DIST_INDEX" -print -quit 2>/dev/null)" ]; then
+  NEEDS_BUILD=1
+  info "Sources frontend plus récentes que dist/ — rebuild…"
+fi
+if [ "$NEEDS_BUILD" = "1" ]; then
+  (cd "$FRONTEND" && yarn build) || die "Build frontend échoué. Log : cd src/frontend && yarn build"
+  success "Bundle frontend prêt"
+else
+  success "Bundle frontend à jour"
+fi
+
 # ── ttyd (terminal local) ─────────────────────────────────────────────────────
 TTYD_PID=""
 brew list ttyd &>/dev/null || { warn "Installation de ttyd…"; brew install ttyd; }
