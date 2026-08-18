@@ -4,7 +4,7 @@ WORKDIR /app/frontend
 
 # Copy package files first to leverage layer caching
 COPY src/frontend/package.json src/frontend/yarn.lock ./
-RUN yarn install --frozen-lockfile
+RUN yarn install --frozen-lockfile --network-timeout 600000
 
 # Copy all frontend files
 COPY src/frontend/ ./
