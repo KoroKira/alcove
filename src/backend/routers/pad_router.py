@@ -103,10 +103,14 @@ async def _cas_save_pad_data(
         )
     await session.commit()
     # Keep the in-memory pad in sync so downstream code (auto-snapshot, RAG
-    # reindex, sync-to-disk) sees the fresh data.
+    # reindex, sync-to-disk) sees the fresh data. Both the store *and* the
+    # domain object need the new timestamp — Pad.cache() reads pad.updated_at
+    # (not pad._store.updated_at), and a stale value there poisons Redis and
+    # breaks the next round of optimistic-concurrency baselines.
     pad._store.data = new_data
     pad._store.updated_at = new_updated_at
     pad.data = new_data
+    pad.updated_at = new_updated_at
     await pad.cache()
     return new_updated_at
 

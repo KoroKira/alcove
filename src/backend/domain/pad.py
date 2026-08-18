@@ -213,6 +213,12 @@ class Pad:
         self._store.updated_at = datetime.now()
         self._store = await self._store.save(session)
 
+        # Mirror the freshly-committed timestamp back onto the domain object
+        # before caching, otherwise Redis (and any subsequent GET that hits
+        # cache) serves a stale updated_at — which breaks optimistic-concurrency
+        # baselines and can also confuse "last edited" UI badges.
+        self.updated_at = self._store.updated_at
+
         await self.cache()
         return self
 
