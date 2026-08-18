@@ -66,6 +66,14 @@
       background: var(--ap-accent2);
       color: var(--ap-bg0);
     }
+    /* Bouton unifié "Ajouter" — remplace les deux boutons Nouveau canvas / Doc.
+       Point d'entrée unique vers UnifiedAddModal (ingest + création). */
+    &--primary {
+      background: var(--ap-accent2);
+      color: var(--ap-bg0);
+      padding: 7px 14px;
+      font-weight: 600;
+    }
   }
 
   &__close {

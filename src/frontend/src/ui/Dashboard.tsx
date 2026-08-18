@@ -10,8 +10,9 @@ interface Props {
   tabs: Tab[];
   selectedTabId: string;
   onSelectPad: (padId: string) => void;
-  onCreateCanvas: () => void;
-  onCreateDocument: () => void;
+  /** Ouvre la modale unifiée d'ajout (Ingérer / Créer). Remplace les
+   *  anciens boutons Nouveau canvas / Nouveau document. */
+  onUnifiedAdd: () => void;
   onCreateFromTemplate?: (template: CanvasTemplate) => void;
   onClose: () => void;
 }
@@ -77,8 +78,7 @@ const Dashboard: React.FC<Props> = ({
   tabs,
   selectedTabId,
   onSelectPad,
-  onCreateCanvas,
-  onCreateDocument,
+  onUnifiedAdd,
   onCreateFromTemplate,
   onClose,
 }) => {
@@ -163,11 +163,12 @@ const Dashboard: React.FC<Props> = ({
                 <Layers size={13} /> {t('dashboard.templates')}
               </button>
             </div>
-            <button className="dashboard__create-btn dashboard__create-btn--canvas" onClick={onCreateCanvas}>
-              <Plus size={14} /> {t('dashboard.newCanvas')}
-            </button>
-            <button className="dashboard__create-btn dashboard__create-btn--doc" onClick={onCreateDocument}>
-              <Plus size={14} /> {t('dashboard.newDocument')}
+            <button
+              className="dashboard__create-btn dashboard__create-btn--primary"
+              onClick={onUnifiedAdd}
+              title="Ajouter un contenu ou créer un pad (⌘K)"
+            >
+              <Plus size={14} /> Ajouter
             </button>
             <button className="dashboard__close" onClick={onClose}><X size={18} /></button>
           </div>

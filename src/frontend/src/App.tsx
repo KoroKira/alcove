@@ -44,6 +44,7 @@ import SmartResearch from './ui/SmartResearch';
 import HomeHub from './ui/HomeHub';
 import FlashcardStudio from './ui/FlashcardStudio';
 import Onboarding, { shouldShowOnboarding } from './ui/Onboarding';
+import UnifiedAddModal from './ui/UnifiedAddModal';
 import ThemePicker from './ui/ThemePicker';
 import ThemeBuilder from './ui/ThemeBuilder';
 import ShortcutOverlay from './ui/ShortcutOverlay';
@@ -165,6 +166,7 @@ export default function App() {
   const [themeBuilderOpen, setThemeBuilderOpen] = useState(false);
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [flashcardStudioOpen, setFlashcardStudioOpen] = useState(false);
+  const [unifiedAddOpen, setUnifiedAddOpen] = useState(false);
   const [currentThemeId, setCurrentThemeId] = useState(() => localStorage.getItem('alcove-theme') ?? 'mocha');
   const activeTheme = getTheme(currentThemeId);
   const prevThemeDarkRef = useRef<boolean>(activeTheme.dark);
@@ -710,10 +712,25 @@ export default function App() {
           tabs={tabs}
           selectedTabId={selectedTabId ?? ''}
           onSelectPad={(padId) => { selectTab(padId); setDashboardOpen(false); }}
-          onCreateCanvas={() => { createNewPadAsync(); setDashboardOpen(false); }}
-          onCreateDocument={() => { createNewDocumentAsync(); setDashboardOpen(false); }}
+          onUnifiedAdd={() => setUnifiedAddOpen(true)}
           onCreateFromTemplate={handleCreateFromTemplate}
           onClose={() => setDashboardOpen(false)}
+        />
+      )}
+
+      {unifiedAddOpen && isAuthenticated && (
+        <UnifiedAddModal
+          onClose={() => setUnifiedAddOpen(false)}
+          onIngest={() => { setUnifiedAddOpen(false); setAddLinkOpen(true); }}
+          onImportObsidian={() => { setUnifiedAddOpen(false); setObsidianImportOpen(true); }}
+          onQuickCapture={() => { setUnifiedAddOpen(false); setQuickCaptureOpen(true); }}
+          onCreateCanvas={() => { setUnifiedAddOpen(false); setDashboardOpen(false); createNewPadAsync(); }}
+          onCreateDocument={() => { setUnifiedAddOpen(false); setDashboardOpen(false); createNewDocumentAsync(); }}
+          onCreateKanban={() => { setUnifiedAddOpen(false); setDashboardOpen(false); createNewKanban(); }}
+          onCreateGantt={() => { setUnifiedAddOpen(false); setDashboardOpen(false); createNewGantt(); }}
+          onCreateLatex={() => { setUnifiedAddOpen(false); setDashboardOpen(false); createNewLatex(); }}
+          onCreateDatabase={() => { setUnifiedAddOpen(false); setDashboardOpen(false); createNewDatabase(); }}
+          onCreateDaily={() => { setUnifiedAddOpen(false); setDashboardOpen(false); createDailyNote(); }}
         />
       )}
 
