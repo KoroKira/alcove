@@ -73,7 +73,12 @@ async def login(
                     raise
         await _ensure_scratch_pad(DEV_USER_ID)
         response = RedirectResponse('/')
-        response.set_cookie('session_id', session_id, httponly=True, samesite='lax')
+        # Match main.py's pending_pad_id cookie: set Secure whenever we're served
+        # over HTTPS (e.g. a Tailscale-fronted deployment). Without this, iOS
+        # Safari's ITP can drop the session cookie on HTTPS origins, killing
+        # auth on subsequent XHRs — the exact "iPhone doesn't save" symptom.
+        _secure = bool(FRONTEND_URL and FRONTEND_URL.startswith("https://"))
+        response.set_cookie('session_id', session_id, httponly=True, samesite='lax', secure=_secure)
         return response
 
     session_id = secrets.token_urlsafe(32)
