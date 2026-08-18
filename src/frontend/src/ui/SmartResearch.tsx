@@ -101,11 +101,9 @@ export default function SmartResearch({ onClose, onCreated }: Props) {
 
       log('📇 Indexation RAG…');
       try {
-        await fetch('/api/ai/index', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pad_id: padId }),
-        });
-      } catch { /* non-blocking */ }
+        const { indexPad } = await import('../lib/rag');
+        await indexPad(padId);
+      } catch { /* non-blocking — user can retry via "Réindexer tout" */ }
 
       log('✅ Terminé');
       setStep('done');

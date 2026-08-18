@@ -415,10 +415,8 @@ export default function AddFromLink({ onClose, onCreated, tabs }: Props) {
     if (actionsSel.rag) {
       onStep('📇 Indexation RAG…');
       try {
-        await fetch('/api/ai/index', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pad_id: padId }),
-        });
+        const { indexPad } = await import('../lib/rag');
+        await indexPad(padId);
       } catch { onStep('  ⚠️ Indexation indisponible'); }
     }
   };

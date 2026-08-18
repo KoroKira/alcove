@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useOllamaModels, streamLocalOllamaChat, fetchChatPreamble } from '../hooks/useOllama';
 import { suggestTags, suggestLinks, generateFlashcards, generateDiagram } from '../lib/aiPrompts';
+import { indexAll, ragChat } from '../lib/rag';
 import { useAgentMemory, MemoryProposal } from '../hooks/useAgentMemory';
 import OllamaSetup from './OllamaSetup';
 import ModelManager from './ModelManager';
@@ -395,26 +396,18 @@ export default function AIPanel({
     setIndexLogs([]);
     setShowIndexLogs(true);
     try {
-      const resp = await fetch('/api/ai/index-all', { method: 'POST' });
-      const reader = resp.body!.getReader();
-      const decoder = new TextDecoder();
-      let buf = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop() ?? '';
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const payload = line.slice(6);
-          if (payload === '[DONE]') break;
-          try {
-            const evt = JSON.parse(payload);
-            if (evt.kind !== 'done') setIndexLogs(prev => [...prev, evt.msg]);
-          } catch { /* skip */ }
+      const { pads, totalChunks } = await indexAll((p) => {
+        if (p.status === 'chunking') {
+          setIndexLogs(prev => [...prev, `[${p.current + 1}/${p.total}] ${p.displayName} — analyse…`]);
+        } else if (p.status === 'done') {
+          setIndexLogs(prev => [...prev, `  ✓ ${p.chunks} chunks`]);
+        } else if (p.status === 'error') {
+          setIndexLogs(prev => [...prev, `  ⚠️ ${p.error}`]);
         }
-      }
+      });
+      setIndexLogs(prev => [...prev, `✅ ${pads} pads indexés (${totalChunks} chunks)`]);
+    } catch (e) {
+      setIndexLogs(prev => [...prev, `❌ ${e instanceof Error ? e.message : String(e)}`]);
     } finally { setIndexing(false); }
   };
 
@@ -427,41 +420,31 @@ export default function AIPanel({
     setRagMessages(prev => [...prev, { role: 'assistant', content: '', sources: [] }]);
 
     try {
-      const resp = await fetch('/api/ai/rag-chat', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q, lang }),
+      await ragChat(
+        model,
+        q,
+        (sources) => {
+          setRagMessages(prev => {
+            const copy = [...prev];
+            copy[copy.length - 1] = { ...copy[copy.length - 1], sources };
+            return copy;
+          });
+        },
+        (chunk) => {
+          setRagMessages(prev => {
+            const copy = [...prev];
+            copy[copy.length - 1] = { ...copy[copy.length - 1], content: copy[copy.length - 1].content + chunk };
+            return copy;
+          });
+        },
+        { lang, topK: 5 },
+      );
+    } catch (e) {
+      setRagMessages(prev => {
+        const copy = [...prev];
+        copy[copy.length - 1] = { ...copy[copy.length - 1], content: e instanceof Error ? e.message : t('ai.error') };
+        return copy;
       });
-      const reader = resp.body!.getReader();
-      const decoder = new TextDecoder();
-      let buf = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop() ?? '';
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const payload = line.slice(6);
-          if (payload === '[DONE]') break;
-          try {
-            const evt = JSON.parse(payload);
-            if (evt.kind === 'sources') {
-              setRagMessages(prev => {
-                const copy = [...prev];
-                copy[copy.length - 1] = { ...copy[copy.length - 1], sources: evt.sources };
-                return copy;
-              });
-            } else if (evt.message?.content) {
-              setRagMessages(prev => {
-                const copy = [...prev];
-                copy[copy.length - 1] = { ...copy[copy.length - 1], content: copy[copy.length - 1].content + evt.message.content };
-                return copy;
-              });
-            }
-          } catch { /* skip */ }
-        }
-      }
     } finally { setRagStreaming(false); }
   };
 

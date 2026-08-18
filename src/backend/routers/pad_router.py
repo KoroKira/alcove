@@ -13,7 +13,9 @@ from database.models.version_model import PadVersion
 from database.database import get_session
 from domain.pad import Pad
 from domain.user import User
-from services.rag_indexer import schedule_reindex
+# schedule_reindex was removed in Phase 3C — the browser drives reindexing
+# now (manual "Réindexer tout" button) since the server no longer has an
+# Ollama to call for embeddings.
 
 pad_router = APIRouter()
 
@@ -739,8 +741,6 @@ async def save_doc_content(
             await _asyncio.get_running_loop().run_in_executor(None, _write_md)
     except Exception:
         pass
-    # Debounced background re-index so RAG search stays in sync with edits.
-    schedule_reindex(pad.id)
     return {"ok": True, "updated_at": new_updated_at.isoformat() if new_updated_at else None}
 
 class PadDataSaveRequest(BaseModel):
@@ -756,7 +756,6 @@ async def save_pad_data(
     """Generic data save for kanban, gantt, and other structured pad types."""
     pad, _ = pad_access
     new_updated_at = await _cas_save_pad_data(session, pad, body.data, body.expected_updated_at)
-    schedule_reindex(pad.id)
     return {"ok": True, "updated_at": new_updated_at.isoformat() if new_updated_at else None}
 
 
