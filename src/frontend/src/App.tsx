@@ -132,7 +132,13 @@ export default function App() {
 
   const [excalidrawAPI, excalidrawRefCallback] = useCallbackRefState<ExcalidrawImperativeAPI>();
   const [searchOpen, setSearchOpen] = useState(false);
-  const [dashboardOpen, setDashboardOpen] = useState(false);
+  // Landing view — Alcove ouvre par défaut sur le dashboard "bibliothèque" (grille
+  // masonry de tous les pads). L'utilisateur peut basculer via localStorage
+  // 'alcove-landing' = 'canvas' pour retomber sur l'ancien comportement (canvas
+  // Scratch au boot). L'onboarding a la priorité et est traité séparément.
+  const [dashboardOpen, setDashboardOpen] = useState(
+    () => !shouldShowOnboarding() && localStorage.getItem('alcove-landing') !== 'canvas',
+  );
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [graphOpen, setGraphOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
