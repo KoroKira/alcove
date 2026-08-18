@@ -13,6 +13,7 @@ about the user and their projects. These pads:
     the server only reads/writes the underlying pads.
 """
 import re
+from uuid import UUID
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
