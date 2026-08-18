@@ -1,4 +1,5 @@
 from uuid import UUID
+from datetime import datetime
 from typing import Dict, Any, Tuple, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -41,6 +42,29 @@ class NewPadRequest(BaseModel):
 class DocSaveRequest(BaseModel):
     content: str
     format: str = "markdown"
+    # Optimistic concurrency: the updated_at the client last observed. If the
+    # server-side pad has moved on since (another device saved in between), we
+    # return 409 instead of clobbering. Optional so old clients keep working
+    # while the frontend rolls out.
+    expected_updated_at: Optional[datetime] = None
+
+
+def _check_concurrency(pad, expected_updated_at: Optional[datetime]) -> None:
+    """Raise 409 if the caller's baseline is stale. Comparison is tolerant of
+    sub-second drift (Postgres timestamptz vs. JSON round-trip)."""
+    if expected_updated_at is None or pad.updated_at is None:
+        return
+    delta = abs((pad.updated_at - expected_updated_at).total_seconds())
+    if delta > 0.5:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "stale_write",
+                "message": "The pad was modified by another session since you loaded it.",
+                "server_updated_at": pad.updated_at.isoformat(),
+                "client_expected": expected_updated_at.isoformat(),
+            },
+        )
 
 @pad_router.post("/scratch")
 async def get_or_create_scratch_pad(
@@ -397,6 +421,10 @@ async def get_pad(
         if user_obj:
             await user_obj.set_last_selected_pad(session, pad.id)
 
+        # updated_at is echoed with every structured pad response so the
+        # client can pass it back on save for optimistic concurrency control.
+        pad_updated_at = pad.updated_at.isoformat() if pad.updated_at else None
+
         # Document pads: return content directly. Also surface `video` when
         # present so the frontend can offer the Regenerate button without
         # a second round-trip.
@@ -405,14 +433,18 @@ async def get_pad(
             resp = {
                 "content": data.get("content", ""),
                 "format": data.get("format", "markdown"),
+                "updated_at": pad_updated_at,
             }
             if data.get("video"):
                 resp["video"] = data["video"]
             return resp
 
-        # Structured pads (kanban, gantt): return raw data
-        if pad.pad_type in ("kanban", "gantt"):
-            return pad.data if isinstance(pad.data, dict) else {}
+        # Structured pads (kanban, gantt, latex, database): return raw data +
+        # updated_at. All of these save through PUT /{id}/data and need the
+        # concurrency baseline.
+        if pad.pad_type in ("kanban", "gantt", "latex", "database"):
+            raw = pad.data if isinstance(pad.data, dict) else {}
+            return {**raw, "updated_at": pad_updated_at}
 
         pad_dict = pad.to_dict()
         # Get only this user's appState
@@ -634,6 +666,7 @@ async def save_doc_content(
     /video-meta endpoint) so structured metadata attached to a doc pad
     survives every content save."""
     pad, _ = pad_access
+    _check_concurrency(pad, doc.expected_updated_at)
     existing = pad.data if isinstance(pad.data, dict) else {}
     old_content = existing.get('content', '')
     pad.data = {**existing, "content": doc.content, "format": doc.format}
@@ -662,10 +695,11 @@ async def save_doc_content(
         pass
     # Debounced background re-index so RAG search stays in sync with edits.
     schedule_reindex(pad.id)
-    return {"ok": True}
+    return {"ok": True, "updated_at": pad.updated_at.isoformat() if pad.updated_at else None}
 
 class PadDataSaveRequest(BaseModel):
     data: Dict[str, Any]
+    expected_updated_at: Optional[datetime] = None
 
 @pad_router.put("/{pad_id}/data")
 async def save_pad_data(
@@ -675,11 +709,12 @@ async def save_pad_data(
 ) -> Dict[str, Any]:
     """Generic data save for kanban, gantt, and other structured pad types."""
     pad, _ = pad_access
+    _check_concurrency(pad, body.expected_updated_at)
     pad.data = body.data
     await pad.cache()
     await pad.save(session)
     schedule_reindex(pad.id)
-    return {"ok": True}
+    return {"ok": True, "updated_at": pad.updated_at.isoformat() if pad.updated_at else None}
 
 
 class VideoMetaPayload(BaseModel):

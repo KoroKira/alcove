@@ -4,7 +4,7 @@ import './DatabasePad.scss';
 
 export interface DbColumn { id: string; name: string; }
 export interface DbRow { id: string; cells: Record<string, string>; }
-export interface DatabaseData { columns: DbColumn[]; rows: DbRow[]; groupBy?: string; }
+export interface DatabaseData { columns: DbColumn[]; rows: DbRow[]; groupBy?: string; updated_at?: string; }
 
 interface Props {
   padId: string;
@@ -18,19 +18,37 @@ export default function DatabasePad({ padId, data, onDataChange }: Props) {
   const [view, setView] = useState<'table' | 'board'>('table');
   const [local, setLocal] = useState<DatabaseData>(data);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastUpdatedAt = useRef<string | null>(data.updated_at ?? null);
+  const [conflict, setConflict] = useState(false);
 
   // Reset local state when switching to a different database pad.
-  useEffect(() => { setLocal(data); /* eslint-disable-next-line */ }, [padId]);
+  useEffect(() => {
+    setLocal(data);
+    lastUpdatedAt.current = data.updated_at ?? null;
+    setConflict(false);
+    /* eslint-disable-next-line */
+  }, [padId]);
 
   const commit = useCallback((next: DatabaseData) => {
     setLocal(next);
     onDataChange(next);
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      fetch(`/api/pad/${padId}/data`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(next),
-      }).catch(() => {});
+    saveTimer.current = setTimeout(async () => {
+      // Strip updated_at from the payload — it's the concurrency baseline,
+      // not part of pad.data. Sending it inside `data` would poison the DB.
+      const { updated_at: _u, ...payload } = next;
+      try {
+        const res = await fetch(`/api/pad/${padId}/data`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: payload, expected_updated_at: lastUpdatedAt.current }),
+        });
+        if (res.status === 409) { setConflict(true); return; }
+        if (res.ok) {
+          const j = await res.json().catch(() => null);
+          if (j?.updated_at) lastUpdatedAt.current = j.updated_at;
+          setConflict(false);
+        }
+      } catch { /* ignore */ }
     }, 400);
   }, [padId, onDataChange]);
 
@@ -83,6 +101,11 @@ export default function DatabasePad({ padId, data, onDataChange }: Props) {
 
   return (
     <div className="dbpad">
+      {conflict && (
+        <div style={{ background: '#f5a623', color: '#000', padding: '8px 12px', fontSize: 13, textAlign: 'center' }}>
+          ⚠️ Cette base a été modifiée sur un autre appareil. Recharge la page pour repartir de la version serveur.
+        </div>
+      )}
       <div className="dbpad__toolbar">
         <div className="dbpad__views">
           <button className={`dbpad__view-btn${view === 'table' ? ' active' : ''}`} onClick={() => setView('table')}>

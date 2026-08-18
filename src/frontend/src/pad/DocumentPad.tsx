@@ -324,7 +324,11 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
   const { t } = useTranslation();
   const [content, setContent] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('split');
-  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved' | 'conflict'>('saved');
+  // Optimistic-concurrency baseline: the pad's updated_at when we last read
+  // (or successfully wrote) it. Sent on every save; server rejects with 409
+  // if a peer (e.g. the same account on another device) has moved on since.
+  const lastUpdatedAt = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const { related, notIndexed } = useRelatedPads(padId, 5);
@@ -408,6 +412,7 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
         const loaded = isLatex ? (padData?.data?.source || padData?.content || '') : (padData?.content || '');
         const initial = !loaded && pendingContent ? pendingContent : (loaded || (isLatex ? LATEX_DEFAULT : ''));
         setContent(initial);
+        lastUpdatedAt.current = padData?.updated_at ?? null;
         if (!loaded && pendingContent) scheduleSave(pendingContent);
         if (!loaded && isLatex && !pendingContent) scheduleSave(LATEX_DEFAULT);
         setSaveStatus('saved');
@@ -495,20 +500,29 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
     saveTimer.current = setTimeout(async () => {
       setSaveStatus('saving');
       try {
-        if (isLatex) {
-          await fetch(`/api/pad/${padId}/data`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ data: { source: text } }),
-          });
-        } else {
-          await fetch(`/api/pad/${padId}/doc`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: text, format: 'markdown' }),
-          });
+        const url = isLatex ? `/api/pad/${padId}/data` : `/api/pad/${padId}/doc`;
+        const body = isLatex
+          ? { data: { source: text }, expected_updated_at: lastUpdatedAt.current }
+          : { content: text, format: 'markdown', expected_updated_at: lastUpdatedAt.current };
+        const res = await fetch(url, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (res.status === 409) {
+          // Another session (same account on another device) wrote after we
+          // loaded. We keep the local text so nothing is silently dropped;
+          // the status badge switches to 'conflict' so the user knows.
+          setSaveStatus('conflict');
+          return;
         }
-        setSaveStatus('saved');
+        if (res.ok) {
+          const j = await res.json().catch(() => null);
+          if (j?.updated_at) lastUpdatedAt.current = j.updated_at;
+          setSaveStatus('saved');
+        } else {
+          setSaveStatus('unsaved');
+        }
       } catch {
         setSaveStatus('unsaved');
       }
@@ -1002,7 +1016,11 @@ ${renderedHtml}
     await fetch(`/api/pad/${padId}/versions/snapshot`, { method: 'POST' });
   };
 
-  const statusLabel = saveStatus === 'saving' ? t('editor.saving') : saveStatus === 'unsaved' ? t('editor.unsaved') : t('editor.saved');
+  const statusLabel =
+    saveStatus === 'saving' ? t('editor.saving')
+    : saveStatus === 'unsaved' ? t('editor.unsaved')
+    : saveStatus === 'conflict' ? '⚠️ Modifié ailleurs — recharge la page'
+    : t('editor.saved');
 
   if (loading) {
     return <div className="document-pad document-pad--loading">{t('editor.loading')}</div>;

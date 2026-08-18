@@ -39,6 +39,9 @@ export interface KanbanData {
   columns: KanbanColumn[];
   fieldSchema?: FieldDef[];
   cardTemplates?: KanbanCardTemplate[];
+  // Optimistic-concurrency baseline echoed by the API. Never sent inside the
+  // pad body on save — used as the top-level `expected_updated_at`.
+  updated_at?: string;
 }
 
 interface Props {
@@ -466,17 +469,32 @@ export default function KanbanPad({ padId, data, onDataChange }: Props) {
   const [dragCard, setDragCard] = useState<{ cardId: string; fromColId: string } | null>(null);
   const [dragOverColId, setDragOverColId] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastUpdatedAt = useRef<string | null>(data.updated_at ?? null);
+  const [conflict, setConflict] = useState(false);
 
   const save = useCallback((cols: KanbanColumn[], sc: FieldDef[], tpls: KanbanCardTemplate[]) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
+    saveTimer.current = setTimeout(async () => {
       const d: KanbanData = { columns: cols, fieldSchema: sc, cardTemplates: tpls };
       onDataChange(d);
-      fetch(`/api/pad/${padId}/data`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: d }),
-      }).catch(console.error);
+      try {
+        const res = await fetch(`/api/pad/${padId}/data`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: d, expected_updated_at: lastUpdatedAt.current }),
+        });
+        if (res.status === 409) {
+          setConflict(true);
+          return;
+        }
+        if (res.ok) {
+          const j = await res.json().catch(() => null);
+          if (j?.updated_at) lastUpdatedAt.current = j.updated_at;
+          setConflict(false);
+        }
+      } catch (e) {
+        console.error(e);
+      }
     }, SAVE_DEBOUNCE);
   }, [padId, onDataChange]);
 
@@ -542,6 +560,11 @@ export default function KanbanPad({ padId, data, onDataChange }: Props) {
 
   return (
     <div className="kanban">
+      {conflict && (
+        <div style={{ background: '#f5a623', color: '#000', padding: '8px 12px', fontSize: 13, textAlign: 'center' }}>
+          ⚠️ Ce tableau a été modifié sur un autre appareil. Recharge la page pour repartir de la version serveur.
+        </div>
+      )}
       <div className="kanban__main">
         {/* Board */}
         <div className="kanban__board">
