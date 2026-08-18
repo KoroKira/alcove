@@ -1,21 +1,23 @@
-"""Free-form chat with Ollama + persisted conversation threads."""
+"""Chat conversation persistence + system-prompt preamble.
+
+Since the Ollama refactor, the browser talks to its own local Ollama instance
+for the actual chat completion. This file no longer proxies /chat — it only
+persists conversation threads and exposes the merged system prompt (BASE +
+agent memory) that the client should prepend when calling Ollama directly."""
 import json
-import shutil
 from uuid import UUID
 from typing import List, Optional
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies import UserSession, require_auth
-from config import OLLAMA_URL, OLLAMA_DEFAULT_MODEL
+from config import OLLAMA_DEFAULT_MODEL
 from database.database import get_session
 from database.models.conversation_model import AIConversation
 
-from ._shared import BASE_SYSTEM_PROMPT, ensure_ollama_running, server_is_running
+from ._shared import BASE_SYSTEM_PROMPT
 
 
 router = APIRouter()
@@ -117,66 +119,27 @@ async def delete_conversation(
     return {"deleted": True}
 
 
-# ── Chat streaming ──────────────────────────────────────────────────────────
+# ── System-prompt preamble (for browser-side chat) ──────────────────────────
+#
+# The browser fetches this before each chat send, prepends it as a system
+# message, then streams from its own local Ollama. The response is cheap and
+# small — cache-busting each send keeps memory pad edits reflected immediately
+# without having to invalidate any client-side cache.
 
-class ChatMessage(BaseModel):
-    role: str
-    content: str
-
-
-class ChatRequest(BaseModel):
-    model: Optional[str] = None
-    messages: List[ChatMessage]
-    # user-defined instructions layered on top of BASE_SYSTEM_PROMPT
-    custom_prompt: Optional[str] = None
-
-
-@router.post("/chat")
-async def chat_stream(
-    body: ChatRequest,
+@router.get("/chat/preamble")
+async def chat_preamble(
     user: UserSession = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ):
-    model = body.model or OLLAMA_DEFAULT_MODEL
-    # Single merged system message: hidden base prompt, then any agent memory
-    # (facts the assistant should recall about the user), then the user's custom
-    # instructions, then any per-request system context sent by the frontend
-    # (e.g. the open document for quick actions).
+    """Return the merged system prompt (BASE + agent-memory pads) the client
+    should prepend to its Ollama /api/chat call.
+
+    NOT included: the user's `custom_prompt` (lives in localStorage on the
+    client — the client concatenates it) and any per-request system context
+    (the client injects the open document itself)."""
     from .memory import load_memory_prompt_block
     system = BASE_SYSTEM_PROMPT
     memory_block = await load_memory_prompt_block(session, user.id)
     if memory_block:
         system += f"\n\n{memory_block}"
-    if body.custom_prompt and body.custom_prompt.strip():
-        system += f"\n\nInstructions supplémentaires de l'utilisateur :\n{body.custom_prompt.strip()[:2000]}"
-    client_system = [m.content for m in body.messages if m.role == "system"]
-    if client_system:
-        system += "\n\n" + "\n\n".join(client_system)
-    messages = [{"role": "system", "content": system}]
-    messages += [{"role": m.role, "content": m.content} for m in body.messages if m.role != "system"]
-
-    async def stream():
-        if not await server_is_running():
-            if not shutil.which('ollama'):
-                yield f"data: {json.dumps({'error': 'Ollama non installé. Télécharge-le sur ollama.com'})}\n\n"
-                yield "data: [DONE]\n\n"
-                return
-            running = await ensure_ollama_running(12)
-            if not running:
-                yield f"data: {json.dumps({'error': 'Impossible de démarrer Ollama automatiquement.'})}\n\n"
-                yield "data: [DONE]\n\n"
-                return
-        try:
-            async with httpx.AsyncClient(timeout=None) as client:
-                async with client.stream(
-                    "POST", f"{OLLAMA_URL}/api/chat",
-                    json={"model": model, "messages": messages, "stream": True},
-                ) as resp:
-                    async for line in resp.aiter_lines():
-                        if line:
-                            yield f"data: {line}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
-        yield "data: [DONE]\n\n"
-
-    return StreamingResponse(stream(), media_type="text/event-stream")
+    return {"system": system, "default_model": OLLAMA_DEFAULT_MODEL}

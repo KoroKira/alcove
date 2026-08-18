@@ -1,5 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
+// Client-side Ollama URL. Ollama is expected to run on each user's own device;
+// the Alcove server never touches it. Override for special setups by setting
+// `localStorage.setItem('alcove_ollama_url', 'http://...')`.
+// Explicit 127.0.0.1 (not "localhost") to avoid IPv6-first resolution stalls
+// on macOS where Ollama binds v4-only.
+export function getOllamaUrl(): string {
+  try {
+    const override = localStorage.getItem('alcove_ollama_url');
+    if (override && override.trim()) return override.trim().replace(/\/$/, '');
+  } catch { /* SSR / privacy mode — fall through */ }
+  return 'http://127.0.0.1:11434';
+}
+
 export interface OllamaModel {
   name: string;
   size: number;
@@ -11,11 +24,20 @@ export interface OllamaStatus {
   modelNames: string[];
   defaultModel: string;
   available: boolean | null;
-  /** true when ollama is installed but being auto-started */
+  /** Kept for API compat; the browser can no longer auto-start Ollama, so
+   * this is always false now. */
   starting: boolean;
   refresh: () => void;
 }
 
+/**
+ * Poll the user's local Ollama for its installed models. Runs entirely in the
+ * browser — no server round-trip — so it works even when the Alcove server
+ * has no Ollama of its own (the normal self-host setup).
+ *
+ * `defaultModel` is fetched once from the server's preamble endpoint so admin
+ * config (OLLAMA_DEFAULT_MODEL) still drives the initial pick.
+ */
 export function useOllamaModels(): OllamaStatus {
   const [status, setStatus] = useState<Omit<OllamaStatus, 'refresh'>>({
     models: [],
@@ -24,66 +46,132 @@ export function useOllamaModels(): OllamaStatus {
     available: null,
     starting: false,
   });
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const defaultRef = useRef<string | null>(null);
 
-  const stopPoll = () => {
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-  };
-
-  const refresh = useCallback(() => {
-    fetch('/api/ai/models')
-      .then(r => r.json())
-      .then(data => {
-        const raw = data.models ?? [];
-        const models: OllamaModel[] = Array.isArray(raw) && raw.length > 0 && typeof raw[0] === 'object'
-          ? raw
-          : raw.map((n: string) => ({ name: n, size: 0, modified: '' }));
-        const available = data.available ?? false;
-        const starting = !available && (data.starting ?? false);
-        setStatus({
-          models,
-          modelNames: models.map(m => m.name),
-          defaultModel: data.default || 'llama3.2',
-          available,
-          starting,
-        });
-        if (available) {
-          stopPoll();
-        } else if (starting && !pollRef.current) {
-          // Auto-poll every 2s until Ollama is up
-          pollRef.current = setInterval(() => {
-            fetch('/api/ai/models')
-              .then(r => r.json())
-              .then(d => {
-                if (d.available) {
-                  const r2 = d.models ?? [];
-                  const m2: OllamaModel[] = Array.isArray(r2) && r2.length > 0 && typeof r2[0] === 'object'
-                    ? r2
-                    : r2.map((n: string) => ({ name: n, size: 0, modified: '' }));
-                  setStatus({ models: m2, modelNames: m2.map(m => m.name), defaultModel: d.default || 'llama3.2', available: true, starting: false });
-                  stopPoll();
-                }
-              })
-              .catch(() => {});
-          }, 2000);
+  const refresh = useCallback(async () => {
+    // Fetch server-side default model once — cheap, and it lets admins pick
+    // the preferred model from an env var without touching client code.
+    if (defaultRef.current === null) {
+      try {
+        const r = await fetch('/api/ai/chat/preamble');
+        if (r.ok) {
+          const j = await r.json();
+          defaultRef.current = j.default_model || 'llama3.2';
+        } else {
+          defaultRef.current = 'llama3.2';
         }
-      })
-      .catch(() => setStatus(s => ({ ...s, available: false, starting: false })));
+      } catch {
+        defaultRef.current = 'llama3.2';
+      }
+    }
+
+    try {
+      const url = getOllamaUrl();
+      const ctrl = new AbortController();
+      const timeoutId = setTimeout(() => ctrl.abort(), 3000);
+      const resp = await fetch(`${url}/api/tags`, { signal: ctrl.signal });
+      clearTimeout(timeoutId);
+      if (!resp.ok) throw new Error(`Ollama /api/tags returned ${resp.status}`);
+      const raw = (await resp.json()).models ?? [];
+      const models: OllamaModel[] = raw.map((m: { name: string; size?: number; modified_at?: string }) => ({
+        name: m.name,
+        size: m.size ?? 0,
+        modified: m.modified_at ?? '',
+      }));
+      setStatus({
+        models,
+        modelNames: models.map(m => m.name),
+        defaultModel: defaultRef.current || 'llama3.2',
+        available: true,
+        starting: false,
+      });
+    } catch {
+      setStatus(s => ({
+        ...s,
+        available: false,
+        starting: false,
+        defaultModel: defaultRef.current || 'llama3.2',
+      }));
+    }
   }, []);
 
   useEffect(() => {
     refresh();
-    return stopPoll;
+    // Re-check every 30s so the UI unlocks automatically when the user starts
+    // Ollama on their machine after the app was already loaded.
+    const id = setInterval(refresh, 30000);
+    return () => clearInterval(id);
   }, [refresh]);
 
   return { ...status, refresh };
 }
 
+/**
+ * Stream a chat completion from the user's local Ollama, directly from the
+ * browser. `messages` is passed through as-is to Ollama's /api/chat — the
+ * caller is responsible for prepending the system-prompt preamble fetched
+ * from `/api/ai/chat/preamble`.
+ */
+export async function streamLocalOllamaChat(
+  model: string,
+  messages: { role: string; content: string }[],
+  onChunk: (text: string) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const url = getOllamaUrl();
+  const resp = await fetch(`${url}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, messages, stream: true }),
+    signal,
+  });
+
+  if (!resp.ok || !resp.body) {
+    throw new Error(`Ollama chat failed (${resp.status}) — check that Ollama is running on this device and that OLLAMA_ORIGINS allows this origin.`);
+  }
+
+  // Ollama streams NDJSON — one JSON object per line, no `data:` prefix.
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop() ?? '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const json = JSON.parse(trimmed);
+        if (json.error) throw new Error(json.error);
+        const text: string = json.message?.content ?? '';
+        if (text) onChunk(text);
+        if (json.done) return;
+      } catch (e: unknown) {
+        if (e instanceof SyntaxError) continue; // partial line, wait for more
+        throw e;
+      }
+    }
+  }
+}
+
+
+/**
+ * Legacy: server-proxied Ollama stream. Still used by DocumentPad and other
+ * pad AI actions that hit /api/ai/summarize, /api/ai/generate-flashcards, etc.
+ * Those endpoints require the server to have OLLAMA_URL configured. In the
+ * self-host setup they return errors until Phase 3B migrates them to the
+ * client. Kept here so existing callers still compile; will be removed once
+ * the last one is migrated.
+ */
 export async function streamOllamaChat(
   model: string,
   messages: { role: string; content: string }[],
   onChunk: (text: string) => void,
-  endpoint = '/api/ai/chat',
+  endpoint: string,
   extraBody: Record<string, unknown> = {},
   signal?: AbortSignal,
 ): Promise<void> {
@@ -120,4 +208,16 @@ export async function streamOllamaChat(
       }
     }
   }
+}
+
+/**
+ * Fetch the merged system prompt (BASE + agent-memory pads) from the server.
+ * The caller is expected to concatenate the user's own custom_prompt on top
+ * before sending it as a system message to Ollama.
+ */
+export async function fetchChatPreamble(): Promise<{ system: string; defaultModel: string }> {
+  const r = await fetch('/api/ai/chat/preamble');
+  if (!r.ok) throw new Error(`Preamble fetch failed (${r.status})`);
+  const j = await r.json();
+  return { system: j.system || '', defaultModel: j.default_model || 'llama3.2' };
 }

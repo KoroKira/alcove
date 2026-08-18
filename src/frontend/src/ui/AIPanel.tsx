@@ -5,7 +5,7 @@ import {
   Search, Link, Zap, ArrowDownToLine, Loader, ChevronDown, ChevronUp, Workflow,
   MessageSquare, Plus, Trash2, Brain, Check,
 } from 'lucide-react';
-import { useOllamaModels, streamOllamaChat } from '../hooks/useOllama';
+import { useOllamaModels, streamLocalOllamaChat, fetchChatPreamble } from '../hooks/useOllama';
 import { useAgentMemory, MemoryProposal } from '../hooks/useAgentMemory';
 import OllamaSetup from './OllamaSetup';
 import ModelManager from './ModelManager';
@@ -262,8 +262,28 @@ export default function AIPanel({
     setStreaming(true);
 
     const history = [...messages, userMsg];
-    const apiMessages = systemPrefix
-      ? [{ role: 'system', content: systemPrefix }, ...history.map(m => ({ role: m.role, content: m.content }))]
+
+    // Compose the system prompt entirely on the client now:
+    //   [server preamble = BASE + agent memory] + [localStorage custom_prompt] + [systemPrefix]
+    // then stream from the user's own Ollama at localhost.
+    let mergedSystem = '';
+    try {
+      const { system } = await fetchChatPreamble();
+      mergedSystem = system;
+    } catch {
+      // Preamble is best-effort — if it fails we still ship a chat, just
+      // without the assistant memory / base persona.
+    }
+    if (customPrompt.trim()) {
+      mergedSystem += (mergedSystem ? '\n\n' : '')
+        + `Instructions supplémentaires de l'utilisateur :\n${customPrompt.trim().slice(0, 2000)}`;
+    }
+    if (systemPrefix) {
+      mergedSystem += (mergedSystem ? '\n\n' : '') + systemPrefix;
+    }
+
+    const apiMessages = mergedSystem
+      ? [{ role: 'system', content: mergedSystem }, ...history.map(m => ({ role: m.role, content: m.content }))]
       : history.map(m => ({ role: m.role, content: m.content }));
 
     setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
@@ -271,13 +291,13 @@ export default function AIPanel({
     abortRef.current = ctrl;
 
     try {
-      await streamOllamaChat(model, apiMessages, (chunk) => {
+      await streamLocalOllamaChat(model, apiMessages, (chunk) => {
         setMessages(prev => {
           const copy = [...prev];
           copy[copy.length - 1] = { ...copy[copy.length - 1], content: copy[copy.length - 1].content + chunk };
           return copy;
         });
-      }, '/api/ai/chat', customPrompt.trim() ? { custom_prompt: customPrompt.trim() } : {}, ctrl.signal);
+      }, ctrl.signal);
     } catch (e: unknown) {
       if ((e as Error)?.name !== 'AbortError') {
         const msg = (e as Error)?.message || t('ai.error');

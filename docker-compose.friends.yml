@@ -38,8 +38,16 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: alcove-friends-ollama
+    environment:
+      # Since Phase 3A, the browser talks directly to Ollama. Allow the app's
+      # origin (http://localhost:8000) so preflight succeeds. `*` is fine for a
+      # local single-user dev stack.
+      - OLLAMA_ORIGINS=*
     volumes:
       - alcove_friends_ollama_data:/root/.ollama
+    ports:
+      # Exposed on the host so the browser can reach it directly.
+      - "11434:11434"
     restart: unless-stopped
     networks:
       - pad-network

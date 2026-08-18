@@ -166,13 +166,29 @@ lsof -ti :8000 | xargs kill -9
 
 ### L'IA ne répond pas
 
+Depuis la refonte browser-side, **le chat parle directement à ton Ollama local** (pas de proxy serveur). Vérifie :
+
 ```bash
-# Lance Ollama manuellement
+# 1. Ollama tourne ?
 ollama serve
 
-# Dans un autre terminal, teste qu'il répond
+# 2. Il répond bien sur ce port ?
 curl http://localhost:11434/api/tags
 ```
+
+**Si Alcove est servi via une URL différente de `http://localhost` (par ex. un self-host via Tailscale HTTPS), il faut aussi autoriser cette origine dans Ollama :**
+
+```bash
+# Mac (permanent, à faire une seule fois puis relancer Ollama)
+launchctl setenv OLLAMA_ORIGINS "https://alcove-server.<ton-tailnet>.ts.net"
+
+# Ou au lancement manuel :
+OLLAMA_ORIGINS='*' ollama serve
+```
+
+Sur Windows : Panneau de config → Variables d'env système → ajouter `OLLAMA_ORIGINS=*` (personnel, single-user) puis relancer Ollama.
+
+**Ollama sur une autre URL ?** Ajoute dans la console DevTools du navigateur : `localStorage.setItem('alcove_ollama_url', 'http://192.168.1.50:11434')`, puis reload la page.
 
 ### Réinitialiser complètement
 
