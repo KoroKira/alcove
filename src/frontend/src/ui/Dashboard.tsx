@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Plus, FileText, PenLine, Search, Grid2X2, Layers, Link as LinkIcon, PenTool } from 'lucide-react';
+import {
+  X, Plus, FileText, PenLine, Search, Grid2X2, Layers, Link as LinkIcon, PenTool,
+  Kanban, GanttChart, Sigma, Database, StickyNote,
+} from 'lucide-react';
 import { Tab } from '../hooks/usePadTabs';
 import { CANVAS_TEMPLATES, CanvasTemplate } from '../constants/templates';
 import { cardTint } from '../lib/cardTint';
@@ -86,6 +89,10 @@ const Dashboard: React.FC<Props> = ({
   const typeLabels: Record<string, string> = {
     canvas: t('dashboard.typeCanvas'),
     document: t('dashboard.typeDocument'),
+    kanban: 'Kanban',
+    gantt: 'Gantt',
+    latex: 'LaTeX',
+    database: 'Database',
   };
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('updated');
@@ -141,16 +148,37 @@ const Dashboard: React.FC<Props> = ({
     return () => document.removeEventListener('keydown', handler);
   }, [onClose]);
 
-  // Lazy-fetch doc previews
+  // Lazy-fetch doc previews. On nettoie AGRESSIVEMENT le markdown avant
+  // affichage pour que la carte ne montre pas ">[!NOTE] Source > 🔗 [url…"
+  // qui pollue le preview de tous les pads ingérés — on veut le premier
+  // paragraphe de vrai contenu, pas la callout de métadonnées.
   useEffect(() => {
     const docTabs = tabs.filter(t => t.padType === 'document' && !previews[t.id]);
     docTabs.forEach(tab => {
       fetch(`/api/pad/${tab.id}`)
         .then(r => r.json())
         .then(data => {
-          const text = (data?.content || '') as string;
-          const snippet = text.replace(/#+\s/g, '').replace(/\*\*/g, '').replace(/`/g, '').trim().slice(0, 140);
-          setPreviews(prev => ({ ...prev, [tab.id]: snippet }));
+          const raw = (data?.content || '') as string;
+          const cleaned = raw
+            // Retire les commentaires HTML (blocs alcove:video etc.)
+            .replace(/<!--[\s\S]*?-->/g, '')
+            // Retire les callouts blockquote entiers (>...) — souvent la
+            // note "Source" injectée par AddFromLink en tête de digest.
+            .replace(/^>.*$/gm, '')
+            // Titres, gras, italiques, code, ancres wiki
+            .replace(/^#{1,6}\s+/gm, '')
+            .replace(/\*\*(.*?)\*\*/g, '$1')
+            .replace(/`([^`]+)`/g, '$1')
+            .replace(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g, '$1')
+            .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+            // Emojis/markers noise
+            .replace(/[👤📅🔗📋✨📚🎬📄🎥🧠]/g, '')
+            // Séparateurs et sauts de ligne multiples
+            .replace(/\n{2,}/g, ' · ')
+            .replace(/^-{3,}$/gm, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          setPreviews(prev => ({ ...prev, [tab.id]: cleaned.slice(0, 160) }));
         })
         .catch(() => {});
     });
@@ -221,87 +249,97 @@ const Dashboard: React.FC<Props> = ({
   };
   const useDateGrouping = sortKey === 'updated' || sortKey === 'created';
 
-  /** Rendu d'une carte de pad. Extrait de la boucle map pour rester
-   *  lisible pendant que le rendu s'enrichit (thumbnail, source line,
-   *  badges d'engagement, …). Une seule source de vérité pour le look
-   *  d'une carte, réutilisable dans les sections datées et le fallback
-   *  non-grouped. */
-  const renderCard = (tab: Tab) => (
-    <button
-      key={tab.id}
-      className={`dashboard__card ${selectedTabId === tab.id ? 'active' : ''} ${tab.isScratch ? 'scratch' : ''} ${tab.thumbnailUrl ? 'has-thumb' : ''}`}
-      style={{ '--card-tint': cardTint(tab.id) } as React.CSSProperties}
-      onClick={() => handleSelect(tab.id)}
-    >
-      {tab.thumbnailUrl && (
-        <div className="dashboard__card-thumb">
-          <img
-            src={tab.thumbnailUrl}
-            alt=""
-            loading="lazy"
-            // referrerPolicy tightens tracking cross-origin (YouTube i.ytimg.com,
-            // article OG-images, etc.). onError hides the img so the fallback
-            // tint + type badge take over cleanly instead of showing a broken icon.
-            referrerPolicy="no-referrer"
-            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-          />
-        </div>
-      )}
-      <div className="dashboard__card-header">
-        <span className="dashboard__card-icon">
-          {tab.padType === 'document' ? <FileText size={16} /> : <PenLine size={16} />}
-        </span>
-        <span className={`dashboard__card-badge dashboard__card-badge--${tab.padType || 'canvas'}`}>
-          {typeLabels[tab.padType || 'canvas']}
-        </span>
-        {tab.isScratch && <span className="dashboard__card-scratch">Scratch</span>}
-      </div>
-      <div className="dashboard__card-title">{tab.title}</div>
-      {tab.sourceUrl && (() => {
-        // Domaine extrait de l'URL canonique. Sert de fil rouge visuel :
-        // au dashboard, une carte YouTube ne se confond plus avec un
-        // article Substack ou un PDF arxiv, même sans lire le titre.
-        let host = '';
-        try { host = new URL(tab.sourceUrl).hostname.replace(/^www\./, ''); }
-        catch { host = ''; }
-        if (!host) return null;
-        // Service favicon gratuit Google — pratique, pas de key, sert
-        // n'importe quel domaine. Fallback silencieux via onError si
-        // le service est bloqué (ad-block, offline).
-        const fav = `https://www.google.com/s2/favicons?domain=${host}&sz=32`;
-        return (
-          <div className="dashboard__card-source">
+  /** Icône dominante par type de pad — grosse silhouette au centre du
+   *  thumb quand aucune image n'a été extraite. Chaque type garde une
+   *  identité visuelle même sans cover : canvas dessine, kanban range,
+   *  gantt planifie, latex calcule. */
+  const iconForType = (padType?: string): React.ReactNode => {
+    switch (padType) {
+      case 'canvas':   return <PenTool />;
+      case 'kanban':   return <Kanban />;
+      case 'gantt':    return <GanttChart />;
+      case 'latex':    return <Sigma />;
+      case 'database': return <Database />;
+      case 'document':
+      default:         return <FileText />;
+    }
+  };
+
+  /** Rendu d'une carte de pad. Le thumb domine visuellement — soit une
+   *  image extraite (YouTube, OG, PDF cover), soit un gradient au tint
+   *  de la carte avec l'icône type au centre. Le type de pad passe en
+   *  overlay coin sur le thumb, plus en bannière au-dessus qui volait
+   *  l'attention pour rien. */
+  const renderCard = (tab: Tab) => {
+    const typeLabel = (typeLabels as Record<string, string>)[tab.padType || 'canvas']
+      || (tab.padType || 'canvas');
+    let sourceHost = '';
+    if (tab.sourceUrl) {
+      try { sourceHost = new URL(tab.sourceUrl).hostname.replace(/^www\./, ''); } catch {}
+    }
+    const fav = sourceHost ? `https://www.google.com/s2/favicons?domain=${sourceHost}&sz=32` : '';
+    const preview = tab.padType === 'document' ? previews[tab.id] : '';
+    return (
+      <button
+        key={tab.id}
+        className={`dashboard__card ${selectedTabId === tab.id ? 'active' : ''} ${tab.isScratch ? 'scratch' : ''}`}
+        style={{ '--card-tint': cardTint(tab.id) } as React.CSSProperties}
+        onClick={() => handleSelect(tab.id)}
+      >
+        <div className={`dashboard__card-thumb ${tab.thumbnailUrl ? '' : 'dashboard__card-thumb--iconic'}`}>
+          {tab.thumbnailUrl ? (
             <img
-              className="dashboard__card-source-fav"
-              src={fav}
+              src={tab.thumbnailUrl}
               alt=""
               loading="lazy"
               referrerPolicy="no-referrer"
-              onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden'; }}
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
             />
-            <span className="dashboard__card-source-host">{host}</span>
-          </div>
-        );
-      })()}
-      {tab.padType === 'document' && previews[tab.id] && (
-        <div className="dashboard__card-preview">{previews[tab.id]}</div>
-      )}
-      {(tab.tags || []).length > 0 && (
-        <div className="dashboard__card-tags">
-          {(tab.tags || []).map(tag => (
-            <span
-              key={tag}
-              className="dashboard__card-tag"
-              onClick={e => { e.stopPropagation(); setActiveTag(t => t === tag ? null : tag); }}
-            >#{tag}</span>
-          ))}
+          ) : (
+            iconForType(tab.padType)
+          )}
+          <span className="dashboard__card-type">
+            {React.cloneElement(iconForType(tab.padType) as React.ReactElement, { size: 11 })}
+            {typeLabel}
+          </span>
+          {tab.isScratch && <span className="dashboard__card-scratch">Scratch</span>}
         </div>
-      )}
-      <div className="dashboard__card-meta">
-        Updated {formatDate(tab.updatedAt)}
-      </div>
-    </button>
-  );
+        <div className="dashboard__card-body">
+          {sourceHost && (
+            <div className="dashboard__card-source">
+              {fav && (
+                <img
+                  className="dashboard__card-source-fav"
+                  src={fav}
+                  alt=""
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden'; }}
+                />
+              )}
+              <span className="dashboard__card-source-host">{sourceHost}</span>
+            </div>
+          )}
+          <div className="dashboard__card-title">{tab.title}</div>
+          {preview && (
+            <div className="dashboard__card-preview">{preview}</div>
+          )}
+          {(tab.tags || []).length > 0 && (
+            <div className="dashboard__card-tags">
+              {(tab.tags || []).slice(0, 4).map(tag => (
+                <span
+                  key={tag}
+                  className="dashboard__card-tag"
+                  onClick={e => { e.stopPropagation(); setActiveTag(t => t === tag ? null : tag); }}
+                >{tag}</span>
+              ))}
+            </div>
+          )}
+          <div className="dashboard__card-meta">{formatDate(tab.updatedAt)}</div>
+        </div>
+      </button>
+    );
+  };
 
   /** Tuile "Quick actions" épinglée en tête de la première section — le
    *  geste Recall qui remplace le "New pad" du terminal-look ancien par une
