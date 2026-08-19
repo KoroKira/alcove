@@ -42,6 +42,9 @@ def serialize_pad(obj: Any, *, include_data: bool = False,
         # None = fallback iconique par type dans le Dashboard ; sinon URL
         # de miniature (YouTube API, OG-image, cover PDF, snapshot canvas).
         "thumbnail_url": getattr(obj, "thumbnail_url", None) or None,
+        # URL canonique de la source ingérée — pour la ligne "domaine +
+        # favicon" persistante sur la carte, à la Recall.
+        "source_url": getattr(obj, "source_url", None) or None,
     }
     if include_data:
         out["data"] = getattr(obj, "data", None)

@@ -25,6 +25,10 @@ export interface Tab {
     // un snapshot auto pour les pads natifs. undefined = fallback iconique
     // par type dans le composant carte.
     thumbnailUrl?: string;
+    // URL canonique de la source ingérée. Sert à afficher la ligne
+    // "favicon + domaine" sur la carte (le geste Recall) et à re-fetch
+    // pour les actions "Regenerate".
+    sourceUrl?: string;
 }
 
 interface PadResponse {
@@ -54,6 +58,7 @@ interface UserResponse {
         tags?: string[];
         folder?: string;
         thumbnail_url?: string;
+        source_url?: string;
     }[];
 }
 
@@ -88,6 +93,7 @@ const fetchUserPads = async (): Promise<PadResponse> => {
         tags: pad.tags || [],
         folder: pad.folder || undefined,
         thumbnailUrl: pad.thumbnail_url || undefined,
+        sourceUrl: pad.source_url || undefined,
     }));
     const scratchTabs = rawTabs.filter(t => t.isScratch);
     const otherTabs = rawTabs.filter(t => !t.isScratch);

@@ -46,6 +46,11 @@ class PadStore(Base, BaseModel):
     # kanban natifs. Séparé de pad.data pour rester dans les selects listing
     # sans charger le blob data. NULL = fallback iconique par type.
     thumbnail_url = Column(Text, nullable=True, default=None)
+    # URL canonique de la source ingérée. Sert au rendu de la ligne source
+    # (favicon + domaine) sur la carte Dashboard — le geste Recall qui
+    # rend chaque carte instantanément identifiable comme YouTube, article,
+    # PDF, etc. Aussi utilisé pour la déduplication future des ingest.
+    source_url = Column(Text, nullable=True, default=None)
 
     # Relationships
     owner: Mapped["UserStore"] = relationship("UserStore", back_populates="pads")

@@ -57,7 +57,11 @@
     "typeCanvas": "Canvas",
     "typeDocument": "Document",
     "heatmapTitle": "Activité des 6 derniers mois",
-    "heatmapEdits": "modification(s)"
+    "heatmapEdits": "modification(s)",
+    "today": "Aujourd'hui",
+    "yesterday": "Hier",
+    "moreTypes": "Autres types…",
+    "addLink": "Ajouter un lien"
   },
   "search": {
     "placeholder": "Rechercher dans les pads…",

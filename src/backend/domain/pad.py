@@ -41,6 +41,7 @@ class Pad:
         tags: List[str] = None,
         folder: Optional[str] = None,
         thumbnail_url: Optional[str] = None,
+        source_url: Optional[str] = None,
     ):
         self.id = id
         self.owner_id = owner_id
@@ -59,6 +60,7 @@ class Pad:
         self.tags = tags or []
         self.folder = folder or None
         self.thumbnail_url = thumbnail_url or None
+        self.source_url = source_url or None
 
     @classmethod
     async def create(
@@ -200,6 +202,7 @@ class Pad:
             tags=list(getattr(store, 'tags', None) or []),
             folder=getattr(store, 'folder', None) or None,
             thumbnail_url=getattr(store, 'thumbnail_url', None) or None,
+            source_url=getattr(store, 'source_url', None) or None,
         )
 
     async def save(self, session: AsyncSession) -> 'Pad':
@@ -213,7 +216,10 @@ class Pad:
         self._store.pad_type = self.pad_type
         self._store.tags = self.tags
         self._store.folder = self.folder
-        self._store.thumbnail_url = self.thumbnail_url
+        # thumbnail_url et source_url sont gérés exclusivement par les
+        # endpoints /card-meta et /video-meta via des UPDATE SQL ciblés.
+        # NE PAS les écraser ici — un Pad chargé du cache Redis peut avoir
+        # ces champs à None sans que ça veuille dire "on efface".
         self._store.updated_at = datetime.now()
         self._store = await self._store.save(session)
 

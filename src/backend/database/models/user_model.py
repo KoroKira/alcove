@@ -137,6 +137,7 @@ class UserStore(Base, BaseModel):
             PadStore.tags,
             PadStore.folder,
             PadStore.thumbnail_url,
+            PadStore.source_url,
         ).where(
             PadStore.id.in_(all_pad_ids)
         ).order_by(PadStore.created_at)

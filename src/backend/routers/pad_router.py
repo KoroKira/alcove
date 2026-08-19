@@ -74,8 +74,24 @@ async def _cas_save_pad_data(
     from database.models import PadStore  # local import; module-level is already imported below
 
     if expected_updated_at is None:
+        # Targeted UPDATE plutôt que pad.save() : ce dernier reserialize
+        # toutes les colonnes depuis le domaine, dont thumbnail_url et
+        # source_url qui peuvent être None sur un Pad chargé depuis Redis
+        # cache (avant que ces colonnes existent), et qui clobent alors
+        # les valeurs fraîchement écrites par /card-meta ou /video-meta.
+        new_updated_at = datetime.now(timezone.utc)
+        stmt = (
+            sa_update(PadStore)
+            .where(PadStore.id == pad.id)
+            .values(data=new_data, updated_at=new_updated_at)
+        )
+        await session.execute(stmt)
+        await session.commit()
+        pad._store.data = new_data
+        pad._store.updated_at = new_updated_at
         pad.data = new_data
-        await pad.save(session)
+        pad.updated_at = new_updated_at
+        await pad.invalidate_cache()
         return pad.updated_at
 
     # Always aware-UTC so the value we echo back matches what GET returns
@@ -804,11 +820,22 @@ async def save_video_meta(
 
 
 class ThumbnailPayload(BaseModel):
-    """Simple wrapper for setting the hero image URL of a card. Populated
-    at ingest time by whichever extractor found a preview (YouTube API for
-    videos, og:image for web pages, rendered page 1 for PDFs, canvas
-    snapshot for native pads)."""
+    """Legacy single-field wrapper for setting the hero image URL. Kept
+    for backwards compatibility ; new code should use CardMetaPayload
+    which handles thumbnail + source_url in a single round-trip."""
     url: Optional[str] = None
+
+
+class CardMetaPayload(BaseModel):
+    """Card metadata that lives outside pad.data — the fields the Dashboard
+    grid needs to render a Recall-quality card without loading the full
+    content blob. Both fields are Optional : only the ones present in the
+    body get updated ; explicitly passing null clears them."""
+    # Sentinel : field absent from the JSON body → leave column alone.
+    # Field present as null → clear the column. Field present as string
+    # → set the column.
+    thumbnail_url: Optional[str] = "__unset__"
+    source_url: Optional[str] = "__unset__"
 
 
 @pad_router.put("/{pad_id}/thumbnail")
@@ -817,28 +844,50 @@ async def save_thumbnail(
     pad_access: Tuple[Pad, UserSession] = Depends(require_pad_owner),
     session: AsyncSession = Depends(get_session),
 ) -> Dict[str, Any]:
-    """Set (or clear) the Dashboard card thumbnail for a pad. Body {url: null}
-    clears the field so the card falls back to its type-based iconic
-    placeholder.
-
-    Targeted SQL UPDATE rather than pad.save() — the domain-object save
-    reserializes *every* column from a Pad that may have been loaded from
-    Redis pickle, and stale cached fields have been observed clobbering
-    concurrent writes from other endpoints. This endpoint only owns the
-    thumbnail column, so scope the write to it and invalidate the pad's
-    Redis entry so the next reader gets a fresh row from Postgres."""
+    """Legacy endpoint — set (or clear) the Dashboard card thumbnail.
+    New code should prefer PUT /card-meta which handles thumbnail +
+    source_url in a single call."""
     pad, _ = pad_access
     url = (body.url or "").strip() or None
-    stmt = (
-        sa_update(PadStore)
-        .where(PadStore.id == pad.id)
-        .values(thumbnail_url=url)
-    )
+    stmt = sa_update(PadStore).where(PadStore.id == pad.id).values(thumbnail_url=url)
     await session.execute(stmt)
     await session.commit()
     pad.thumbnail_url = url
     await pad.invalidate_cache()
     return {"ok": True, "thumbnail_url": url}
+
+
+@pad_router.put("/{pad_id}/card-meta")
+async def save_card_meta(
+    body: CardMetaPayload,
+    pad_access: Tuple[Pad, UserSession] = Depends(require_pad_owner),
+    session: AsyncSession = Depends(get_session),
+) -> Dict[str, Any]:
+    """Set the Dashboard card's presentation metadata (thumbnail + source_url)
+    in a single call. Fields absent from the JSON body are left alone ;
+    fields present as null clear the corresponding column ; fields present
+    as strings replace the value.
+
+    Same targeted-UPDATE pattern as /thumbnail — bypasses pad.save() so
+    a stale Pad instance from Redis cache can't clobber concurrent writes.
+    """
+    pad, _ = pad_access
+    values: Dict[str, Any] = {}
+    if body.thumbnail_url != "__unset__":
+        values["thumbnail_url"] = (body.thumbnail_url or "").strip() or None if body.thumbnail_url else None
+    if body.source_url != "__unset__":
+        values["source_url"] = (body.source_url or "").strip() or None if body.source_url else None
+    if not values:
+        return {"ok": True, "thumbnail_url": pad.thumbnail_url, "source_url": pad.source_url}
+    stmt = sa_update(PadStore).where(PadStore.id == pad.id).values(**values)
+    await session.execute(stmt)
+    await session.commit()
+    if "thumbnail_url" in values:
+        pad.thumbnail_url = values["thumbnail_url"]
+    if "source_url" in values:
+        pad.source_url = values["source_url"]
+    await pad.invalidate_cache()
+    return {"ok": True, **{k: values.get(k, getattr(pad, k, None)) for k in ("thumbnail_url", "source_url")}}
 
 
 @pad_router.put("/{pad_id}/tags")

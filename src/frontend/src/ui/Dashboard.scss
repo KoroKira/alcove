@@ -265,6 +265,110 @@
     -webkit-box-orient: vertical;
   }
 
+  &__section {
+    // Enveloppe d'un jour — le geste Recall qui redonne du rythme à
+    // une longue liste : "Aujourd'hui · 12", puis "Hier · 3", puis les
+    // dates plus anciennes. Le compteur à droite du label rend la
+    // taille de chaque groupe lisible en scroll rapide.
+    margin-top: 24px;
+    &:first-of-type { margin-top: 0; }
+  }
+
+  &__section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin: 0 0 12px;
+    padding: 0;
+    font-family: var(--serif, ui-serif, "New York", Georgia, serif);
+    font-weight: 500;
+    letter-spacing: -0.005em;
+  }
+
+  &__section-label {
+    font-size: 20px;
+    color: var(--color-on-surface, var(--ap-text0));
+    text-transform: capitalize;
+  }
+
+  &__section-count {
+    font-family: var(--ap-font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: var(--color-on-surface-low, var(--ap-text2));
+  }
+
+  &__card--quick {
+    // Tuile spéciale "Quick actions" épinglée en tête de la première section.
+    // Grille 2x2 d'actions cliquables — même look qu'une carte, mais aucun
+    // thumbnail ni contenu propre, juste des CTAs. Le fond légèrement
+    // dashed rappelle qu'il n'y a rien à ouvrir dessus, seulement à créer.
+    border-style: dashed;
+    background: color-mix(in srgb, var(--color-surface, var(--ap-bg2)) 92%, transparent);
+    &:hover { transform: none; box-shadow: 0 2px 6px rgba(0,0,0,0.14); }
+    padding: 0;
+  }
+
+  &__quick-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 1px;
+    background: var(--color-outline-low, var(--ap-hair));
+    min-height: 180px;
+    border-radius: inherit;
+    overflow: hidden;
+  }
+
+  &__quick-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: var(--color-surface, var(--ap-bg2));
+    color: var(--color-on-surface-low, var(--ap-text2));
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 12px 8px;
+    transition: background 0.15s, color 0.15s;
+
+    &:hover {
+      background: color-mix(in srgb, var(--ap-accent-rgb, 124 86 255) 8%, var(--color-surface, var(--ap-bg2)));
+      color: var(--color-on-surface, var(--ap-text0));
+    }
+  }
+
+  &__card-source {
+    // Ligne "domaine + favicon" au-dessus du preview. Le geste Recall qui
+    // rend chaque carte identifiable comme YouTube / PDF / article en un
+    // coup d'oeil, même quand le thumbnail est absent ou trop dark.
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-family: var(--ap-font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--color-on-surface-low, var(--ap-text2));
+    margin-top: 2px;
+    overflow: hidden;
+
+    &-fav {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+      border-radius: 3px;
+    }
+
+    &-host {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
   &__card-meta {
     font-size: 10px;
     color: var(--ap-overlay0);

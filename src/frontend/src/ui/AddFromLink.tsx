@@ -477,19 +477,25 @@ export default function AddFromLink({ onClose, onCreated, tabs }: Props) {
     }
   };
 
-  /** Push the extracted preview image (og:image for web, YouTube API for
-   * videos, cover page 1 for PDFs) to the pad's Dashboard card thumbnail.
-   * Video pads already mirror the thumbnail via /video-meta ; this covers
-   * every other source in one canonical call. Silent on failure — a
-   * missing preview just falls back to the type-based iconic placeholder. */
+  /** Push the extracted card metadata (preview image + source URL) to the
+   * pad in a single round-trip. Preview comes from whichever extractor
+   * found one (YouTube API for videos, og:image for web pages, rendered
+   * page 1 for PDFs). Source URL powers the "favicon + domain" line on
+   * the Dashboard card, à la Recall. Silent on failure — a missing card
+   * meta just falls back to the type-based iconic placeholder. */
   const persistThumbnail = async (padId: string, ing: Ingested): Promise<void> => {
-    const url = ing.metadata?.thumbnail;
-    if (!url || typeof url !== 'string') return;
+    const md = ing.metadata || {};
+    const thumbnail_url = typeof md.thumbnail === 'string' ? md.thumbnail : undefined;
+    const source_url = typeof md.source_url === 'string' ? md.source_url : undefined;
+    if (!thumbnail_url && !source_url) return;
+    const body: Record<string, string | null> = {};
+    if (thumbnail_url !== undefined) body.thumbnail_url = thumbnail_url;
+    if (source_url !== undefined) body.source_url = source_url;
     try {
-      await fetch(`/api/pad/${padId}/thumbnail`, {
+      await fetch(`/api/pad/${padId}/card-meta`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify(body),
       });
     } catch { /* non-fatal */ }
   };
