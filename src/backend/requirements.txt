@@ -21,7 +21,7 @@ websockets==17.0.1
 cryptography==50.0.0
 
 # Ingestion / RAG pipeline
-pypdf==6.14.2
+pypdf==6.15.0
 pypdfium2==5.13.0
 Pillow==12.3.0
 yt-dlp==2026.7.4
