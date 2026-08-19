@@ -40,6 +40,7 @@ class Pad:
         pad_type: str = "canvas",
         tags: List[str] = None,
         folder: Optional[str] = None,
+        thumbnail_url: Optional[str] = None,
     ):
         self.id = id
         self.owner_id = owner_id
@@ -57,6 +58,7 @@ class Pad:
         self.pad_type = pad_type or "canvas"
         self.tags = tags or []
         self.folder = folder or None
+        self.thumbnail_url = thumbnail_url or None
 
     @classmethod
     async def create(
@@ -197,6 +199,7 @@ class Pad:
             pad_type=getattr(store, 'pad_type', 'canvas') or 'canvas',
             tags=list(getattr(store, 'tags', None) or []),
             folder=getattr(store, 'folder', None) or None,
+            thumbnail_url=getattr(store, 'thumbnail_url', None) or None,
         )
 
     async def save(self, session: AsyncSession) -> 'Pad':
@@ -210,6 +213,7 @@ class Pad:
         self._store.pad_type = self.pad_type
         self._store.tags = self.tags
         self._store.folder = self.folder
+        self._store.thumbnail_url = self.thumbnail_url
         self._store.updated_at = datetime.now()
         self._store = await self._store.save(session)
 

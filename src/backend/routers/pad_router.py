@@ -803,6 +803,44 @@ async def save_video_meta(
     return {"ok": True, "video": pad.data["video"]}
 
 
+class ThumbnailPayload(BaseModel):
+    """Simple wrapper for setting the hero image URL of a card. Populated
+    at ingest time by whichever extractor found a preview (YouTube API for
+    videos, og:image for web pages, rendered page 1 for PDFs, canvas
+    snapshot for native pads)."""
+    url: Optional[str] = None
+
+
+@pad_router.put("/{pad_id}/thumbnail")
+async def save_thumbnail(
+    body: ThumbnailPayload,
+    pad_access: Tuple[Pad, UserSession] = Depends(require_pad_owner),
+    session: AsyncSession = Depends(get_session),
+) -> Dict[str, Any]:
+    """Set (or clear) the Dashboard card thumbnail for a pad. Body {url: null}
+    clears the field so the card falls back to its type-based iconic
+    placeholder.
+
+    Targeted SQL UPDATE rather than pad.save() — the domain-object save
+    reserializes *every* column from a Pad that may have been loaded from
+    Redis pickle, and stale cached fields have been observed clobbering
+    concurrent writes from other endpoints. This endpoint only owns the
+    thumbnail column, so scope the write to it and invalidate the pad's
+    Redis entry so the next reader gets a fresh row from Postgres."""
+    pad, _ = pad_access
+    url = (body.url or "").strip() or None
+    stmt = (
+        sa_update(PadStore)
+        .where(PadStore.id == pad.id)
+        .values(thumbnail_url=url)
+    )
+    await session.execute(stmt)
+    await session.commit()
+    pad.thumbnail_url = url
+    await pad.invalidate_cache()
+    return {"ok": True, "thumbnail_url": url}
+
+
 @pad_router.put("/{pad_id}/tags")
 async def update_tags(
     tags_update: TagsUpdate,

@@ -43,6 +43,48 @@ class IngestUrlRequest(BaseModel):
 
 # ── Web ─────────────────────────────────────────────────────────────────────
 
+# Meta tags that carry the "hero image" of a page — checked in priority
+# order. og:image is the standard ; twitter:image is the fallback for
+# sites that only ship a Twitter card ; og:image:secure_url wins over
+# og:image when a page ships both (spec says the https variant is
+# preferred). Regex covers both attribute orderings (property/name first
+# vs content first) since HTML lets you write them either way.
+_OG_IMAGE_META_NAMES = ("og:image:secure_url", "og:image", "og:image:url", "twitter:image", "twitter:image:src")
+
+
+def _extract_og_image(html: str, base_url: str) -> Optional[str]:
+    """Pull the first hero image URL from a page's <meta> tags. Returns
+    an absolute URL (protocol-relative and root-relative sources get
+    resolved against base_url). None if nothing matches."""
+    # Attributes can appear in any order — try both.
+    patterns = []
+    for name in _OG_IMAGE_META_NAMES:
+        esc = re.escape(name)
+        patterns.append(re.compile(
+            rf'<meta[^>]+(?:property|name)=["\']{esc}["\'][^>]+content=["\']([^"\']+)["\']',
+            re.IGNORECASE,
+        ))
+        patterns.append(re.compile(
+            rf'<meta[^>]+content=["\']([^"\']+)["\'][^>]+(?:property|name)=["\']{esc}["\']',
+            re.IGNORECASE,
+        ))
+    for pat in patterns:
+        m = pat.search(html)
+        if m:
+            src = m.group(1).strip()
+            if not src:
+                continue
+            if src.startswith("//"):
+                return "https:" + src
+            if src.startswith("/"):
+                from urllib.parse import urlparse
+                p = urlparse(base_url)
+                return f"{p.scheme}://{p.netloc}{src}"
+            if src.startswith(("http://", "https://")):
+                return src
+    return None
+
+
 async def fetch_web(url: str) -> dict:
     """Fetch a web page (or raw text/markdown file) → {title, markdown}."""
     url = url.strip()
@@ -69,13 +111,18 @@ async def fetch_web(url: str) -> dict:
             "metadata": {"source_url": url},
             "source_type": "web",
         }
-    title, markdown = _MarkdownExtractor().extract(resp.text[:1_500_000])
+    html = resp.text[:1_500_000]
+    title, markdown = _MarkdownExtractor().extract(html)
     if len(markdown) > _MAX_CHARS:
         markdown = markdown[:_MAX_CHARS] + "\n\n*[contenu tronqué]*"
+    meta: dict[str, Any] = {"source_url": url}
+    og = _extract_og_image(html, url)
+    if og:
+        meta["thumbnail"] = og
     return {
         "title": title or url,
         "markdown": markdown,
-        "metadata": {"source_url": url},
+        "metadata": meta,
         "source_type": "web",
     }
 

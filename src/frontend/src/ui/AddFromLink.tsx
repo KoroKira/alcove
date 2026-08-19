@@ -466,6 +466,7 @@ export default function AddFromLink({ onClose, onCreated, tabs }: Props) {
 
       await applyPostActions(padId, ingested, actions, log);
       await persistVideoMeta(padId, ingested);
+      await persistThumbnail(padId, ingested);
 
       log('✅ Terminé');
       setStep('done');
@@ -474,6 +475,23 @@ export default function AddFromLink({ onClose, onCreated, tabs }: Props) {
       setError(e.message || String(e));
       setStep('preview');
     }
+  };
+
+  /** Push the extracted preview image (og:image for web, YouTube API for
+   * videos, cover page 1 for PDFs) to the pad's Dashboard card thumbnail.
+   * Video pads already mirror the thumbnail via /video-meta ; this covers
+   * every other source in one canonical call. Silent on failure — a
+   * missing preview just falls back to the type-based iconic placeholder. */
+  const persistThumbnail = async (padId: string, ing: Ingested): Promise<void> => {
+    const url = ing.metadata?.thumbnail;
+    if (!url || typeof url !== 'string') return;
+    try {
+      await fetch(`/api/pad/${padId}/thumbnail`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+    } catch { /* non-fatal */ }
   };
 
   /** Attach the video block (chapters + segments + ids) to a pad so the
@@ -520,6 +538,8 @@ export default function AddFromLink({ onClose, onCreated, tabs }: Props) {
       body: JSON.stringify({ content, format: 'markdown' }),
     });
     await applyPostActions(padId, ing, actions, onStep);
+    await persistVideoMeta(padId, ing);
+    await persistThumbnail(padId, ing);
     return padId;
   };
 
