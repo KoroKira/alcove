@@ -413,6 +413,7 @@ export default function App() {
     onQuickCapture: () => { if (isAuthenticated) setQuickCaptureOpen(true); },
     onShortcuts: () => setShortcutOpen(v => !v),
     onHome: () => { if (isAuthenticated) setHomeOpen(v => !v); },
+    onUnifiedAdd: () => { if (isAuthenticated) setUnifiedAddOpen(v => !v); },
   });
 
   // Escape exits focus mode

@@ -166,7 +166,7 @@ const Dashboard: React.FC<Props> = ({
             <button
               className="dashboard__create-btn dashboard__create-btn--primary"
               onClick={onUnifiedAdd}
-              title="Ajouter un contenu ou créer un pad (⌘K)"
+              title="Ajouter un contenu ou créer un pad (⌘⇧A)"
             >
               <Plus size={14} /> Ajouter
             </button>

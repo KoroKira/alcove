@@ -13,6 +13,7 @@ type ShortcutHandlers = {
   onQuickCapture?: () => void;
   onShortcuts?: () => void;
   onHome?: () => void;
+  onUnifiedAdd?: () => void;
 };
 
 const isTyping = () => {
@@ -97,6 +98,14 @@ export const useKeyboardShortcuts = (handlers: ShortcutHandlers) => {
       if (mod && e.shiftKey && e.key === 'H') {
         e.preventDefault();
         handlers.onHome?.();
+        return;
+      }
+
+      // Cmd+Shift+A / Ctrl+Shift+A → modale unifiée d'ajout (ingérer + créer)
+      // Accessible depuis n'importe où — pad, canvas, dashboard.
+      if (mod && e.shiftKey && e.key === 'A') {
+        e.preventDefault();
+        handlers.onUnifiedAdd?.();
         return;
       }
     };
