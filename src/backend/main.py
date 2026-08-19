@@ -178,6 +178,8 @@ app.include_router(ai_router)
 app.include_router(ingest_router)
 app.include_router(research_router)
 app.include_router(latex_router)
+from routers.mcp_router import mcp_router
+app.include_router(mcp_router)
 
 
 if PAD_DEV_MODE and not HAS_STATIC_BUILD:
