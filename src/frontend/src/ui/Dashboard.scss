@@ -190,6 +190,31 @@
       box-shadow: 0 0 0 2px color-mix(in srgb, rgb(var(--card-tint)) 55%, transparent);
     }
     &.scratch { border-style: dashed; }
+    // Le thumbnail bleed jusqu'aux bords : clip via overflow, on retire le
+    // padding-top et on remonte la miniature en marge négative pour prendre
+    // toute la largeur.
+    &.has-thumb { overflow: hidden; padding-top: 0; }
+  }
+
+  &__card-thumb {
+    // Bleed edge-to-edge en haut de la carte (compense les 14px de padding
+    // horizontal). Ratio 16:10 tient bien les OG-images d'articles et
+    // hqdefault YouTube (480x360 = 4:3, cropé en cover) sans jitter de
+    // hauteur qui casserait l'illusion masonry.
+    margin: 0 -14px 4px;
+    aspect-ratio: 16 / 10;
+    background: color-mix(in srgb, rgb(var(--card-tint)) 22%, var(--color-surface, var(--ap-bg2)));
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
   }
 
   &__card-header {

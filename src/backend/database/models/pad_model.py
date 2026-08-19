@@ -3,7 +3,7 @@ from typing import Dict, Any, Optional, List, TYPE_CHECKING
 from uuid import UUID
 from datetime import datetime
 
-from sqlalchemy import Column, String, Boolean, ForeignKey, Index, UUID as SQLUUID, select, delete, ARRAY
+from sqlalchemy import Column, String, Text, Boolean, ForeignKey, Index, UUID as SQLUUID, select, delete, ARRAY
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship, Mapped
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,7 +41,12 @@ class PadStore(Base, BaseModel):
     tags = Column(ARRAY(String(50)), nullable=True, default=[])
     # NULL/empty = ungrouped; otherwise the folder name this pad lives under
     folder = Column(String(80), nullable=True, default=None)
-    
+    # Thumbnail dominant sur la carte Dashboard — YouTube API pour vidéos,
+    # OG-image pour pages web, cover page 1 pour PDF, snapshot pour canvas/
+    # kanban natifs. Séparé de pad.data pour rester dans les selects listing
+    # sans charger le blob data. NULL = fallback iconique par type.
+    thumbnail_url = Column(Text, nullable=True, default=None)
+
     # Relationships
     owner: Mapped["UserStore"] = relationship("UserStore", back_populates="pads")
 

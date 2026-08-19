@@ -792,6 +792,12 @@ async def save_video_meta(
     # updates.
     payload = {k: v for k, v in body.model_dump().items() if v is not None}
     pad.data = {**existing, "video": {**(existing.get("video") or {}), **payload}}
+    # Mirror the thumbnail URL into the top-level column so the Dashboard grid
+    # can display it without loading the full pad.data blob. Only overwrite
+    # when the payload actually carries a thumbnail — a partial video-meta
+    # update on an unrelated field shouldn't reset an existing preview.
+    if payload.get("thumbnail"):
+        pad.thumbnail_url = payload["thumbnail"]
     await pad.cache()
     await pad.save(session)
     return {"ok": True, "video": pad.data["video"]}

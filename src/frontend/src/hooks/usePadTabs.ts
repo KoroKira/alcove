@@ -20,6 +20,11 @@ export interface Tab {
     padType?: 'canvas' | 'document' | 'kanban' | 'gantt' | 'latex' | 'database';
     tags?: string[];
     folder?: string;
+    // URL de la miniature affichée sur la carte Dashboard. Populée à
+    // l'ingestion (YouTube thumbnail, OG-image, cover PDF page 1) ou par
+    // un snapshot auto pour les pads natifs. undefined = fallback iconique
+    // par type dans le composant carte.
+    thumbnailUrl?: string;
 }
 
 interface PadResponse {
@@ -48,6 +53,7 @@ interface UserResponse {
         pad_type?: string;
         tags?: string[];
         folder?: string;
+        thumbnail_url?: string;
     }[];
 }
 
@@ -81,6 +87,7 @@ const fetchUserPads = async (): Promise<PadResponse> => {
         padType: (pad.pad_type as 'canvas' | 'document' | 'kanban' | 'gantt' | 'latex' | 'database') || 'canvas',
         tags: pad.tags || [],
         folder: pad.folder || undefined,
+        thumbnailUrl: pad.thumbnail_url || undefined,
     }));
     const scratchTabs = rawTabs.filter(t => t.isScratch);
     const otherTabs = rawTabs.filter(t => !t.isScratch);

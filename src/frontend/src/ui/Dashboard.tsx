@@ -243,10 +243,24 @@ const Dashboard: React.FC<Props> = ({
               {filtered.map(tab => (
                 <button
                   key={tab.id}
-                  className={`dashboard__card ${selectedTabId === tab.id ? 'active' : ''} ${tab.isScratch ? 'scratch' : ''}`}
+                  className={`dashboard__card ${selectedTabId === tab.id ? 'active' : ''} ${tab.isScratch ? 'scratch' : ''} ${tab.thumbnailUrl ? 'has-thumb' : ''}`}
                   style={{ '--card-tint': cardTint(tab.id) } as React.CSSProperties}
                   onClick={() => handleSelect(tab.id)}
                 >
+                  {tab.thumbnailUrl && (
+                    <div className="dashboard__card-thumb">
+                      <img
+                        src={tab.thumbnailUrl}
+                        alt=""
+                        loading="lazy"
+                        // referrerPolicy tightens tracking cross-origin (YouTube i.ytimg.com,
+                        // article OG-images, etc.). onError hides the img so the fallback
+                        // tint + type badge take over cleanly instead of showing a broken icon.
+                        referrerPolicy="no-referrer"
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    </div>
+                  )}
                   <div className="dashboard__card-header">
                     <span className="dashboard__card-icon">
                       {tab.padType === 'document' ? <FileText size={16} /> : <PenLine size={16} />}

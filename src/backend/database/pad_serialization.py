@@ -39,6 +39,9 @@ def serialize_pad(obj: Any, *, include_data: bool = False,
         "tags": list(getattr(obj, "tags", None) or []),
         # None/empty = ungrouped.
         "folder": getattr(obj, "folder", None) or None,
+        # None = fallback iconique par type dans le Dashboard ; sinon URL
+        # de miniature (YouTube API, OG-image, cover PDF, snapshot canvas).
+        "thumbnail_url": getattr(obj, "thumbnail_url", None) or None,
     }
     if include_data:
         out["data"] = getattr(obj, "data", None)
