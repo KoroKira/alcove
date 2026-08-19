@@ -22,6 +22,8 @@ cryptography==50.0.0
 
 # Ingestion / RAG pipeline
 pypdf==6.14.2
+pypdfium2==5.13.0
+Pillow==12.3.0
 yt-dlp==2026.7.4
 faster-whisper==1.2.1
 # Unified document → Markdown conversion (docx, pptx, xlsx, epub, html, csv, json).

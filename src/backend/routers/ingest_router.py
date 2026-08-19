@@ -155,6 +155,36 @@ def extract_pdf(data: bytes) -> tuple[str, str]:
     return meta_title, "\n\n".join(parts)
 
 
+def render_pdf_cover(data: bytes, max_width: int = 640) -> Optional[str]:
+    """Render page 1 of a PDF to a base64 JPEG data URI, ~640px wide.
+
+    Powers the Dashboard card thumbnail — an actual cover page carries so
+    much more identity signal than a generic PDF icon that the extra tens
+    of KB in the DB row pays for itself immediately. Silent None on any
+    failure : the frontend already handles a missing thumbnail cleanly.
+    """
+    try:
+        import pypdfium2 as pdfium
+        from PIL import Image
+        import base64
+        pdf = pdfium.PdfDocument(data)
+        if len(pdf) == 0:
+            return None
+        page = pdf[0]
+        # Scale so the wider dimension lands near max_width — pypdfium2 uses
+        # a "scale" multiplier over the base 72 DPI, so scale = target_px /
+        # (page_width_pt). One render, no PIL resample.
+        w_pt = page.get_width()
+        scale = max_width / max(w_pt, 1.0)
+        pil_img = page.render(scale=scale).to_pil().convert("RGB")
+        buf = io.BytesIO()
+        pil_img.save(buf, format="JPEG", quality=78, optimize=True)
+        b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+        return f"data:image/jpeg;base64,{b64}"
+    except Exception:
+        return None
+
+
 @ingest_router.post("/pdf")
 async def ingest_pdf(
     file: Optional[UploadFile] = File(None),
@@ -187,10 +217,14 @@ async def ingest_pdf(
             422,
             "Aucun texte extractible (PDF probablement scanné — l'OCR n'est pas géré ici).",
         )
+    cover = await run_in_threadpool(render_pdf_cover, data)
+    meta: dict[str, Any] = {"source_url": src_url, "filename": filename}
+    if cover:
+        meta["thumbnail"] = cover
     return {
         "title": title or filename,
         "markdown": text[:_MAX_CHARS],
-        "metadata": {"source_url": src_url, "filename": filename},
+        "metadata": meta,
         "source_type": "pdf",
     }
 
