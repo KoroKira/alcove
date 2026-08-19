@@ -93,6 +93,42 @@ const Dashboard: React.FC<Props> = ({
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const searchRef = useRef<HTMLInputElement>(null);
+  // Toggle Text ⇄ AI dans la barre de recherche — le geste Recall qui
+  // bascule la même input entre plein-texte (matching titre) et sémantique
+  // (embedding + KNN sur le RAG). Persisté en localStorage pour rester
+  // sur le mode que l'utilisateur préfère d'une session à l'autre.
+  const [searchMode, setSearchMode] = useState<'text' | 'ai'>(
+    () => (localStorage.getItem('alcove-search-mode') as 'text' | 'ai') || 'text',
+  );
+  const [aiHits, setAiHits] = useState<Set<string> | null>(null);
+  const [aiSearching, setAiSearching] = useState(false);
+  useEffect(() => {
+    localStorage.setItem('alcove-search-mode', searchMode);
+  }, [searchMode]);
+  // Debounced semantic search — l'embed + KNN prend ~200-500 ms, on ne
+  // veut pas déclencher à chaque keystroke ; 350 ms est le sweet spot
+  // où le résultat arrive juste après la pause de frappe.
+  useEffect(() => {
+    if (searchMode !== 'ai' || query.trim().length < 3) {
+      setAiHits(null);
+      setAiSearching(false);
+      return;
+    }
+    const q = query.trim();
+    setAiSearching(true);
+    const handle = setTimeout(async () => {
+      try {
+        const { searchRag } = await import('../lib/rag');
+        const results = await searchRag(q, 30);
+        setAiHits(new Set(results.map(r => r.pad_id)));
+      } catch {
+        setAiHits(new Set());
+      } finally {
+        setAiSearching(false);
+      }
+    }, 350);
+    return () => clearTimeout(handle);
+  }, [query, searchMode]);
 
   useEffect(() => {
     searchRef.current?.focus();
@@ -128,7 +164,15 @@ const Dashboard: React.FC<Props> = ({
   });
 
   const filtered = sorted.filter(t => {
-    const matchesQuery = !query.trim() || t.title.toLowerCase().includes(query.toLowerCase());
+    // AI mode : le filter passe uniquement par l'ID renvoyé par le RAG.
+    // Si aiHits est null (chargement en cours ou moins de 3 caractères)
+    // on tombe sur le comportement text pour ne pas afficher un vide
+    // trompeur pendant le debounce.
+    const matchesQuery = !query.trim()
+      ? true
+      : searchMode === 'ai' && aiHits
+        ? aiHits.has(t.id)
+        : t.title.toLowerCase().includes(query.toLowerCase());
     const matchesTag = !activeTag || (t.tags || []).includes(activeTag);
     return matchesQuery && matchesTag;
   });
@@ -334,10 +378,26 @@ const Dashboard: React.FC<Props> = ({
                 <input
                   ref={searchRef}
                   className="dashboard__search"
-                  placeholder={t('search.placeholder')}
+                  placeholder={searchMode === 'ai' ? t('search.aiPlaceholder') : t('search.placeholder')}
                   value={query}
                   onChange={e => setQuery(e.target.value)}
                 />
+                <div className="dashboard__search-mode" role="tablist" aria-label={t('search.mode')}>
+                  <button
+                    className={`dashboard__search-mode-btn ${searchMode === 'text' ? 'active' : ''}`}
+                    onClick={() => setSearchMode('text')}
+                    role="tab"
+                    aria-selected={searchMode === 'text'}
+                    title={t('search.textTooltip')}
+                  >Text</button>
+                  <button
+                    className={`dashboard__search-mode-btn ${searchMode === 'ai' ? 'active' : ''}`}
+                    onClick={() => setSearchMode('ai')}
+                    role="tab"
+                    aria-selected={searchMode === 'ai'}
+                    title={t('search.aiTooltip')}
+                  >AI{aiSearching ? '…' : ''}</button>
+                </div>
               </div>
               <div className="dashboard__sort">
                 {(['updated', 'created', 'name', 'type'] as SortKey[]).map(k => (

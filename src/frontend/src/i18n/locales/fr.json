@@ -65,10 +65,14 @@
   },
   "search": {
     "placeholder": "Rechercher dans les pads…",
+    "aiPlaceholder": "Recherche sémantique (comprend le sens)…",
     "loading": "Recherche…",
     "noResults": "Aucun résultat",
     "matches": "{{count}} résultat",
-    "matches_plural": "{{count}} résultats"
+    "matches_plural": "{{count}} résultats",
+    "mode": "Mode de recherche",
+    "textTooltip": "Recherche textuelle sur les titres.",
+    "aiTooltip": "Recherche sémantique — comprend le sens, pas juste les mots-clés. Pratique pour les requêtes floues ou multilingues."
   },
   "command": {
     "placeholder": "Rechercher ou lancer une commande…",

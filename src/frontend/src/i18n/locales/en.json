@@ -65,10 +65,14 @@
   },
   "search": {
     "placeholder": "Search in pads…",
+    "aiPlaceholder": "Semantic search (understands meaning)…",
     "loading": "Searching…",
     "noResults": "No results",
     "matches": "{{count}} result",
-    "matches_plural": "{{count}} results"
+    "matches_plural": "{{count}} results",
+    "mode": "Search mode",
+    "textTooltip": "Full-text search on titles.",
+    "aiTooltip": "Semantic search — understands meaning, not just keywords. Best for fuzzy or multilingual queries."
   },
   "command": {
     "placeholder": "Search or run a command…",
