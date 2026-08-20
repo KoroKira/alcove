@@ -44,6 +44,37 @@
     width: 30px;
     height: 30px;
   }
+
+  /* Graph filter panel: sliders + timeline + color-group rows laid out in a
+     single wrapping row are unreadable at phone width — stack them and let
+     the panel scroll instead of clipping. */
+  .graph-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+  .graph-controls__row--slider input[type="range"],
+  .graph-controls__timeline {
+    width: 100%;
+  }
+  .graph-search input {
+    width: 100%;
+  }
+
+  /* Unified add / review dashboard / quiz style modals: full-bleed instead
+     of a centered card with side gutters that waste space on a narrow
+     screen. */
+  .unified-add,
+  .review-dashboard,
+  .quiz-modal {
+    width: 100vw;
+    max-width: 100vw;
+    max-height: 100vh;
+    height: 100vh;
+    border-radius: 0;
+  }
 }
 
 /* Coarse-pointer (touch) devices of any width: enlarge the small pad-row

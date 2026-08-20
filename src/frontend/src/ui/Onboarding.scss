@@ -46,9 +46,26 @@
   width: 100%;
 }
 
+/* The local-AI check step embeds OllamaSetup's model list, which needs more
+   room than a typical onboarding card and can run tall on smaller screens. */
+.onboarding__step--wide {
+  max-width: 560px;
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
 @keyframes ob-fade-in {
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: none; }
+}
+
+.onboarding__spin {
+  animation: ob-spin 0.9s linear infinite;
+}
+
+@keyframes ob-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .onboarding__logo {

@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { PenLine, FileText, Columns3, GanttChart, ArrowRight, Zap, BookOpen } from 'lucide-react';
+import { PenLine, FileText, Columns3, GanttChart, ArrowRight, Zap, BookOpen, CheckCircle2, Loader } from 'lucide-react';
+import { useOllamaModels } from '../hooks/useOllama';
+import OllamaSetup from './OllamaSetup';
 import './Onboarding.scss';
 
 interface Props {
@@ -9,11 +11,15 @@ interface Props {
   onSeedWelcome: (opts: { open: boolean }) => void;
 }
 
-const STEPS = 3;
+// 4 steps: welcome → local-AI check (Alcove's own differentiator vs cloud
+// tools like Recall — silently broken AI is a much worse first impression
+// than a broken feature the user hasn't tried yet) → first pad → shortcuts.
+const STEPS = 4;
 
 export default function Onboarding({ onDone, onCreatePad, onSeedWelcome }: Props) {
   const [step, setStep] = useState(0);
   const [picked, setPicked] = useState<string | null>(null);
+  const ollama = useOllamaModels();
 
   const next = () => {
     if (step < STEPS - 1) setStep(s => s + 1);
@@ -54,8 +60,48 @@ export default function Onboarding({ onDone, onCreatePad, onSeedWelcome }: Props
         </div>
       )}
 
-      {/* Step 1: Create first pad */}
+      {/* Step 1: Local AI check — Alcove's AI runs 100% on your own machine
+          via Ollama, unlike cloud tools. A new user who skips this and only
+          discovers it's not configured deep inside some other feature gets a
+          confusing silent failure instead of a clear "here's what to do". */}
       {step === 1 && (
+        <div className="onboarding__step onboarding__step--wide">
+          {ollama.available === null && (
+            <>
+              <div className="onboarding__logo">
+                <Loader size={40} className="onboarding__spin" />
+              </div>
+              <h2 className="onboarding__h2">Vérification de l'IA locale…</h2>
+              <p className="onboarding__p">On regarde si Ollama tourne déjà sur ta machine.</p>
+            </>
+          )}
+          {ollama.available === true && (
+            <>
+              <div className="onboarding__logo onboarding__logo--done">
+                <CheckCircle2 size={40} />
+              </div>
+              <h2 className="onboarding__h2">IA locale détectée ✓</h2>
+              <p className="onboarding__p">
+                Ollama tourne avec {ollama.modelNames.length} modèle{ollama.modelNames.length > 1 ? 's' : ''} installé{ollama.modelNames.length > 1 ? 's' : ''}
+                {ollama.modelNames.length > 0 && <> (<strong>{ollama.modelNames.slice(0, 3).join(', ')}</strong>{ollama.modelNames.length > 3 ? '…' : ''})</>}.
+                Le chat, les résumés et la génération de flashcards sont prêts à l'emploi.
+              </p>
+              <button className="onboarding__btn onboarding__btn--primary" onClick={next}>
+                Continuer <ArrowRight size={16} />
+              </button>
+            </>
+          )}
+          {ollama.available === false && (
+            <>
+              <OllamaSetup onDone={next} />
+              <button className="onboarding__skip" onClick={next}>Configurer plus tard</button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Step 2: Create first pad */}
+      {step === 2 && (
         <div className="onboarding__step">
           <h2 className="onboarding__h2">Crée ton premier pad</h2>
           <p className="onboarding__p">Choisis le type de pad que tu veux utiliser en premier.</p>
@@ -82,8 +128,8 @@ export default function Onboarding({ onDone, onCreatePad, onSeedWelcome }: Props
         </div>
       )}
 
-      {/* Step 2: Ready */}
-      {step === 2 && (
+      {/* Step 3: Ready */}
+      {step === 3 && (
         <div className="onboarding__step">
           <div className="onboarding__logo onboarding__logo--done">✓</div>
           <h2 className="onboarding__h2">Tu es prêt !</h2>

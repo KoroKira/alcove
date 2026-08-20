@@ -148,7 +148,11 @@ export default function App() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [graphOpen, setGraphOpen] = useState(false);
   const [chatViewOpen, setChatViewOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // Defaults collapsed on phone-width screens — the sidebar is `position:
+  // fixed` at 240px expanded, and the doc content wraps position with
+  // `left: sidebarWidth` (see the `app-doc-wrap` divs below), so booting
+  // expanded on a ~375px viewport left only ~135px for actual content.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.innerWidth < 768);
   const [focusMode, setFocusMode] = useState(false);
   const [pomodoroOpen, setPomodoroOpen] = useState(false);
   const [docTemplateOpen, setDocTemplateOpen] = useState(false);
