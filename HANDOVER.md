@@ -22,58 +22,62 @@ Comparaison finale Alcove vs GetRecall (faite en direct, captures à l'appui) :
   côté Alcove et correspond au panneau "Graph Settings" de Recall. **Deux
   écarts identifiés, ce sont les 2 chantiers ci-dessous.**
 
-## 2. Chantier A — Groupes de couleur par requête (graphe) — ✅ FAIT
+## 2. Chantier A — Groupes de couleur par requête (graphe) — ✅ FAIT ET VÉRIFIÉ
 
-Implémenté et commité (`0ca5909`), pas encore déployé sur alcove-server
-(build local vérifié OK — `npm run build` propre, `tsc --noEmit` propre sur
-GraphView.tsx). Reste à faire au prochain accès à la tour : build + scp +
-`docker compose build alcove-pad` + `up` (cf. mémoire sur restart vs build),
-puis test visuel en direct dans le navigateur.
+Implémenté, testé en direct sur une vraie instance locale, et commité
+(`0ca5909`, `4565537`). Pas encore déployé sur alcove-server.
 
-Détails de l'implémentation (pour référence, plus besoin de replanifier) :
+Trois modes de requête par groupe, comme prévu à l'origine, avec en plus le
+matching contenu et la similarité sémantique par vectorisation demandés
+ensuite :
+- `tag:xxx` — substring sur les tags du pad (`GraphNode.tags`, ajouté au
+  payload de `/graph` dans [pad_router.py](src/backend/routers/pad_router.py)).
+  Instantané, pas de round-trip réseau.
+- texte libre — titre (instantané) **et** contenu du pad, via l'endpoint
+  existant `/api/pad/search` (déjà utilisé par la recherche globale — aucune
+  nouvelle logique de recherche full-text à écrire).
+- `~xxx` — proximité sémantique par embeddings : la requête est vectorisée
+  côté client via Ollama local (même chemin que le chat RAG, `searchRag()`
+  dans [rag.ts](src/frontend/src/lib/rag.ts)), le serveur fait le KNN sur les
+  embeddings déjà stockés (`/api/ai/rag/knn`, chantier #7). Rien de neuf côté
+  infra — c'est la "vectorisation pour mesurer la proximité de contenu" que tu
+  demandais, en réutilisant le pipeline RAG existant plutôt qu'en construire un
+  second.
 
-**Ce que fait Recall** (vu en direct sur `/knowledge-graph` → panneau
-"Groups") : l'utilisateur définit une ou plusieurs requêtes de filtre (même
-syntaxe que le champ de recherche existant : `tag:`, `source:`, `name:`, texte
-libre), associe chaque requête à une couleur, et tous les nœuds qui matchent
-sont peints de cette couleur — par-dessus la couleur de type par défaut. Sert
-à visualiser un sous-ensemble thématique du graphe sans devoir filtrer/masquer
-le reste.
+Les deux modes asynchrones (texte libre → contenu, `~` → sémantique) sont
+débounced (400ms) et résolus dans un cache `Set<padId>` par groupe que `draw()`
+lit à chaque frame ; un compteur de requête par groupe (`groupReqIdRef`) ignore
+les réponses obsolètes si l'utilisateur retape vite. Erreurs réseau/Ollama
+affichées inline sous le groupe concerné plutôt que silencieusement ignorées.
 
-**État actuel côté Alcove** — [GraphView.tsx](src/frontend/src/ui/GraphView.tsx) :
-- Le champ de recherche existe déjà : `searchRef` (ligne 79), lu dans
-  `isMatch()` (ligne 157) qui atténue (`ctx.globalAlpha`) les nœuds non
-  matchants au lieu de les recolorer.
-- La palette de couleurs par type est dans `getNodeColors()` (ligne 44) /
-  `TYPE_LABELS` (ligne 55).
-- Il n'y a **aucune notion de groupes multiples** actuellement — une seule
-  requête de recherche globale à la fois.
+**Vérifié en direct**, pas juste "ça compile" : lancé une vraie instance
+Alcove locale (backend natif via `.venv` + Postgres du `docker-compose.local.yml`
+existant + frontend buildé sur port 8001, dev mode = auth bypass), créé 3 pads
+de test réels (ESAT/handicap, recette de cuisine, droit du travail), indexé
+leurs embeddings via le vrai Ollama local (`nomic-embed-text` déjà installé),
+et testé les 3 modes dans le vrai graphe :
+- `tag:esat` → colore uniquement le pad taggé esat. ✓ correct du premier coup.
+- `farine` (texte libre) → colore le pad "Recette de cuisine" alors que ce mot
+  n'apparaît que dans le corps, pas le titre. ✓ correct du premier coup.
+- `~pâtisserie sucrée au four` (sémantique) → **a d'abord sur-matché** : avec
+  le seuil initial de 0.35 (repris du chat RAG), le pad cuisine scorait 0.72
+  mais les deux pads hors-sujet (ESAT à 0.49, droit du travail à 0.46)
+  passaient aussi le seuil. Mesuré les scores réels via `/api/ai/rag/knn`,
+  remonté `SEMANTIC_MIN_SCORE` à 0.55 dans
+  [GraphView.tsx](src/frontend/src/ui/GraphView.tsx) — ne garde plus que le
+  vrai match. Seuil documenté en commentaire dans le code avec les scores
+  mesurés, pour que la prochaine calibration parte de données réelles plutôt
+  que de redeviner.
 
-**Plan d'implémentation** :
-1. State : `interface ColorGroup { id: string; query: string; color: string }`,
-   `const [groups, setGroups] = useState<ColorGroup[]>([])` + `groupsRef` (même
-   pattern ref-mirror que `spacingRef`/`searchRef` pour que `draw()` lise la
-   valeur live sans recréer le `useCallback`).
-2. Réutiliser la logique de `isMatch()` (ligne 157) : en extraire le
-   sous-matcher `matchesQuery(node, query)` pur, pour l'appliquer group par
-   group plutôt que seulement à `searchRef.current`.
-3. Dans `draw()` (autour de la ligne 149-160 où `nodeColors` est choisi par
-   type) : avant d'assigner `nodeColors[n.type]`, boucler sur `groupsRef.current`
-   dans l'ordre et si `matchesQuery(n, group.query)` matche, utiliser
-   `group.color` à la place (dernier groupe qui matche gagne, comme Recall).
-4. UI : petit panneau dans les contrôles existants (`.graph-controls*` dans
-   [GraphView.scss](src/frontend/src/ui/GraphView.scss)) — liste de groupes
-   avec input requête + color picker natif (`<input type="color">`) + bouton
-   "+ Nouveau groupe" / suppression par groupe. Pas besoin de persistance
-   serveur, `localStorage` suffit (comme les autres réglages de graphe déjà
-   volatils côté Alcove — vérifier si spacing/linkLength sont persistés
-   actuellement ; si non, rester cohérent et ne pas persister les groupes non
-   plus, sauf si l'utilisateur le demande).
-5. Legend (ligne ~439-445) : optionnel, ajouter les groupes actifs sous la
-   légende de types existante.
+**Bug découvert en cours de route, pas corrigé (hors scope), signalé pour
+plus tard** : `TabContextMenu.tsx` (rename + edit-tags) utilise
+`window.prompt()`, qui a planté le rendu de la page pendant les tests (dialogue
+natif bloquant, incompatible avec toute automation/CDP). Suggestion envoyée en
+tâche séparée (`task_0ddc8518`) pour remplacer ça par un input inline.
 
-Effort estimé : petit (~1-2h), tout le socle (matching, refs, panneau
-contrôles) existe déjà et suit un pattern déjà en place dans le fichier.
+**Reste à faire** : build + déploiement sur alcove-server (build local →
+scp → `docker compose build` → `up`, cf. mémoire restart-vs-build) au prochain
+accès à la tour.
 
 ## 3. Chantier B — Test de charge du graphe à échelle réelle
 
