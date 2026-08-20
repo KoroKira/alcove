@@ -96,14 +96,30 @@ if ($LASTEXITCODE -ne 0) {
 }
 Success "Python OK (venv)"
 
-# -- Alembic : marquer le schema a jour sur une install fraiche --------------------
+# -- Alembic : appliquer les migrations en attente, ou stamper une install fraiche --
+# Base neuve (pas encore de table `pads`) : le backend la cree via create_all au
+# demarrage avec le schema courant, donc un stamp direct est sans danger.
+# Base existante non versionnee (install pre-Alembic) : il faut REJOUER les
+# migrations pour combler les colonnes ajoutees depuis (tags, folder, thumbnail_url, ...) --
+# un simple stamp les sauterait silencieusement.
 $AlembicIni = Join-Path $Backend "alembic.ini"
 if (Test-Path $AlembicIni) {
     Push-Location $Backend
     $current = & $VenvPython -m alembic current 2>$null
     if (-not ($current -match "head")) {
-        Info "Alembic : synchronisation de l'etat du schema..."
-        & $VenvPython -m alembic stamp head 2>$null | Out-Null
+        $padsExists = docker exec alcove-local-postgres psql -U postgres -d $PostgresDb -tAc `
+            "SELECT 1 FROM information_schema.tables WHERE table_schema='pad_ws' AND table_name='pads'" 2>$null
+        if ($padsExists -match "1") {
+            Info "Alembic : base existante non versionnee - application des migrations..."
+            & $VenvPython -m alembic upgrade head 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                WarnMsg "Alembic upgrade a echoue (schema probablement deja a jour) - stamp de secours..."
+                & $VenvPython -m alembic stamp head 2>$null | Out-Null
+            }
+        } else {
+            Info "Alembic : synchronisation de l'etat du schema (install fraiche)..."
+            & $VenvPython -m alembic stamp head 2>$null | Out-Null
+        }
     }
     Pop-Location
 }

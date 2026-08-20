@@ -27,7 +27,11 @@ export interface VideoMeta {
   chapters?: VideoChapter[];
 }
 
-const MARKER_RE = /<!--\s*alcove:video\s+(\{[\s\S]*?\})\s*-->/;
+// Payload is JSON that may embed nested `{...}` (chapters, sub-objects). The
+// original non-greedy `\{[\s\S]*?\}` stopped at the FIRST inner `}` and
+// truncated the parse, so the whole marker was silently dropped whenever it
+// had any nested structure.
+const MARKER_RE = /<!--\s*alcove:video\s+(\{[\s\S]*\})\s*-->/;
 
 export function readVideoMeta(markdown: string): VideoMeta | null {
   const m = markdown.match(MARKER_RE);

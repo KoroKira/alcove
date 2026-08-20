@@ -75,15 +75,25 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# A built frontend (dist/index.html) can be present even in dev mode — e.g. the
+# "friends" Docker image bundles PAD_DEV_MODE=true (auto-login, no Keycloak) with
+# the static production build instead of proxying to a Vite dev server. Whichever
+# is true, prefer serving the static build over proxying. Computed here (before
+# the CORS setup below) because it also tells us whether an empty allowlist is
+# actually a misconfiguration: a statically-served frontend is same-origin and
+# never needs CORS at all.
+HAS_STATIC_BUILD = bool(STATIC_DIR) and os.path.isfile(os.path.join(STATIC_DIR, "index.html"))
+
 # CORS: `allow_origins=["*"]` with `allow_credentials=True` is silently unsafe
 # — the browser strips the credentials on wildcarded responses, so it *seems*
 # to work locally while breaking real cross-origin auth. We now use an explicit
 # allowlist from config; the operator can override via ALLOWED_ORIGINS env.
-if not ALLOWED_ORIGINS:
+if not ALLOWED_ORIGINS and not HAS_STATIC_BUILD:
     logger.warning(
-        "CORS: ALLOWED_ORIGINS is empty. Same-origin requests still work, "
-        "but any browser-side cross-origin call will be blocked. Set "
-        "FRONTEND_URL or ALLOWED_ORIGINS in the env."
+        "CORS: ALLOWED_ORIGINS is empty and no static frontend build is being "
+        "served from this process, so the frontend must be on a different "
+        "origin. Every browser-side cross-origin call WILL be blocked until "
+        "you set FRONTEND_URL or ALLOWED_ORIGINS in the env."
     )
 app.add_middleware(
     CORSMiddleware,
@@ -92,12 +102,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# A built frontend (dist/index.html) can be present even in dev mode — e.g. the
-# "friends" Docker image bundles PAD_DEV_MODE=true (auto-login, no Keycloak) with
-# the static production build instead of proxying to a Vite dev server. Whichever
-# is true, prefer serving the static build over proxying.
-HAS_STATIC_BUILD = bool(STATIC_DIR) and os.path.isfile(os.path.join(STATIC_DIR, "index.html"))
 
 if not PAD_DEV_MODE or HAS_STATIC_BUILD:
     app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")

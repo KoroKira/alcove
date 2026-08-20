@@ -88,14 +88,27 @@ if ! python -c "import fastapi" &>/dev/null; then
 fi
 success "Python OK ($($PYTHON --version), venv)"
 
-# ── Alembic : marquer le schéma à jour sur une install fraîche ─────────────────
-# Le backend crée les tables via create_all au démarrage ; on "stampe" ensuite la
-# base à la dernière révision pour que les futures migrations s'appliquent bien.
-# Idempotent : ne fait rien de plus si la base est déjà stampée.
+# ── Alembic : appliquer les migrations en attente, ou stamper une install fraîche ──
+# Sur une base neuve (pas encore de table `pads`), le backend va la créer via
+# create_all au démarrage avec le schéma courant : on peut "stamper" tel quel.
+# Sur une base qui a déjà une table `pads` mais n'est pas encore versionnée
+# (install pré-Alembic), il faut réellement REJOUER les migrations pour combler
+# les colonnes ajoutées depuis (tags, folder, thumbnail_url, …) — un simple stamp
+# les sauterait silencieusement.
 if command -v alembic &>/dev/null && [ -f "$BACKEND/alembic.ini" ]; then
   if ! (cd "$BACKEND" && alembic current 2>/dev/null | grep -q head); then
-    info "Alembic : synchronisation de l'état du schéma…"
-    (cd "$BACKEND" && alembic stamp head 2>/dev/null) || warn "Alembic stamp ignoré (base pas encore prête)"
+    PADS_EXISTS="$(psql "${PG_ARGS[@]}" -d "${POSTGRES_DB:-pad}" -tAc \
+      "SELECT 1 FROM information_schema.tables WHERE table_schema='pad_ws' AND table_name='pads'" 2>/dev/null || true)"
+    if [ "$PADS_EXISTS" = "1" ]; then
+      info "Alembic : base existante non versionnée — application des migrations…"
+      (cd "$BACKEND" && alembic upgrade head 2>/dev/null) || {
+        warn "Alembic upgrade a échoué (schéma probablement déjà à jour) — stamp de secours…"
+        (cd "$BACKEND" && alembic stamp head 2>/dev/null) || warn "Alembic stamp ignoré (base pas encore prête)"
+      }
+    else
+      info "Alembic : synchronisation de l'état du schéma (install fraîche)…"
+      (cd "$BACKEND" && alembic stamp head 2>/dev/null) || warn "Alembic stamp ignoré (base pas encore prête)"
+    fi
   fi
 fi
 

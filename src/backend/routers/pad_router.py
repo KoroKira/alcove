@@ -41,6 +41,11 @@ class FolderUpdate(BaseModel):
 class NewPadRequest(BaseModel):
     pad_type: str = "canvas"
     display_name: str = "New pad"
+    # Optional initial content for `pad_type=="document"`. Anything else is
+    # ignored — the other pad types have their own default shapes below. Lets
+    # callers create-and-fill in one round trip (e.g. the RAG chat's
+    # "Add to notebook" button doesn't need a second PUT).
+    content: Optional[str] = None
 
 class DocSaveRequest(BaseModel):
     content: str
@@ -175,7 +180,7 @@ async def create_new_pad(
         )
         pad.pad_type = pad_type
         if pad_type == "document":
-            pad.data = {"content": "", "format": "markdown"}
+            pad.data = {"content": req.content or "", "format": "markdown"}
         elif pad_type == "kanban":
             pad.data = {"columns": [
                 {"id": "col-1", "title": "À faire", "cards": []},
@@ -501,7 +506,7 @@ async def get_pad(
                 "format": data.get("format", "markdown"),
                 "updated_at": pad_updated_at,
             }
-            if data.get("video"):
+            if "video" in data:
                 resp["video"] = data["video"]
             return resp
 
