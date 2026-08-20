@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from '../i18n';
 import clsx from 'clsx';
@@ -24,6 +24,11 @@ interface ContextMenuProps {
   top: number;
   left: number;
   onClose: (callback?: () => void) => void;
+  // Action names in here open an inline edit view (rename/tags) instead of
+  // running through actionManager.executeAction — see the "Édition en
+  // ligne" block below. Keeps this list generic (canvas context menus reuse
+  // it too) while letting TabContextMenu intercept just these two.
+  interceptActions?: Record<string, () => void>;
 }
 
 interface ActionManager {
@@ -128,7 +133,8 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
   items,
   top,
   left,
-  onClose
+  onClose,
+  interceptActions,
 }) => {
   // Filter items based on predicate
   const filteredItems = items.reduce((acc: ContextMenuItem[], item) => {
@@ -184,6 +190,9 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
               key={idx}
               data-testid={actionName}
               onClick={() => {
+                const intercept = interceptActions?.[actionName];
+                if (intercept) { intercept(); return; }
+
                 // Store the callback to execute after closing
                 const callback = () => {
                   actionManager.executeAction(item, "contextMenu");
@@ -255,12 +264,10 @@ class TabActionManager implements ActionManager {
   }
 
   executeAction(action: Action, source: string) {
-    if (action.name === 'rename') {
-      const newName = window.prompt(i18n.t('contextMenu.renamePrompt'), this.padName);
-      if (newName && newName.trim() !== '') {
-        this.onRename(this.padId, newName);
-      }
-    } else if (action.name === 'aiRename') {
+    // 'rename' and 'editTags' are intercepted before reaching here — see
+    // TabContextMenu's `interceptActions` (inline edit view instead of
+    // window.prompt, which blocks the page's JS thread).
+    if (action.name === 'aiRename') {
       this.aiRename();
     } else if (action.name === 'deleteOwnedPad') {
       console.debug('[alcove] Attempting to delete owned pad:', this.padId, this.padName);
@@ -278,13 +285,6 @@ class TabActionManager implements ActionManager {
       this.onUpdateSharingPolicy(this.padId, newPolicy);
     } else if (action.name === 'toggleTheme') {
       this.onUpdateTheme(this.padId);
-    } else if (action.name === 'editTags') {
-      const current = (this.currentTags || []).join(', ');
-      const input = window.prompt(i18n.t('contextMenu.tagsPrompt'), current);
-      if (input !== null && this.onUpdateTags) {
-        const tags = input.split(',').map(t => t.trim()).filter(Boolean);
-        this.onUpdateTags(this.padId, tags);
-      }
     } else if (action.name === 'moveToFolder') {
       this.onMoveToFolder?.(this.padId);
     } else if (action.name === 'copyUrl') {
@@ -358,6 +358,28 @@ const TabContextMenu: React.FC<TabContextMenuProps> = ({
   const isOwner = currentUserId && tabOwnerId && currentUserId === tabOwnerId;
   const isPadPublic = sharingPolicy === 'public';
   const isReadLater = (currentTags || []).includes('read-later');
+
+  // Inline rename/tags editing — replaces window.prompt(), which blocked
+  // the page's JS thread (broke browser-automation testing, and looked
+  // jarring against the dark theme anyway).
+  const [editMode, setEditMode] = useState<'rename' | 'tags' | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const editInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editMode) editInputRef.current?.focus();
+  }, [editMode]);
+
+  const submitEdit = () => {
+    if (editMode === 'rename') {
+      const trimmed = editValue.trim();
+      if (trimmed) onRename(padId, trimmed);
+    } else if (editMode === 'tags') {
+      const tags = editValue.split(',').map(t => t.trim()).filter(Boolean);
+      onUpdateTags?.(padId, tags);
+    }
+    onClose();
+  };
 
   const actionManager = new TabActionManager(padId, padName, onRename, onDelete, onUpdateSharingPolicy, onLeaveSharedPad, onUpdateTheme, sharingPolicy, onUpdateTags, currentTags, onToggleReadLater);
   actionManager.onMoveToFolder = onMoveToFolder;
@@ -451,6 +473,27 @@ const TabContextMenu: React.FC<TabContextMenuProps> = ({
     }
   };
 
+  if (editMode) {
+    return (
+      <Popover onCloseRequest={onClose} top={y - 80} left={x} fitInViewport>
+        <form
+          className="tab-context-menu"
+          onSubmit={e => { e.preventDefault(); submitEdit(); }}
+        >
+          <input
+            ref={editInputRef}
+            type="text"
+            value={editValue}
+            onChange={e => setEditValue(e.target.value)}
+            placeholder={editMode === 'tags' ? t('contextMenu.tagsPrompt') : t('contextMenu.renamePrompt')}
+            onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } }}
+          />
+          <button type="submit">{t('contextMenu.confirm')}</button>
+        </form>
+      </Popover>
+    );
+  }
+
   return (
     <ContextMenu
       actionManager={actionManager}
@@ -458,6 +501,10 @@ const TabContextMenu: React.FC<TabContextMenuProps> = ({
       top={y - 80} // Position above the cursor
       left={x}
       onClose={handleClose}
+      interceptActions={{
+        rename: () => { setEditValue(padName); setEditMode('rename'); },
+        editTags: () => { setEditValue((currentTags || []).join(', ')); setEditMode('tags'); },
+      }}
     />
   );
 };

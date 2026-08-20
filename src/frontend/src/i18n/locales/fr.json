@@ -38,6 +38,7 @@
     "addTags": "Ajouter des tags…",
     "hasTags": "Tags : {{tags}}",
     "tagsPrompt": "Tags (séparés par des virgules) :",
+    "confirm": "OK",
     "delete": "Supprimer",
     "leave": "Quitter le pad partagé",
     "aiRename": "✨ Renommer par IA",

@@ -38,6 +38,7 @@
     "addTags": "Add tags…",
     "hasTags": "Tags: {{tags}}",
     "tagsPrompt": "Tags (comma-separated):",
+    "confirm": "OK",
     "delete": "Delete",
     "leave": "Leave shared pad",
     "aiRename": "✨ Rename with AI",

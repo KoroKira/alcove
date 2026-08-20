@@ -4,6 +4,12 @@
   z-index: 260;
   display: flex;
   background: var(--color-surface-lowest, var(--ap-bg0));
+  animation: chatview-in 0.15s ease-out;
+}
+
+@keyframes chatview-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* ── Sidebar (conversation history) ── */
@@ -37,6 +43,7 @@
   border-radius: var(--ap-radius-xs);
   cursor: pointer;
   flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease;
   &:hover { background: var(--color-surface-mid, var(--ap-bg2)); color: var(--color-on-surface, var(--ap-text0)); }
 }
 
@@ -221,6 +228,7 @@
   font-size: 13px;
   outline: none;
   max-height: 200px;
+  transition: border-color 0.15s ease;
   &:focus { border-color: var(--ap-accent, #7c56ff); }
 }
 

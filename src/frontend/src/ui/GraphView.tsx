@@ -89,6 +89,7 @@ const GROUP_COLOR_PALETTE = ['#f38ba8', '#fab387', '#f9e2af', '#a6e3a1', '#94e2d
 // chat's own default) let the noise floor through. 0.55 cut both false
 // positives while keeping the real match.
 const SEMANTIC_MIN_SCORE = 0.55;
+const GROUP_PRESETS_KEY = 'alcove-graph-group-presets';
 
 const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -196,6 +197,44 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
   }, []);
   const removeGroup = useCallback((id: string) => {
     setGroups(gs => gs.filter(g => g.id !== id));
+  }, []);
+
+  // ── Group presets ──────────────────────────────────────────────────────────
+  // Recall's "Save as preset" / "Select preset" for its Groups panel — the
+  // groups themselves were session-only before this. localStorage is enough
+  // (single-user, no server round-trip needed, matches how the rest of the
+  // graph's view state already behaves).
+  const [presets, setPresets] = useState<Record<string, ColorGroup[]>>(() => {
+    try { return JSON.parse(localStorage.getItem(GROUP_PRESETS_KEY) || '{}'); }
+    catch { return {}; }
+  });
+  const [selectedPreset, setSelectedPreset] = useState('');
+  const [newPresetName, setNewPresetName] = useState('');
+  const [showPresetInput, setShowPresetInput] = useState(false);
+
+  const loadPreset = useCallback((name: string) => {
+    setSelectedPreset(name);
+    if (presets[name]) setGroups(presets[name]);
+  }, [presets]);
+
+  const savePreset = useCallback(() => {
+    const name = newPresetName.trim();
+    if (!name) return;
+    const updated = { ...presets, [name]: groups };
+    setPresets(updated);
+    localStorage.setItem(GROUP_PRESETS_KEY, JSON.stringify(updated));
+    setSelectedPreset(name);
+    setNewPresetName('');
+    setShowPresetInput(false);
+  }, [newPresetName, presets, groups]);
+
+  const deletePreset = useCallback((name: string) => {
+    setPresets(prev => {
+      const { [name]: _drop, ...rest } = prev;
+      localStorage.setItem(GROUP_PRESETS_KEY, JSON.stringify(rest));
+      return rest;
+    });
+    setSelectedPreset(prev => (prev === name ? '' : prev));
   }, []);
 
   const toWorld = useCallback((cx: number, cy: number) => {
@@ -688,6 +727,54 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
                 {' '}— texte (titre+contenu) · tag:xxx · ~similaire à…
               </span>
             </span>
+
+            <div className="graph-controls__presets">
+              <select
+                className="graph-controls__preset-select"
+                value={selectedPreset}
+                onChange={e => loadPreset(e.target.value)}
+              >
+                <option value="">Preset…</option>
+                {Object.keys(presets).map(name => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+              {selectedPreset && (
+                <button
+                  className="graph-controls__preset-delete"
+                  onClick={() => deletePreset(selectedPreset)}
+                  title="Supprimer ce preset"
+                >
+                  <X size={11} />
+                </button>
+              )}
+              {showPresetInput ? (
+                <form
+                  className="graph-controls__preset-save-form"
+                  onSubmit={e => { e.preventDefault(); savePreset(); }}
+                >
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder="Nom du preset…"
+                    value={newPresetName}
+                    onChange={e => setNewPresetName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Escape') setShowPresetInput(false); }}
+                  />
+                  <button type="submit">OK</button>
+                </form>
+              ) : (
+                <button
+                  className="graph-controls__preset-save"
+                  onClick={() => setShowPresetInput(true)}
+                  disabled={groups.length === 0}
+                  title={groups.length === 0 ? 'Ajoute au moins un groupe avant de sauvegarder' : 'Sauvegarder les groupes actuels comme preset'}
+                >
+                  Sauvegarder comme preset
+                </button>
+              )}
+            </div>
+
             {groups.map(g => (
               <div key={g.id} className="graph-controls__group">
                 <div className="graph-controls__group-row">
