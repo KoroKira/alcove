@@ -89,49 +89,65 @@ partiellement obsolète pour ce repo précis**, à corriger). Déploiement réel
 tournant sur le serveur contient bien le code du payload `tags` (`docker exec
 alcove-pad grep -n 'r.tags' /app/routers/pad_router.py`).
 
-## 3. Chantier B — Test de charge du graphe à échelle réelle
+## 3. Chantier B — Test de charge du graphe à échelle réelle — ✅ FAIT
 
-**Constat** : le compte Recall de l'utilisateur a **12 585 nodes / 25 253
-liens** et le rendu (canvas + force-layout) reste fluide. Le graphe d'Alcove
-n'a jamais été testé au-delà d'un usage perso (probablement quelques
-dizaines à centaines de pads). Le layout est un force-directed maison
-(`K_REP_DEFAULT` / `REST_LEN_DEFAULT`, boucle de simulation dans `draw()`
-autour de la ligne 229-239) — pas de garantie que ça tienne à 10k+ nœuds sans
-optimisation (quadratic repulsion entre paires de nœuds = O(n²), ce qui à
-12k nœuds ferait ~150M paires par frame si implémenté naïvement).
+Implémenté et commité (`82b4aba`), pas encore déployé sur alcove-server.
 
-**Plan de test** :
-1. **Confirmé** : `tick()` (ligne 225, boucle de répulsion ligne 241-253) est
-   explicitement commenté `// repulsion O(n²)` dans le code — paires de nœuds
-   testées deux à deux à chaque frame. À 12k nœuds ça ferait ~78M paires par
-   frame, injouable en continu. C'est le premier goulot, avant même de
-   lancer un test : soit un quadtree (Barnes-Hut), soit un cap
-   `MAX_VISIBLE_NODES` avec fallback "zoomer pour voir le détail" au-delà
-   d'un seuil.
-2. Générer un jeu de données synthétique réaliste côté backend (script one-off,
-   pas dans le code prod) : quelques milliers de pads avec titres/tags variés
-   + edges aléatoires mais avec une distribution réaliste (quelques hubs très
-   connectés + longue traîne peu connectée, pas uniforme) pour se rapprocher
-   de la topologie réelle d'un knowledge graph.
-3. Charger ce jeu dans une instance Alcove locale (pas la prod), ouvrir
-   `/graph`, mesurer : FPS pendant l'interaction (pan/zoom/drag), temps de
-   premier rendu, comportement de la recherche/filtre à cette échelle.
-4. Si O(n²) confirmé comme goulot : implémenter un cap doux — au-delà de
-   ~1500-2000 nœuds visibles simultanément, désactiver la simulation physique
-   continue (figer les positions après un layout initial) plutôt que de
-   simuler en continu à chaque frame. C'est ce que font la plupart des outils
-   de graphe à cette échelle (Obsidian Graph View, Gephi) — la simulation
-   tourne une fois puis se fige, l'utilisateur peut la relancer manuellement.
-5. Alternative plus lourde si le cap simple ne suffit pas : migrer le rendu
-   vers WebGL (`pixi.js`/`sigma.js`) — mais ne pas partir là-dessus avant
-   d'avoir mesuré le vrai point de rupture, ça peut être une réécriture non
-   justifiée si le cap suffit.
+**Ce qui a été fait** : la boucle de répulsion `O(n²)` de `tick()` (jadis
+ligne 241-253) a été remplacée par une grille de hachage spatial. Comme la
+répulsion décroît en 1/d², au-delà d'une distance de coupure (`REPULSION_CUTOFF
+= max(120, sqrt(kRep * 20))`) la force est négligeable — les nœuds sont
+placés dans des cellules de cette taille, et pour chaque nœud on ne teste que
+le voisinage 3×3 (9 cellules) au lieu de tous les autres nœuds. Chaque paire
+est toujours traitée exactement une fois (garde `j <= i` sur l'index du nœud,
+pas sur la direction de la cellule, donc correcte peu importe quel nœud
+découvre l'autre en premier).
 
-**Point de départ concret pour la prochaine session** : les **22 items de
-l'export Recall partiel** (voir section 4) donnent déjà un petit jeu de
-données réel — pas assez pour un vrai stress-test (il en faudrait ~500x plus)
-mais utilisable pour vérifier l'ingestion + rendu du graphe sur du contenu
-réel avant de passer à la génération synthétique à grande échelle.
+**Test de charge réel effectué** — deux méthodes complémentaires :
+
+1. **Données réelles synthétiques via une vraie instance Alcove locale** :
+   généré 3000 pads (`Node 00000`…`Node 02999`) avec une topologie de type
+   knowledge-base réaliste — 15 nœuds "hub" fortement connectés + longue
+   traîne, liens via vrais `[[wikilinks]]` parsés par l'endpoint `/graph`
+   existant (pas de nouvelle logique de test). Chargé dans le vrai navigateur
+   contre le vrai backend — script de seed conservé dans le repo :
+   [scripts/loadtest/seed_graph_loadtest.py](scripts/loadtest/seed_graph_loadtest.py)
+   (usage local uniquement, voir son en-tête — écrit directement en base via
+   `asyncpg` contre `alcove-local-postgres`, ne nettoie pas après lui).
+
+2. **Benchmark algorithmique isolé (Node, sans DOM)** — la mesure qui compte
+   vraiment pour trancher "est-ce que ça tient" : port du code exact de
+   `tick()` (avant/après) dans un script Node autonome, mesuré à plusieurs
+   échelles de 100 à 12 000 nœuds
+   ([scripts/loadtest/bench_repulsion.mjs](scripts/loadtest/bench_repulsion.mjs)) :
+
+   | N nœuds | naïf O(n²) ms/tick | grille ms/tick | speedup | naïf tient 60fps (16.7ms) ? | grille tient 60fps ? |
+   |--------:|-------------------:|---------------:|--------:|:---------------------------:|:---------------------:|
+   | 100     | 0.19               | 0.23           | 0.8×    | oui                          | oui                    |
+   | 500     | 0.47               | 0.33           | 1.4×    | oui                          | oui                    |
+   | 1 500   | 4.20               | 1.19           | 3.5×    | oui                          | oui                    |
+   | 3 000   | 16.96              | 2.56           | 6.6×    | **NON**                      | oui                    |
+   | 6 000   | 67.59              | 5.54           | 12.2×   | **NON**                      | oui                    |
+   | 12 000  | 272.94             | 12.73          | 21.4×   | **NON**                      | oui                    |
+
+   À l'échelle réelle du compte Recall de l'utilisateur (12 585 nœuds), le
+   code naïf aurait pris **~273ms par tick physique** — sous les 4fps,
+   totalement inutilisable — contre **~12.7ms** avec la grille, confortablement
+   sous le budget 60fps. En dessous de ~1500 nœuds les deux tiennent déjà le
+   budget (la grille a un léger surcoût négligeable en absolu, ~0.04ms, à ces
+   tailles — sans impact sur l'usage actuel d'Alcove).
+
+**Décision prise** : la grille de hachage spatial seule suffit largement,
+même à l'échelle d'un vrai export Recall complet. Pas besoin de quadtree
+Barnes-Hut (plus complexe, gain marginal ici vu les chiffres), ni de cap
+"figer la simulation au-delà de N nœuds" (les deux options envisagées dans
+la version précédente de ce plan) — la marge (21× de speedup, 12.7ms très
+en dessous du budget 16.7ms) est confortable même sans ces filets de sécurité
+supplémentaires.
+
+**Reste à faire** : déploiement sur alcove-server (même pipeline CI/CD que
+chantier A — push déjà fait, il ne reste que le `git pull` + `docker compose
+pull pad && up -d pad` côté serveur une fois l'image GHCR buildée).
 
 ## 4. Export Recall partiel — fait, données disponibles
 
