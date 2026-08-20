@@ -10,7 +10,7 @@
  * top-k matches. `ragChat` chains the KNN → prompt → streaming completion.
  */
 
-import { getOllamaUrl, streamLocalOllamaChat } from '../hooks/useOllama';
+import { getOllamaUrl, streamLocalOllamaChat, oneShotLocalOllama } from '../hooks/useOllama';
 
 export const EMBED_MODEL_DEFAULT = 'nomic-embed-text';
 const CHUNK_SIZE = 400;      // words
@@ -247,4 +247,235 @@ export async function ragChat(
     onChunk,
     signal,
   );
+}
+
+
+// ── Agentic RAG chat ────────────────────────────────────────────────────────
+//
+// Single-shot ragChat above misses relevant material whenever a question wraps
+// several angles at once ("compare X and Y and what was the outcome") — one
+// embedding of the whole sentence ends up close to nothing in particular. The
+// flow below decomposes the question into a handful of focused sub-queries,
+// runs the retrieval per sub-query, then unions and dedups the hits. The
+// answer is produced with numbered sources so the model's [[N]] citations can
+// be turned into clickable chips in the UI (into a Sources drawer that shows
+// the exact excerpt and, for video-transcript chunks, a ▶ MM:SS anchor).
+//
+// Runs entirely in the browser — every LLM call goes to the local Ollama, the
+// server only serves the KNN math. Nothing here needs a server-side model.
+
+/** Enumerated source, ready to render as a numbered card + citation chip. */
+export interface AgenticSource {
+  n: number;
+  pad_id: string;
+  pad_name: string;
+  chunk_text: string;
+  score: number;
+  /** Populated for chunks whose head is a [MM:SS] or [H:MM:SS] transcript
+   * anchor, so the UI can render a ▶ pill that opens the pad at that beat. */
+  timestamp_seconds: number | null;
+  timestamp_label: string | null;
+}
+
+/** Callback bundle for agenticRagChat. Every non-required callback is a
+ * silent no-op if omitted, so the same helper works for both the RAG panel
+ * (which wants everything) and future callers that just need the answer. */
+export interface AgenticCallbacks {
+  onSubqueries?: (items: string[]) => void;
+  onSources?: (sources: AgenticSource[]) => void;
+  onChunk: (text: string) => void;
+  onFollowups?: (items: string[]) => void;
+}
+
+const TIMESTAMP_RE = /\[(\d{1,2}(?::\d{2}){1,2})\]/;
+
+function extractTimestamp(chunkText: string): { seconds: number | null; label: string | null } {
+  // Scoped to the head so a stray timestamp deep inside a long chunk doesn't
+  // hijack the citation.
+  const m = chunkText.slice(0, 200).match(TIMESTAMP_RE);
+  if (!m) return { seconds: null, label: null };
+  const parts = m[1].split(':').map(p => parseInt(p, 10));
+  if (parts.some(n => Number.isNaN(n))) return { seconds: null, label: null };
+  const seconds = parts.length === 2
+    ? parts[0] * 60 + parts[1]
+    : parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return { seconds, label: m[1] };
+}
+
+function tolerantJson<T = unknown>(raw: string): T | null {
+  // Some models wrap JSON in prose or <think> blocks — strip both and locate
+  // the outermost { ... } before parsing.
+  const stripped = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  const start = stripped.indexOf('{');
+  const end = stripped.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  try { return JSON.parse(stripped.slice(start, end + 1)) as T; }
+  catch { return null; }
+}
+
+async function fanoutSubqueries(
+  chatModel: string, question: string, lang: 'fr' | 'en', signal?: AbortSignal,
+): Promise<string[]> {
+  const prompt = lang === 'fr'
+    ? `Décompose cette question en 2 à 5 sous-requêtes courtes et distinctes à utiliser pour une recherche sémantique dans les notes de l'utilisateur. Chaque sous-requête cible un angle différent (définitions, exemples, causes, conséquences, comparaisons…) mais reste en rapport direct avec la question originale. Formule chacune comme une phrase indépendante, pas comme une continuation.\n\nQuestion originale : ${question}\n\nRéponds STRICTEMENT en JSON, aucun texte hors du JSON :\n{"queries": ["...", "..."]}`
+    : `Break the question below into 2 to 5 short, distinct sub-queries to be used for semantic search over the user's notes. Each sub-query targets a different angle (definitions, concrete examples, causes, consequences, comparisons…) while staying directly related to the original question. Phrase each as a standalone sentence, not a continuation.\n\nOriginal question: ${question}\n\nReply STRICTLY as JSON, no text outside the JSON:\n{"queries": ["...", "..."]}`;
+  let queries: string[] = [];
+  try {
+    const raw = await oneShotLocalOllama(
+      chatModel,
+      [{ role: 'user', content: prompt }],
+      { format: 'json', timeoutMs: 30000 },
+    );
+    if (signal?.aborted) throw new DOMException('aborted', 'AbortError');
+    const parsed = tolerantJson<{ queries: unknown }>(raw);
+    if (parsed && Array.isArray(parsed.queries)) {
+      queries = parsed.queries
+        .filter((q): q is string => typeof q === 'string')
+        .map(q => q.trim())
+        .filter(Boolean);
+    }
+  } catch {
+    // Fanout failure degrades gracefully to "just the original question".
+  }
+  // Always run the original question too, dedup case-insensitively, cap at 6.
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const q of [question, ...queries]) {
+    const key = q.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(q);
+  }
+  return out.slice(0, 6);
+}
+
+async function followupQuestions(
+  chatModel: string, question: string, answer: string, lang: 'fr' | 'en',
+): Promise<string[]> {
+  const prompt = lang === 'fr'
+    ? `Question posée et réponse déjà donnée ci-dessous. Propose EXACTEMENT 3 questions de suivi courtes (≤ 12 mots), pertinentes, sans redondance entre elles ni avec la question originale.\n\nQuestion : ${question}\nRéponse : ${answer.slice(0, 2000)}\n\nRéponds STRICTEMENT en JSON : {"followups": ["…", "…", "…"]}`
+    : `The question and its answer are below. Propose EXACTLY 3 short, relevant, non-redundant follow-up questions (≤ 12 words each).\n\nQuestion: ${question}\nAnswer: ${answer.slice(0, 2000)}\n\nReply STRICTLY as JSON: {"followups": ["…", "…", "…"]}`;
+  try {
+    const raw = await oneShotLocalOllama(
+      chatModel,
+      [{ role: 'user', content: prompt }],
+      { format: 'json', timeoutMs: 30000 },
+    );
+    const parsed = tolerantJson<{ followups: unknown }>(raw);
+    if (!parsed || !Array.isArray(parsed.followups)) return [];
+    return parsed.followups
+      .filter((q): q is string => typeof q === 'string')
+      .map(q => q.trim())
+      .filter(Boolean)
+      .slice(0, 3);
+  } catch {
+    return [];
+  }
+}
+
+/** Cap on chunks kept AFTER dedup across sub-queries. Prompt scales roughly
+ * linearly with this — 8 chunks × ~1600 chars ≈ 13k chars, which fits a 12k
+ * token context without pushing the answer against num_predict. */
+const AGENTIC_MAX_SOURCES = 8;
+
+export async function agenticRagChat(
+  chatModel: string,
+  question: string,
+  callbacks: AgenticCallbacks,
+  opts: { topKPerSubquery?: number; lang?: 'fr' | 'en'; embedModel?: string; signal?: AbortSignal } = {},
+): Promise<void> {
+  const { topKPerSubquery = 5, lang = 'fr', embedModel = EMBED_MODEL_DEFAULT, signal } = opts;
+
+  // 1. Fanout ---------------------------------------------------------------
+  const queries = await fanoutSubqueries(chatModel, question, lang, signal);
+  callbacks.onSubqueries?.(queries);
+
+  // 2. Retrieve per sub-query in parallel, union+dedup by (pad_id, chunk_text).
+  // Chunk index isn't exposed by /rag/knn today so we key on the text — for a
+  // single owner that's unique in practice (same text under two different
+  // indexes is a duplicate we'd want to drop anyway).
+  const perQuery = await Promise.all(queries.map(async (q) => {
+    try {
+      const vec = await embedText(q, embedModel);
+      const r = await fetch('/api/ai/rag/knn', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ query_embedding: vec, top_k: topKPerSubquery }),
+        signal,
+      });
+      if (!r.ok) return [] as RagMatch[];
+      return (await r.json()).results as RagMatch[] || [];
+    } catch { return [] as RagMatch[]; }
+  }));
+
+  const best = new Map<string, { score: number; match: RagMatch }>();
+  for (const matches of perQuery) {
+    for (const m of matches) {
+      const key = `${m.pad_id}::${m.chunk_text.slice(0, 100)}`;
+      const cur = best.get(key);
+      if (!cur || m.score > cur.score) best.set(key, { score: m.score, match: m });
+    }
+  }
+  const selected = Array.from(best.values())
+    .sort((a, b) => b.score - a.score)
+    .slice(0, AGENTIC_MAX_SOURCES);
+
+  const sources: AgenticSource[] = selected.map(({ score, match }, i) => {
+    const { seconds, label } = extractTimestamp(match.chunk_text);
+    return {
+      n: i + 1,
+      pad_id: match.pad_id,
+      pad_name: match.pad_name,
+      chunk_text: match.chunk_text,
+      score,
+      timestamp_seconds: seconds,
+      timestamp_label: label,
+    };
+  });
+  callbacks.onSources?.(sources);
+
+  // 3. Memory preamble (best-effort)
+  const { fetchChatPreamble } = await import('../hooks/useOllama');
+  let memPrefix = '';
+  try { memPrefix = (await fetchChatPreamble()).system; } catch { /* offline preamble is fine */ }
+  if (memPrefix) memPrefix = memPrefix.trim() + '\n\n';
+
+  // 4. Build the enumerated-sources prompt.
+  let system: string;
+  if (sources.length) {
+    const context = sources
+      .map(s => {
+        // Truncate very long excerpts in the prompt itself — the drawer still
+        // shows the full 500-char version to the user.
+        const excerpt = s.chunk_text.length > 1200
+          ? s.chunk_text.slice(0, 1200).trimEnd() + '…'
+          : s.chunk_text;
+        return `[${s.n}] « ${s.pad_name} »\n${excerpt}`;
+      })
+      .join('\n\n---\n\n');
+    system = lang === 'fr'
+      ? `${memPrefix}Tu es l'assistant personnel de l'utilisateur. Tu réponds aux questions en te basant EXCLUSIVEMENT sur les extraits de notes numérotés ci-dessous. Si les extraits ne contiennent pas la réponse, dis-le franchement plutôt que d'inventer.\n\nRÈGLE DE CITATION : chaque fois que tu utilises une information issue d'un extrait, marque-le immédiatement par [[N]] où N est le numéro entre crochets de la source. Exemple : « Le taux de conversion a doublé en 2024 [[2]]. » Plusieurs sources : [[1]][[3]]. Ne mets JAMAIS un [[N]] pour une source qui n'est pas listée.\n\nSOURCES NUMÉROTÉES :\n\n${context}\n\nRéponds en français, précis et concis, structure en paragraphes ou puces selon la question.`
+      : `${memPrefix}You are the user's personal assistant. Answer using ONLY the numbered note excerpts below. If they don't contain the answer, say so plainly instead of guessing.\n\nCITATION RULE: every time you use information from an excerpt, immediately mark it with [[N]] where N is the bracketed source number. Example: "Conversion doubled in 2024 [[2]]." Multiple sources: [[1]][[3]]. NEVER emit a [[N]] for a source that isn't listed.\n\nNUMBERED SOURCES:\n\n${context}\n\nAnswer in English, precise and concise, structured in paragraphs or bullets as fits the question.`;
+  } else {
+    system = lang === 'fr'
+      ? `${memPrefix}Tu es un assistant. Aucune note pertinente n'a été trouvée pour cette question — indique-le à l'utilisateur et propose de reformuler ou d'indexer davantage de notes.`
+      : `${memPrefix}You are an assistant. No relevant notes were found for this question — say so and suggest rephrasing or indexing more notes.`;
+  }
+
+  // 5. Stream the answer, accumulating for the follow-up call below.
+  const answerParts: string[] = [];
+  await streamLocalOllamaChat(
+    chatModel,
+    [{ role: 'system', content: system }, { role: 'user', content: question }],
+    (tok) => { answerParts.push(tok); callbacks.onChunk(tok); },
+    signal,
+  );
+
+  // 6. Follow-up questions — best-effort, silent no-op on failure.
+  if (callbacks.onFollowups) {
+    const answer = answerParts.join('').trim();
+    if (answer && !signal?.aborted) {
+      const followups = await followupQuestions(chatModel, question, answer, lang);
+      if (followups.length) callbacks.onFollowups(followups);
+    }
+  }
 }

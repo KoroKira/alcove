@@ -439,6 +439,193 @@
   margin-left: 3px;
 }
 
+/* ── Agentic RAG additions (fanout, citations, numbered sources, followups) ── */
+
+.ai-msg__subqueries {
+  margin: 4px 0 6px;
+  font-size: 11px;
+  color: var(--color-on-surface-low, var(--ap-text2));
+
+  summary {
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    background: var(--color-surface-mid, var(--ap-bg2));
+    border-radius: var(--ap-radius-xs);
+    list-style: none;
+    &::-webkit-details-marker { display: none; }
+  }
+
+  ul {
+    margin: 6px 0 0;
+    padding-left: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    li { line-height: 1.4; }
+  }
+}
+
+/* Inline [[N]] citation chip. */
+.ai-msg__cite {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  margin: 0 2px;
+  background: var(--ap-accent, #7c56ff);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: middle;
+  transition: transform 120ms ease, filter 120ms ease;
+  &:hover { filter: brightness(1.15); transform: translateY(-1px); }
+}
+
+/* Numbered sources list (replaces the flat chip strip when the sources come
+ * with excerpts from agenticRagChat). */
+.ai-msg__sources--numbered {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  margin-top: 10px;
+  border-top: 1px dashed var(--color-surface-mid, var(--ap-bg2));
+  padding-top: 8px;
+}
+
+.ai-msg__source {
+  background: var(--color-surface-mid, var(--ap-bg2));
+  border-radius: var(--ap-radius-xs);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: box-shadow 200ms ease, background 200ms ease;
+  &--flash {
+    background: var(--ap-accent-tint, rgba(124, 86, 255, 0.18));
+    box-shadow: 0 0 0 1px var(--ap-accent, #7c56ff);
+  }
+}
+
+.ai-msg__source-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+
+.ai-msg__source-n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background: var(--ap-accent, #7c56ff);
+  color: #fff;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.ai-msg__source-title {
+  color: var(--color-on-surface, var(--ap-text0));
+  font-weight: 500;
+  text-decoration: none;
+  &:hover { text-decoration: underline; }
+}
+
+.ai-msg__source-ts {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--ap-red, #ea4a2e);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 500;
+  text-decoration: none;
+  &:hover { filter: brightness(1.15); }
+}
+
+.ai-msg__source-excerpt {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--color-on-surface-low, var(--ap-text2));
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Follow-up pills. */
+.ai-msg__followups {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-msg__followups-label {
+  font-size: 10px;
+  color: var(--color-on-surface-low, var(--ap-text2));
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.ai-msg__followups-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ai-msg__followup {
+  border: 1px solid var(--color-surface-mid, var(--ap-bg2));
+  background: transparent;
+  color: var(--color-on-surface, var(--ap-text0));
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+  &:hover:not(:disabled) {
+    background: var(--color-surface-mid, var(--ap-bg2));
+    border-color: var(--ap-accent, #7c56ff);
+  }
+  &:disabled { opacity: 0.5; cursor: default; }
+}
+
+/* Bottom action row (Add to notebook, Insert). */
+.ai-msg__actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.ai-msg__action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid var(--color-surface-mid, var(--ap-bg2));
+  background: transparent;
+  color: var(--color-on-surface, var(--ap-text0));
+  border-radius: var(--ap-radius-xs);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 120ms ease;
+  &:hover { background: var(--color-surface-mid, var(--ap-bg2)); }
+}
+
 /* ── Link suggestions ── */
 .ai-panel__link-suggestions {
   border-top: 1px solid var(--color-surface-mid, var(--ap-bg2));

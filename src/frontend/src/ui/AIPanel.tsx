@@ -3,11 +3,11 @@ import { useTranslation } from 'react-i18next';
 import {
   X, Sparkles, Send, FileText, Tag, Pencil, Bot, Settings,
   Search, Link, Zap, ArrowDownToLine, Loader, ChevronDown, ChevronUp, Workflow,
-  MessageSquare, Plus, Trash2, Brain, Check,
+  MessageSquare, Plus, Trash2, Brain, Check, Play, BookmarkPlus, Sigma,
 } from 'lucide-react';
 import { useOllamaModels, streamLocalOllamaChat, fetchChatPreamble } from '../hooks/useOllama';
 import { suggestTags, suggestLinks, generateFlashcards, generateDiagram } from '../lib/aiPrompts';
-import { indexAll, ragChat } from '../lib/rag';
+import { indexAll, agenticRagChat, AgenticSource } from '../lib/rag';
 import { useAgentMemory, MemoryProposal } from '../hooks/useAgentMemory';
 import OllamaSetup from './OllamaSetup';
 import ModelManager from './ModelManager';
@@ -19,13 +19,20 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   sources?: RagSource[];
+  // Fanout sub-queries the agentic flow generated for this turn.
+  subqueries?: string[];
+  // Follow-up questions proposed after the answer settled.
+  followups?: string[];
 }
 
-interface RagSource {
+// Extends AgenticSource — the chat panel and agenticRagChat agree on shape so
+// no adapter is needed between them. `n` is present for agentic messages, absent
+// for anything the legacy ragChat might still produce.
+type RagSource = Partial<AgenticSource> & {
   pad_id: string;
   pad_name: string;
   score: number;
-}
+};
 
 interface LinkSuggestion {
   name: string;
@@ -56,6 +63,39 @@ const CUSTOM_PROMPT_KEY = 'alcove-ai-custom-prompt';
 
 function filterThinkBlocks(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+}
+
+/**
+ * Render an assistant message that embeds [[N]] citation markers as a mix of
+ * plain text spans and small clickable chips. Each chip scrolls the sources
+ * drawer to entry #N and briefly highlights it.
+ */
+function renderWithCitations(
+  text: string,
+  onCite: (n: number) => void,
+): React.ReactNode {
+  const parts: React.ReactNode[] = [];
+  const re = /\[\[(\d{1,3})\]\]/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    const n = parseInt(m[1], 10);
+    parts.push(
+      <button
+        key={`c${m.index}`}
+        type="button"
+        className="ai-msg__cite"
+        onClick={() => onCite(n)}
+        title={`Source ${n}`}
+      >
+        {n}
+      </button>
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
 }
 
 /* ─── Component ─── */
@@ -411,42 +451,86 @@ export default function AIPanel({
     } finally { setIndexing(false); }
   };
 
-  const handleRagSend = async () => {
-    if (!ragQuery.trim() || ragStreaming) return;
-    const q = ragQuery;
+  const handleRagSend = useCallback(async (override?: string) => {
+    const q = (override ?? ragQuery).trim();
+    if (!q || ragStreaming) return;
     setRagQuery('');
     setRagMessages(prev => [...prev, { role: 'user', content: q }]);
     setRagStreaming(true);
-    setRagMessages(prev => [...prev, { role: 'assistant', content: '', sources: [] }]);
+    setRagMessages(prev => [...prev, {
+      role: 'assistant', content: '', sources: [], subqueries: [], followups: [],
+    }]);
 
-    try {
-      await ragChat(
-        model,
-        q,
-        (sources) => {
-          setRagMessages(prev => {
-            const copy = [...prev];
-            copy[copy.length - 1] = { ...copy[copy.length - 1], sources };
-            return copy;
-          });
-        },
-        (chunk) => {
-          setRagMessages(prev => {
-            const copy = [...prev];
-            copy[copy.length - 1] = { ...copy[copy.length - 1], content: copy[copy.length - 1].content + chunk };
-            return copy;
-          });
-        },
-        { lang, topK: 5 },
-      );
-    } catch (e) {
+    // Every SSE update touches only the last (assistant) message; the helper
+    // clones the array and merges `patch` so calls stay one-liners below.
+    const patchLast = (patch: Partial<Message>) => {
       setRagMessages(prev => {
         const copy = [...prev];
-        copy[copy.length - 1] = { ...copy[copy.length - 1], content: e instanceof Error ? e.message : t('ai.error') };
+        const last = copy[copy.length - 1];
+        copy[copy.length - 1] = { ...last, ...patch };
         return copy;
       });
+    };
+
+    try {
+      await agenticRagChat(model, q, {
+        onSubqueries: (items) => patchLast({ subqueries: items }),
+        onSources: (items) => patchLast({ sources: items }),
+        onChunk: (chunk) => {
+          setRagMessages(prev => {
+            const copy = [...prev];
+            const last = copy[copy.length - 1];
+            copy[copy.length - 1] = { ...last, content: last.content + chunk };
+            return copy;
+          });
+        },
+        onFollowups: (items) => patchLast({ followups: items }),
+      }, { lang });
+    } catch (e) {
+      patchLast({ content: e instanceof Error ? e.message : t('ai.error') });
     } finally { setRagStreaming(false); }
-  };
+  }, [ragQuery, ragStreaming, model, lang, t]);
+
+  const handleFollowup = useCallback((q: string) => {
+    handleRagSend(q);
+  }, [handleRagSend]);
+
+  // "Add to notebook": persist the just-answered assistant message (with its
+  // sources) as a brand-new document pad, then open it in a new tab. Uses the
+  // POST /api/pad/new endpoint's optional `content` field so no second PUT.
+  const handleAddToNotebook = useCallback(async (msg: Message) => {
+    const idx = ragMessages.indexOf(msg);
+    const prev = idx > 0 ? ragMessages[idx - 1] : null;
+    const question = prev?.role === 'user' ? prev.content : '';
+    const now = new Date().toISOString().slice(0, 10);
+    const title = question
+      ? question.slice(0, 60) + (question.length > 60 ? '…' : '')
+      : `Chat ${now}`;
+    const parts: string[] = [];
+    if (question) parts.push(`# ${title}\n\n> ${question}\n`);
+    parts.push(msg.content.trim());
+    if (msg.sources && msg.sources.length) {
+      parts.push('\n\n---\n\n## Sources\n');
+      msg.sources.forEach((s, i) => {
+        const label = `[[${s.pad_name}]]`;
+        const ts = s.timestamp_label ? ` — ▶ ${s.timestamp_label}` : '';
+        const excerpt = (s.chunk_text || '').replace(/\n/g, '\n> ');
+        parts.push(`${s.n ?? i + 1}. ${label}${ts}\n\n> ${excerpt}\n`);
+      });
+    }
+    try {
+      const resp = await fetch('/api/pad/new', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pad_type: 'document',
+          display_name: title,
+          content: parts.join('\n'),
+        }),
+      });
+      const data = await resp.json();
+      if (data?.id) window.open(`/pad/${data.id}`, '_blank');
+    } catch { /* noise not worth wiring a toast for this button */ }
+  }, [ragMessages]);
 
   /* ── Setup handlers ── */
   const handleSetupDone = () => {
@@ -824,35 +908,141 @@ export default function AIPanel({
                     <div>{t('ai.ragPlaceholder')}</div>
                   </div>
                 )}
-                {ragMessages.map((msg, i) => (
-                  <div key={i} className={`ai-msg ai-msg--${msg.role}`}>
-                    <div className="ai-msg__role">
-                      {msg.role === 'user' ? t('ai.you') : t('ai.assistant')}
-                    </div>
-                    {msg.content === '' && ragStreaming && i === ragMessages.length - 1 ? (
-                      <div className="ai-msg__thinking"><span /><span /><span /></div>
-                    ) : (
-                      <>
-                        <div className="ai-msg__content">{msg.content}</div>
-                        {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && (
-                          <div className="ai-msg__sources">
-                            <div className="ai-msg__sources-label">{t('ai.sources')}</div>
-                            {msg.sources.map(s => (
-                              <span key={s.pad_id} className="ai-msg__source-chip">
-                                {s.pad_name} <span className="ai-msg__source-score">{Math.round(s.score * 100)}%</span>
-                              </span>
-                            ))}
+                {ragMessages.map((msg, i) => {
+                  const isLast = i === ragMessages.length - 1;
+                  const scrollToSource = (n: number) => {
+                    const el = document.getElementById(`rag-src-${i}-${n}`);
+                    if (!el) return;
+                    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    el.classList.add('ai-msg__source--flash');
+                    setTimeout(() => el.classList.remove('ai-msg__source--flash'), 1400);
+                  };
+                  return (
+                    <div key={i} className={`ai-msg ai-msg--${msg.role}`}>
+                      <div className="ai-msg__role">
+                        {msg.role === 'user' ? t('ai.you') : t('ai.assistant')}
+                      </div>
+                      {msg.role === 'assistant' && msg.subqueries && msg.subqueries.length > 0 && (
+                        <details className="ai-msg__subqueries">
+                          <summary>
+                            <Sigma size={11} />
+                            {' '}{msg.subqueries.length} {t('ai.ragSubqueriesLabel', { defaultValue: 'sous-requêtes' })}
+                          </summary>
+                          <ul>
+                            {msg.subqueries.map((s, j) => <li key={j}>{s}</li>)}
+                          </ul>
+                        </details>
+                      )}
+                      {msg.content === '' && ragStreaming && isLast ? (
+                        <div className="ai-msg__thinking"><span /><span /><span /></div>
+                      ) : (
+                        <>
+                          <div className="ai-msg__content">
+                            {msg.role === 'assistant'
+                              ? renderWithCitations(msg.content, scrollToSource)
+                              : msg.content}
                           </div>
-                        )}
-                        {msg.role === 'assistant' && msg.content && onInsertContent && (
-                          <button className="ai-msg__insert-btn" onClick={() => onInsertContent(msg.content)} title={t('ai.insertIntoPad')}>
-                            <ArrowDownToLine size={11} /> {t('ai.insertIntoPad')}
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                ))}
+                          {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && (
+                            <div className="ai-msg__sources ai-msg__sources--numbered">
+                              <div className="ai-msg__sources-label">
+                                {t('ai.sources')} · {msg.sources.length}
+                              </div>
+                              {msg.sources.map((s, j) => {
+                                const excerptShort = s.chunk_text
+                                  ? (s.chunk_text.length > 500
+                                    ? s.chunk_text.slice(0, 500).trimEnd() + '…'
+                                    : s.chunk_text)
+                                  : '';
+                                return (
+                                  <div
+                                    key={`${s.pad_id}-${s.n ?? j}`}
+                                    id={`rag-src-${i}-${s.n ?? j + 1}`}
+                                    className="ai-msg__source"
+                                  >
+                                    <div className="ai-msg__source-head">
+                                      {s.n !== undefined && (
+                                        <span className="ai-msg__source-n">{s.n}</span>
+                                      )}
+                                      <a
+                                        className="ai-msg__source-title"
+                                        href={
+                                          s.timestamp_seconds != null
+                                            ? `/pad/${s.pad_id}?t=${s.timestamp_seconds}`
+                                            : `/pad/${s.pad_id}`
+                                        }
+                                        target="_blank"
+                                        rel="noreferrer"
+                                      >
+                                        {s.pad_name}
+                                      </a>
+                                      {s.timestamp_label && (
+                                        <a
+                                          className="ai-msg__source-ts"
+                                          href={`/pad/${s.pad_id}?t=${s.timestamp_seconds ?? 0}`}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          title={t('ai.ragOpenAtTime', { defaultValue: 'Ouvrir à ce moment' })}
+                                        >
+                                          <Play size={9} /> {s.timestamp_label}
+                                        </a>
+                                      )}
+                                      <span className="ai-msg__source-score">
+                                        {Math.round(s.score * 100)}%
+                                      </span>
+                                    </div>
+                                    {excerptShort && (
+                                      <div className="ai-msg__source-excerpt">{excerptShort}</div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {msg.role === 'assistant' && msg.followups && msg.followups.length > 0 && (
+                            <div className="ai-msg__followups">
+                              <div className="ai-msg__followups-label">
+                                {t('ai.ragFollowups', { defaultValue: 'À creuser ensuite' })}
+                              </div>
+                              <div className="ai-msg__followups-list">
+                                {msg.followups.map((f, j) => (
+                                  <button
+                                    key={j}
+                                    className="ai-msg__followup"
+                                    onClick={() => handleFollowup(f)}
+                                    disabled={ragStreaming}
+                                  >
+                                    {f}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {msg.role === 'assistant' && msg.content && (
+                            <div className="ai-msg__actions">
+                              <button
+                                className="ai-msg__action-btn"
+                                onClick={() => handleAddToNotebook(msg)}
+                                title={t('ai.ragAddToNotebook', { defaultValue: 'Ajouter au notebook' })}
+                              >
+                                <BookmarkPlus size={11} />
+                                {' '}{t('ai.ragAddToNotebook', { defaultValue: 'Ajouter au notebook' })}
+                              </button>
+                              {onInsertContent && (
+                                <button
+                                  className="ai-msg__action-btn"
+                                  onClick={() => onInsertContent(msg.content)}
+                                  title={t('ai.insertIntoPad')}
+                                >
+                                  <ArrowDownToLine size={11} /> {t('ai.insertIntoPad')}
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
                 <div ref={ragBottomRef} />
               </div>
 
@@ -868,7 +1058,7 @@ export default function AIPanel({
                 />
                 <button
                   className="ai-panel__send"
-                  onClick={handleRagSend}
+                  onClick={() => handleRagSend()}
                   disabled={!ragQuery.trim() || ragStreaming}
                 >
                   {ragStreaming ? '■' : <Search size={14} />}
