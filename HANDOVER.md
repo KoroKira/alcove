@@ -24,8 +24,9 @@ Comparaison finale Alcove vs GetRecall (faite en direct, captures à l'appui) :
 
 ## 2. Chantier A — Groupes de couleur par requête (graphe) — ✅ FAIT ET VÉRIFIÉ
 
-Implémenté, testé en direct sur une vraie instance locale, et commité
-(`0ca5909`, `4565537`). Pas encore déployé sur alcove-server.
+Implémenté, testé en direct sur une vraie instance locale, commité
+(`0ca5909`, `4565537`) et déployé sur alcove-server (détails en bas de
+section).
 
 Trois modes de requête par groupe, comme prévu à l'origine, avec en plus le
 matching contenu et la similarité sémantique par vectorisation demandés
@@ -91,7 +92,8 @@ alcove-pad grep -n 'r.tags' /app/routers/pad_router.py`).
 
 ## 3. Chantier B — Test de charge du graphe à échelle réelle — ✅ FAIT
 
-Implémenté et commité (`82b4aba`), pas encore déployé sur alcove-server.
+Implémenté, commité (`82b4aba`, `0d7831f`) et déployé sur alcove-server
+(détails en section 5).
 
 **Ce qui a été fait** : la boucle de répulsion `O(n²)` de `tick()` (jadis
 ligne 241-253) a été remplacée par une grille de hachage spatial. Comme la
@@ -145,9 +147,19 @@ la version précédente de ce plan) — la marge (21× de speedup, 12.7ms très
 en dessous du budget 16.7ms) est confortable même sans ces filets de sécurité
 supplémentaires.
 
-**Reste à faire** : déploiement sur alcove-server (même pipeline CI/CD que
-chantier A — push déjà fait, il ne reste que le `git pull` + `docker compose
-pull pad && up -d pad` côté serveur une fois l'image GHCR buildée).
+**Déployé sur alcove-server** — 2026-08-20. Image GHCR buildée par CI (run
+réussi, ~12 min — le job "Build and push Docker image" est le plus long,
+normal vu la taille des bundles monaco/excalidraw/mermaid) puis
+`docker compose -f docker-compose.selfhost.yml pull pad && up -d pad`.
+Vérifié après coup via
+`docker inspect ghcr.io/korokira/alcove:main --format '{{json .Config.Labels}}'`
+→ `org.opencontainers.image.revision` = `0d7831f...` = exactement le commit
+du benchmark chantier B. (Note : grep direct de `REPULSION_CUTOFF` dans les
+assets JS ne marche pas pour vérifier un déploiement frontend — le bundle est
+minifié, les noms de variables sont mangled. Le label OCI `image.revision` est
+la bonne méthode de vérification post-déploiement pour le frontend, à la
+différence du backend Python où grep direct sur le code déployé fonctionne
+tel quel.)
 
 ## 4. Export Recall partiel — fait, données disponibles
 
@@ -202,19 +214,32 @@ option identifiée en passant, à ne lancer que si l'utilisateur veut
 explicitement un jour rapatrier tout son historique Recall dans Alcove pour de
 bon (migration complète, pas juste comparaison UX).
 
-## 5. Reprise directe — commandes prêtes
+## 5. Déploiement — pense-bête
 
 ```bash
 # Voir l'échantillon d'export Recall
 ls docs/recall-export-sample/
 
-# Reprendre le chantier A (groupes de couleur) :
-# ouvrir directement GraphView.tsx ligne 79 (searchRef) et 157 (isMatch)
-
-# Reprendre le chantier B (test de charge) :
-# d'abord lire GraphView.tsx lignes 229-260 pour confirmer la complexité O(n²)
+# Rejouer le benchmark chantier B
+node scripts/loadtest/bench_repulsion.mjs
 ```
 
-Déploiement (rappel, cf. mémoire `feedback_docker_restart_vs_build`) : sur
-alcove-server, toujours `docker compose build <service>` avant `up`/`restart`
-— `restart` seul ne prend jamais en compte les changements de code.
+Pipeline de déploiement actuel pour `alcove-pad` sur alcove-server (cf. section
+4 et mémoire `feedback_docker_restart_vs_build`, corrigée le 2026-08-20) :
+push sur `main` → CI GitHub Actions build + push `ghcr.io/korokira/alcove:main`
+(~10-15 min, surveiller via
+`curl -s "https://api.github.com/repos/KoroKira/alcove/actions/runs?per_page=1&branch=main"`)
+→ sur le serveur, `cd /srv/docker/alcove && git pull && docker compose
+-f docker-compose.selfhost.yml pull pad && docker compose -f
+docker-compose.selfhost.yml up -d pad`. Vérifier après coup via le label OCI
+`org.opencontainers.image.revision` de l'image (pas de grep direct sur les
+assets JS minifiés).
+
+## 6. État final — tous les chantiers identifiés sont faits
+
+Chantier A (groupes de couleur, 3 modes tag/contenu/sémantique) et Chantier B
+(fix perf O(n²)→grille spatiale) sont **implémentés, testés, commités et
+déployés en production sur alcove-server**. Rien de connu ne reste ouvert
+dans ce document — seul le bug `window.prompt()` de `TabContextMenu.tsx` a
+été signalé séparément (`task_0ddc8518`), volontairement hors scope de ces
+deux chantiers.
