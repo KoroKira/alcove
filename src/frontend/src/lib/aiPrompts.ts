@@ -172,6 +172,49 @@ export async function generateFlashcards(
 }
 
 
+// ── Generate quiz (chantier #19) ────────────────────────────────────────────
+//
+// Distinct from generateFlashcards above: flashcards feed the FSRS-5 spaced-
+// repetition deck (long-term retention, graded review scheduling). A quiz is
+// an ungraded, one-off "check your understanding" session for THIS note right
+// now — closer to Recall's per-card "Test Your Knowledge" tab. Same Q/A shape
+// under the hood (still the model's easiest reliable output format) but
+// consumed by QuizModal as a linear self-check flow, not persisted anywhere.
+
+export interface QuizQuestion { q: string; a: string; }
+
+export async function generateQuiz(
+  model: string, content: string, lang: Lang,
+): Promise<QuizQuestion[]> {
+  const prompt = lang === 'fr'
+    ? `Voici le contenu d'une note :\n\n${content.slice(0, 4000)}\n\n`
+      + `Génère entre 4 et 8 questions pour vérifier la compréhension de ce contenu, `
+      + `sous ce format EXACT (respecte bien les préfixes Q: et A: en début de ligne) :\n\n`
+      + `Q: [question qui teste la compréhension, pas juste la mémorisation d'un mot]\n`
+      + `A: [réponse complète en une ou deux phrases]\n\n`
+      + `Varie la difficulté et les angles. Génère uniquement les paires Q:/A:, sans introduction ni commentaire.`
+    : `Here is a note's content:\n\n${content.slice(0, 4000)}\n\n`
+      + `Generate between 4 and 8 questions that check understanding of this content, `
+      + `in this EXACT format (keep Q: and A: at the start of each line):\n\n`
+      + `Q: [a question testing understanding, not just word recall]\n`
+      + `A: [a complete answer in one or two sentences]\n\n`
+      + `Vary difficulty and angle. Output only the Q:/A: pairs, no intro or commentary.`;
+  const raw = await oneShotLocalOllama(model, [{ role: 'user', content: prompt }], { timeoutMs: 120_000 });
+  const cleaned = stripThink(raw);
+  const lines = cleaned.split('\n').map(l => l.trim()).filter(Boolean);
+  const out: QuizQuestion[] = [];
+  let pendingQ: string | null = null;
+  for (const line of lines) {
+    if (line.startsWith('Q:')) pendingQ = line.slice(2).trim();
+    else if (line.startsWith('A:') && pendingQ) {
+      out.push({ q: pendingQ, a: line.slice(2).trim() });
+      pendingQ = null;
+    }
+  }
+  return out;
+}
+
+
 // ── Generate diagram (one-shot, Mermaid code block) ────────────────────────
 
 const MERMAID_KINDS = 'flowchart, sequenceDiagram, classDiagram, stateDiagram-v2, erDiagram, gantt, mindmap, or pie';

@@ -280,8 +280,21 @@ export interface AgenticSource {
 /** Callback bundle for agenticRagChat. Every non-required callback is a
  * silent no-op if omitted, so the same helper works for both the RAG panel
  * (which wants everything) and future callers that just need the answer. */
+/** A named step in the agentic pipeline's reasoning trace (chantier #18) —
+ * shown as a collapsible "Thought" strip in the UI, mirroring Recall's named
+ * tool-call trace ("Getting knowledge base stats ✓", "Listing tags ✓")
+ * instead of raw sub-query text. `detail` is a short human-readable result
+ * summary shown once the step completes. */
+export interface AgenticStep {
+  id: string;
+  label: string;
+  detail?: string;
+  status: 'pending' | 'done';
+}
+
 export interface AgenticCallbacks {
   onSubqueries?: (items: string[]) => void;
+  onSteps?: (steps: AgenticStep[]) => void;
   onSources?: (sources: AgenticSource[]) => void;
   onChunk: (text: string) => void;
   onFollowups?: (items: string[]) => void;
@@ -382,13 +395,29 @@ export async function agenticRagChat(
   chatModel: string,
   question: string,
   callbacks: AgenticCallbacks,
-  opts: { topKPerSubquery?: number; lang?: 'fr' | 'en'; embedModel?: string; signal?: AbortSignal } = {},
+  opts: {
+    topKPerSubquery?: number; lang?: 'fr' | 'en'; embedModel?: string; signal?: AbortSignal;
+    /** Active persona's system-prompt addendum (chantier #17) — appended
+     * after the memory preamble, before the citation/answering rules. */
+    personaInstructions?: string;
+  } = {},
 ): Promise<void> {
-  const { topKPerSubquery = 5, lang = 'fr', embedModel = EMBED_MODEL_DEFAULT, signal } = opts;
+  const { topKPerSubquery = 5, lang = 'fr', embedModel = EMBED_MODEL_DEFAULT, signal, personaInstructions } = opts;
+
+  const steps: AgenticStep[] = [
+    { id: 'fanout', label: lang === 'fr' ? 'Décomposition de la question' : 'Decomposing the question', status: 'pending' },
+    { id: 'retrieval', label: lang === 'fr' ? 'Recherche sémantique' : 'Semantic search', status: 'pending' },
+  ];
+  callbacks.onSteps?.(steps);
 
   // 1. Fanout ---------------------------------------------------------------
   const queries = await fanoutSubqueries(chatModel, question, lang, signal);
   callbacks.onSubqueries?.(queries);
+  steps[0] = {
+    ...steps[0], status: 'done',
+    detail: lang === 'fr' ? `${queries.length} sous-requêtes` : `${queries.length} sub-queries`,
+  };
+  callbacks.onSteps?.([...steps]);
 
   // 2. Retrieve per sub-query in parallel, union+dedup by (pad_id, chunk_text).
   // Chunk index isn't exposed by /rag/knn today so we key on the text — for a
@@ -432,12 +461,20 @@ export async function agenticRagChat(
     };
   });
   callbacks.onSources?.(sources);
+  steps[1] = {
+    ...steps[1], status: 'done',
+    detail: lang === 'fr' ? `${sources.length} sources trouvées` : `${sources.length} sources found`,
+  };
+  callbacks.onSteps?.([...steps]);
 
   // 3. Memory preamble (best-effort)
   const { fetchChatPreamble } = await import('../hooks/useOllama');
   let memPrefix = '';
   try { memPrefix = (await fetchChatPreamble()).system; } catch { /* offline preamble is fine */ }
   if (memPrefix) memPrefix = memPrefix.trim() + '\n\n';
+  if (personaInstructions?.trim()) {
+    memPrefix += `Instructions de la persona active :\n${personaInstructions.trim().slice(0, 2000)}\n\n`;
+  }
 
   // 4. Build the enumerated-sources prompt.
   let system: string;

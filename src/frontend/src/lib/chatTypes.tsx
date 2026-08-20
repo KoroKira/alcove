@@ -5,7 +5,7 @@
  * the same ~150 lines of JSX in two places.
  */
 import React from 'react';
-import type { AgenticSource } from './rag';
+import type { AgenticSource, AgenticStep } from './rag';
 
 export interface Message {
   role: 'user' | 'assistant';
@@ -13,6 +13,10 @@ export interface Message {
   sources?: RagSource[];
   // Fanout sub-queries the agentic flow generated for this turn.
   subqueries?: string[];
+  // Named reasoning-trace steps (chantier #18) — preferred over `subqueries`
+  // for display when present; falls back to the plain subqueries list for
+  // any code path that hasn't been updated to emit steps.
+  steps?: AgenticStep[];
   // Follow-up questions proposed after the answer settled.
   followups?: string[];
 }

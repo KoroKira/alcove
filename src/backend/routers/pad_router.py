@@ -329,9 +329,12 @@ async def get_knowledge_graph(
     from sqlalchemy import select as _sa_select
 
     # Nodes: only the metadata columns — never pull the (potentially huge) JSONB
-    # canvas scene, which we don't need to draw a node.
+    # canvas scene, which we don't need to draw a node. created_at feeds the
+    # graph's timeline scrubber (chantier #21) — cheap to include, no extra
+    # query needed.
     node_stmt = _sa_select(
         PadStore.id, PadStore.display_name, PadStore.pad_type, PadStore.is_scratch,
+        PadStore.created_at,
     ).where(PadStore.owner_id == user.id)
     node_rows = (await session.execute(node_stmt)).all()
 
@@ -340,6 +343,7 @@ async def get_knowledge_graph(
         "label": r.display_name,
         "type": r.pad_type or "canvas",
         "is_scratch": bool(r.is_scratch),
+        "created_at": r.created_at.isoformat() if r.created_at else None,
     } for r in node_rows]
 
     # Wikilinks may target any pad type, so the name→id map covers every node.

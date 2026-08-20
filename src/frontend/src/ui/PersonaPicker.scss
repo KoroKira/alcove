@@ -1,0 +1,154 @@
+.persona-picker {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.persona-picker__trigger {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border: 1px solid var(--color-surface-mid, var(--ap-bg2));
+  background: var(--color-surface-mid, var(--ap-bg2));
+  color: var(--color-on-surface, var(--ap-text0));
+  border-radius: var(--ap-radius-xs);
+  font-size: 11px;
+  cursor: pointer;
+  max-width: 160px;
+
+  span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  &--active { border-color: var(--ap-accent, #7c56ff); }
+  &:hover { background: var(--color-surface-lowest, var(--ap-bg0)); }
+}
+
+.persona-picker__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 220px;
+  max-width: 300px;
+  background: var(--color-surface-low, var(--ap-bg1));
+  border: 1px solid var(--color-surface-mid, var(--ap-bg2));
+  border-radius: var(--ap-radius-md, 10px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  z-index: 300;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.persona-picker__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--ap-radius-xs);
+  font-size: 12px;
+  color: var(--color-on-surface, var(--ap-text0));
+  cursor: default;
+
+  &:hover { background: var(--color-surface-mid, var(--ap-bg2)); }
+  &.active { color: var(--ap-accent, #7c56ff); font-weight: 600; }
+}
+
+.persona-picker__item-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  min-width: 0;
+  span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+
+.persona-picker__item-action {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--color-on-surface-low, var(--ap-text2));
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+  &:hover { background: var(--color-surface-lowest, var(--ap-bg0)); color: var(--color-on-surface, var(--ap-text0)); }
+  &--danger:hover { color: var(--ap-red, #ea4a2e); }
+}
+
+.persona-picker__item:hover .persona-picker__item-action { display: flex; }
+
+.persona-picker__add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border: none;
+  background: transparent;
+  color: var(--ap-accent, #7c56ff);
+  border-radius: var(--ap-radius-xs);
+  font-size: 12px;
+  cursor: pointer;
+  margin-top: 2px;
+  border-top: 1px solid var(--color-surface-mid, var(--ap-bg2));
+  padding-top: 8px;
+  &:hover { background: var(--color-surface-mid, var(--ap-bg2)); }
+}
+
+.persona-picker__editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px;
+}
+
+.persona-picker__editor-name {
+  border: 1px solid var(--color-surface-mid, var(--ap-bg2));
+  background: var(--color-surface-lowest, var(--ap-bg0));
+  color: var(--color-on-surface, var(--ap-text0));
+  border-radius: var(--ap-radius-xs);
+  padding: 6px 8px;
+  font-size: 12px;
+  outline: none;
+  &:focus { border-color: var(--ap-accent, #7c56ff); }
+}
+
+.persona-picker__editor-instructions {
+  border: 1px solid var(--color-surface-mid, var(--ap-bg2));
+  background: var(--color-surface-lowest, var(--ap-bg0));
+  color: var(--color-on-surface, var(--ap-text0));
+  border-radius: var(--ap-radius-xs);
+  padding: 6px 8px;
+  font-size: 12px;
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+  &:focus { border-color: var(--ap-accent, #7c56ff); }
+}
+
+.persona-picker__editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+
+  button {
+    padding: 5px 10px;
+    border: 1px solid var(--color-surface-mid, var(--ap-bg2));
+    background: transparent;
+    color: var(--color-on-surface, var(--ap-text0));
+    border-radius: var(--ap-radius-xs);
+    font-size: 11px;
+    cursor: pointer;
+    &:hover { background: var(--color-surface-mid, var(--ap-bg2)); }
+    &.primary {
+      background: var(--ap-accent, #7c56ff);
+      border-color: var(--ap-accent, #7c56ff);
+      color: #fff;
+      &:hover { filter: brightness(1.1); }
+      &:disabled { opacity: 0.5; cursor: default; }
+    }
+  }
+}

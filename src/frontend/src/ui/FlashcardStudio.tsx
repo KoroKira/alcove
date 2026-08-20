@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { X, BookOpen, Sparkles, RotateCcw, ChevronRight, Check, Zap, AlertCircle, Meh } from 'lucide-react';
 import type { Tab } from '../hooks/usePadTabs';
 import { FSRSCard, Rating, review, today, newCard, migrateFromSM2 } from '../lib/fsrs';
+import { logReview } from '../lib/reviewActivity';
 import './FlashcardStudio.scss';
 
 interface Card { q: string; a: string; padId?: string; padName?: string; }
@@ -145,6 +146,7 @@ export default function FlashcardStudio({ tabs, onClose, onSelectPad }: Props) {
     setSrsState(nextState);
     saveFSRS(cards, nextState);
     // "Again" counts as ko, everything else as ok (Hard still means recalled).
+    logReview(rating >= 2);
     setScore(s => ({
       ...s,
       ok: rating >= 2 ? s.ok + 1 : s.ok,

@@ -468,6 +468,44 @@
   }
 }
 
+/* Named reasoning-trace steps (chantier #18) — replaces the plain
+ * sub-query list when the agentic flow emits named steps. */
+.ai-msg__steps {
+  padding-left: 0 !important;
+  list-style: none;
+}
+
+.ai-msg__step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+
+  &--done { color: var(--ap-green, #6ce39c); }
+  &--pending { color: var(--color-on-surface-low, var(--ap-text2)); }
+}
+
+.ai-msg__step-label {
+  color: var(--color-on-surface, var(--ap-text0));
+}
+
+.ai-msg__step-detail {
+  color: var(--color-on-surface-low, var(--ap-text2));
+  font-size: 10px;
+  &::before { content: '— '; }
+}
+
+.ai-msg__step-subqueries {
+  margin-top: 4px;
+  padding-left: 17px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--color-on-surface-low, var(--ap-text2));
+  font-size: 10px;
+  font-style: italic;
+}
+
 /* Inline [[N]] citation chip. */
 .ai-msg__cite {
   display: inline-flex;

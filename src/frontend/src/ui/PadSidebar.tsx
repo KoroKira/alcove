@@ -26,6 +26,7 @@ import {
   Link2,
   Telescope,
   BookOpen,
+  GraduationCap,
   Sigma,
   Trash2,
   X,
@@ -35,6 +36,7 @@ import {
 } from 'lucide-react';
 import { LANGUAGES, setLanguage, type LangCode } from '../i18n';
 import { getTheme } from '../themes';
+import { getDueCounts } from '../lib/reviewActivity';
 import type { Tab } from '../hooks/usePadTabs';
 import TabContextMenu from './TabContextMenu';
 import './PadSidebar.scss';
@@ -80,6 +82,7 @@ interface PadSidebarProps {
   onAddFromLink?: () => void;
   onSmartResearch?: () => void;
   onFlashcardStudio?: () => void;
+  onReviewDashboard?: () => void;
   onNewLatex?: () => void;
 }
 
@@ -142,6 +145,7 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
   onAddFromLink,
   onSmartResearch,
   onFlashcardStudio,
+  onReviewDashboard,
   onNewLatex,
 }) => {
   const { t, i18n } = useTranslation();
@@ -149,15 +153,15 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
   const [query, setQuery] = useState('');
   const [activeTag, setActiveTag] = useState<string | null>(null);
 
-  // Flashcards due today (SM-2 state lives in localStorage — see FlashcardStudio)
+  // Flashcards due today (FSRS-5 state lives in localStorage — see
+  // FlashcardStudio / lib/reviewActivity.ts). Was reading the legacy SM-2 key
+  // (`alcove-quiz-sm2`) here, which the FSRS migration stopped writing to —
+  // the badge silently went stale for any card created after that switch.
   const [dueFlashcards, setDueFlashcards] = useState(0);
   useEffect(() => {
     const count = () => {
-      try {
-        const saved: Record<string, { due: number }> = JSON.parse(localStorage.getItem('alcove-quiz-sm2') || '{}');
-        const today = Math.floor(Date.now() / 86400000);
-        setDueFlashcards(Object.values(saved).filter(c => c.due <= today).length);
-      } catch { setDueFlashcards(0); }
+      try { setDueFlashcards(getDueCounts().today); }
+      catch { setDueFlashcards(0); }
     };
     count();
     const id = setInterval(count, 60_000);
@@ -634,6 +638,11 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
           <button className="pad-sidebar__icon-btn pad-sidebar__icon-btn--badged" onClick={onFlashcardStudio} title="Studio de révision (flashcards)">
             <BookOpen size={15} />
             {dueFlashcards > 0 && <span className="pad-sidebar__badge">{dueFlashcards > 99 ? '99+' : dueFlashcards}</span>}
+          </button>
+        )}
+        {onReviewDashboard && (
+          <button className="pad-sidebar__icon-btn" onClick={onReviewDashboard} title="Tableau de révision">
+            <GraduationCap size={15} />
           </button>
         )}
       </div>

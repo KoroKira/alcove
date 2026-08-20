@@ -6,7 +6,7 @@
  */
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Play, BookmarkPlus, ArrowDownToLine, Sigma } from 'lucide-react';
+import { Play, BookmarkPlus, ArrowDownToLine, Sigma, Check, Loader } from 'lucide-react';
 import { Message, renderWithCitations } from '../lib/chatTypes';
 
 interface Props {
@@ -37,7 +37,30 @@ export default function ChatMessage({
       <div className="ai-msg__role">
         {msg.role === 'user' ? t('ai.you') : t('ai.assistant')}
       </div>
-      {msg.role === 'assistant' && msg.subqueries && msg.subqueries.length > 0 && (
+      {msg.role === 'assistant' && msg.steps && msg.steps.length > 0 ? (
+        <details className="ai-msg__subqueries">
+          <summary>
+            <Sigma size={11} />
+            {' '}{msg.steps.every(s => s.status === 'done')
+              ? t('ai.thoughtDone', { defaultValue: 'Réflexion' })
+              : t('ai.thoughtRunning', { defaultValue: 'Réflexion en cours…' })}
+          </summary>
+          <ul className="ai-msg__steps">
+            {msg.steps.map(s => (
+              <li key={s.id} className={`ai-msg__step ai-msg__step--${s.status}`}>
+                {s.status === 'done' ? <Check size={11} /> : <Loader size={11} className="ai-spin" />}
+                <span className="ai-msg__step-label">{s.label}</span>
+                {s.detail && <span className="ai-msg__step-detail">{s.detail}</span>}
+              </li>
+            ))}
+            {msg.subqueries && msg.subqueries.length > 0 && (
+              <li className="ai-msg__step-subqueries">
+                {msg.subqueries.map((s, j) => <div key={j}>{s}</div>)}
+              </li>
+            )}
+          </ul>
+        </details>
+      ) : msg.role === 'assistant' && msg.subqueries && msg.subqueries.length > 0 && (
         <details className="ai-msg__subqueries">
           <summary>
             <Sigma size={11} />

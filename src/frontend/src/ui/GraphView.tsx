@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { X, Network } from 'lucide-react';
+import { X, Network, Search, SlidersHorizontal } from 'lucide-react';
 import './GraphView.scss';
 
 interface GraphNode {
   id: string;
   label: string;
-  type: 'canvas' | 'document';
+  type: 'canvas' | 'document' | 'kanban' | 'gantt' | 'latex' | 'database';
   is_scratch: boolean;
+  created_at: string | null;
   x: number;
   y: number;
   vx: number;
@@ -21,9 +22,11 @@ interface Props {
 }
 
 // ── Physics constants ─────────────────────────────────────────────────────────
-const K_REP    = 3200;   // repulsion strength
+// K_REP and REST_LEN are now mutable (refs) so the "Espacement" / "Longueur
+// des liens" sliders (chantier #21) can nudge the running simulation live.
+const K_REP_DEFAULT    = 3200;   // repulsion strength
 const K_SPRING = 0.04;   // spring stiffness
-const REST_LEN = 160;    // spring rest length (px)
+const REST_LEN_DEFAULT = 160;    // spring rest length (px)
 const K_CENTER = 0.006;  // center gravity
 const DAMPING  = 0.82;   // velocity damping per tick
 const DT       = 1;      // time step
@@ -34,12 +37,25 @@ function themeVar(name: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
 }
 
-function getNodeColors(): Record<string, string> {
+// Every pad type gets a distinct color — was previously only canvas/document,
+// every other type (kanban/gantt/latex/database, all of which the backend
+// already reports via `pad_type`) silently fell back to plain text0, losing
+// all visual distinction on the graph.
+function getNodeColors(): Record<GraphNode['type'], string> {
   return {
     canvas:   themeVar('--ap-green', '#a6e3a1'),
     document: themeVar('--ap-accent2', '#89b4fa'),
+    kanban:   themeVar('--ap-mauve', '#cba6f7'),
+    gantt:    themeVar('--ap-peach', '#fab387'),
+    latex:    themeVar('--ap-red', '#f38ba8'),
+    database: themeVar('--ap-teal', '#94e2d5'),
   };
 }
+
+const TYPE_LABELS: Record<GraphNode['type'], string> = {
+  canvas: 'Canvas', document: 'Document', kanban: 'Kanban',
+  gantt: 'Gantt', latex: 'LaTeX', database: 'Database',
+};
 
 const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -53,6 +69,37 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
   const [loading, setLoading] = useState(true);
   const hoveredIdRef = useRef<string | null>(null);
   const clickedRef   = useRef(false);
+
+  // ── Controls (chantier #21) ────────────────────────────────────────────────
+  // State drives the UI (inputs, labels); refs mirror the same values for
+  // `draw()`/`tick()` to read live without needing to be recreated on every
+  // change — matches the existing pattern here (theme vars are also read
+  // live inside draw() rather than threaded through as deps).
+  const [search, setSearch] = useState('');
+  const searchRef = useRef('');
+  const [showUnconnected, setShowUnconnected] = useState(true);
+  const showUnconnectedRef = useRef(true);
+  const [showControls, setShowControls] = useState(false);
+  const [spacing, setSpacing] = useState(K_REP_DEFAULT);
+  const spacingRef = useRef(K_REP_DEFAULT);
+  const [linkLength, setLinkLength] = useState(REST_LEN_DEFAULT);
+  const linkLengthRef = useRef(REST_LEN_DEFAULT);
+  const [dataRange, setDataRange] = useState<[number, number]>([0, 1]);
+  const [timelineRange, setTimelineRange] = useState<[number, number]>([0, 1]);
+  const timelineRangeRef = useRef<[number, number]>([0, 1]);
+  const connectedIdsRef = useRef<Set<string>>(new Set());
+
+  // Redraw-on-demand helper for state-driven filter changes (the physics
+  // loop already redraws every frame while running, but once it settles
+  // after 5s a filter tweak needs to trigger a repaint by itself).
+  const drawRef = useRef<(() => void) | null>(null);
+  const requestDraw = useCallback(() => { drawRef.current?.(); }, []);
+
+  useEffect(() => { searchRef.current = search; requestDraw(); }, [search, requestDraw]);
+  useEffect(() => { showUnconnectedRef.current = showUnconnected; requestDraw(); }, [showUnconnected, requestDraw]);
+  useEffect(() => { spacingRef.current = spacing; }, [spacing]);
+  useEffect(() => { linkLengthRef.current = linkLength; }, [linkLength]);
+  useEffect(() => { timelineRangeRef.current = timelineRange; requestDraw(); }, [timelineRange, requestDraw]);
 
   const toWorld = useCallback((cx: number, cy: number) => {
     const t = transformRef.current;
@@ -93,11 +140,28 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
     const byId: Record<string, GraphNode> = {};
     nodes.forEach(n => (byId[n.id] = n));
 
-    // edges
+    // Active filters, read live from refs (chantier #21).
+    const search = searchRef.current.trim().toLowerCase();
+    const showUnconnected = showUnconnectedRef.current;
+    const [tMin, tMax] = timelineRangeRef.current;
+    const connected = connectedIdsRef.current;
+
+    const isVisible = (n: GraphNode): boolean => {
+      if (!showUnconnected && !connected.has(n.id)) return false;
+      if (n.created_at) {
+        const ts = new Date(n.created_at).getTime();
+        if (ts < tMin || ts > tMax) return false;
+      }
+      return true;
+    };
+    const isMatch = (n: GraphNode): boolean =>
+      !search || n.label.toLowerCase().includes(search);
+
+    // edges — only drawn when both endpoints are visible under the current filters.
     edges.forEach(e => {
       const a = byId[e.from];
       const b = byId[e.to];
-      if (!a || !b) return;
+      if (!a || !b || !isVisible(a) || !isVisible(b)) return;
       const highlighted = hoveredId && (a.id === hoveredId || b.id === hoveredId);
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
@@ -109,6 +173,8 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
 
     // nodes
     nodes.forEach(n => {
+      if (!isVisible(n)) return;
+      const dimmed = !isMatch(n);
       const color = nodeColors[n.type] || text0;
       const isHovered = n.id === hoveredId;
       const r = isHovered ? NODE_R + 3 : NODE_R;
@@ -124,6 +190,7 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
         ctx.fill();
       }
 
+      ctx.globalAlpha = dimmed ? 0.18 : 1;
       ctx.beginPath();
       ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
       ctx.fillStyle = isHovered ? color : color + 'cc';
@@ -166,6 +233,11 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
     const fy: Record<string, number> = {};
     nodes.forEach(n => { fx[n.id] = 0; fy[n.id] = 0; });
 
+    // Live from the "Espacement" / "Longueur des liens" sliders (#21) — refs
+    // so dragging a slider doesn't need to recreate this callback.
+    const kRep = spacingRef.current;
+    const restLen = linkLengthRef.current;
+
     // repulsion O(n²)
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
@@ -173,7 +245,7 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
         const dx = b.x - a.x || 0.01;
         const dy = b.y - a.y || 0.01;
         const d2 = dx * dx + dy * dy + 0.01;
-        const f = K_REP / d2;
+        const f = kRep / d2;
         const ux = dx / Math.sqrt(d2), uy = dy / Math.sqrt(d2);
         fx[a.id] -= ux * f; fy[a.id] -= uy * f;
         fx[b.id] += ux * f; fy[b.id] += uy * f;
@@ -186,7 +258,7 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
       if (!a || !b) return;
       const dx = b.x - a.x, dy = b.y - a.y;
       const d = Math.sqrt(dx * dx + dy * dy) || 0.01;
-      const f = K_SPRING * (d - REST_LEN);
+      const f = K_SPRING * (d - restLen);
       const ux = dx / d, uy = dy / d;
       fx[a.id] += ux * f; fy[a.id] += uy * f;
       fx[b.id] -= ux * f; fy[b.id] -= uy * f;
@@ -215,6 +287,8 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
     rafRef.current = requestAnimationFrame(loop);
   }, [tick, draw]);
 
+  useEffect(() => { drawRef.current = draw; }, [draw]);
+
   // ── Load data ─────────────────────────────────────────────────────────────
   useEffect(() => {
     fetch('/api/pad/graph')
@@ -229,6 +303,26 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
           vx: 0, vy: 0,
         }));
         edgesRef.current = edges;
+
+        // Connected-ids set for "Show Unconnected" (#21).
+        const connected = new Set<string>();
+        edges.forEach(e => { connected.add(e.from); connected.add(e.to); });
+        connectedIdsRef.current = connected;
+
+        // Timeline scrubber range — span of created_at across all nodes,
+        // padded by a day on each side so endpoints aren't clipped exactly
+        // at the slider's extremes. Falls back to a 1-day window around now
+        // if no node has a timestamp (shouldn't happen — created_at is
+        // always set server-side — but keeps the sliders well-formed).
+        const timestamps = nodes.map(n => n.created_at ? new Date(n.created_at).getTime() : NaN).filter(t => !isNaN(t));
+        const dayMs = 86_400_000;
+        const range: [number, number] = timestamps.length
+          ? [Math.min(...timestamps) - dayMs, Math.max(...timestamps) + dayMs]
+          : [Date.now() - dayMs, Date.now() + dayMs];
+        setDataRange(range);
+        setTimelineRange(range);
+        timelineRangeRef.current = range;
+
         setLoading(false);
         simRunRef.current = true;
         // stop simulation after 5s (energy dissipated)
@@ -339,16 +433,22 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
   };
 
   // ── Legend ────────────────────────────────────────────────────────────────
+  // Only types actually present in the loaded graph get a legend entry —
+  // a user with only canvas/document pads shouldn't see 4 empty swatches.
+  const presentTypes = Array.from(new Set(nodesRef.current.map(n => n.type)));
+  const nodeColors = getNodeColors();
   const Legend = () => (
-    <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-      {[['canvas', 'var(--ap-green)', 'Canvas'], ['document', 'var(--ap-accent2)', 'Document']].map(([, color, label]) => (
-        <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--ap-text2)' }}>
-          <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: color }} />
-          {label}
+    <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+      {(presentTypes.length ? presentTypes : ['canvas', 'document'] as const).map(type => (
+        <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--ap-text2)' }}>
+          <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: nodeColors[type] }} />
+          {TYPE_LABELS[type]}
         </div>
       ))}
     </div>
   );
+
+  const rangeFmt = (ts: number) => new Date(ts).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
 
   return (
     <div className="graph-overlay">
@@ -359,10 +459,74 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
         </div>
         <div className="graph-header__actions">
           <Legend />
-          <span className="graph-header__hint">Scroll pour zoomer · Glisser pour naviguer · Cliquer un nœud</span>
+          <div className="graph-search">
+            <Search size={12} />
+            <input
+              placeholder="Filtrer par titre…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+          <button
+            className={`graph-header__filters-btn${showControls ? ' active' : ''}`}
+            onClick={() => setShowControls(v => !v)}
+            title="Filtres et réglages"
+          >
+            <SlidersHorizontal size={14} />
+          </button>
           <button className="graph-header__close" onClick={onClose}><X size={18} /></button>
         </div>
       </div>
+
+      {showControls && (
+        <div className="graph-controls">
+          <label className="graph-controls__row">
+            <input type="checkbox" checked={showUnconnected} onChange={e => setShowUnconnected(e.target.checked)} />
+            Afficher les nœuds non connectés
+          </label>
+
+          <div className="graph-controls__row graph-controls__row--slider">
+            <span>Espacement</span>
+            <input
+              type="range" min={800} max={8000} step={100}
+              value={spacing}
+              onChange={e => setSpacing(Number(e.target.value))}
+            />
+          </div>
+
+          <div className="graph-controls__row graph-controls__row--slider">
+            <span>Longueur des liens</span>
+            <input
+              type="range" min={60} max={400} step={10}
+              value={linkLength}
+              onChange={e => setLinkLength(Number(e.target.value))}
+            />
+          </div>
+
+          <div className="graph-controls__row graph-controls__row--timeline">
+            <span>Période — {rangeFmt(timelineRange[0])} → {rangeFmt(timelineRange[1])}</span>
+            <div className="graph-controls__timeline">
+              <input
+                type="range"
+                min={dataRange[0]} max={dataRange[1]} step={3_600_000}
+                value={timelineRange[0]}
+                onChange={e => setTimelineRange([Math.min(Number(e.target.value), timelineRange[1]), timelineRange[1]])}
+              />
+              <input
+                type="range"
+                min={dataRange[0]} max={dataRange[1]} step={3_600_000}
+                value={timelineRange[1]}
+                onChange={e => setTimelineRange([timelineRange[0], Math.max(Number(e.target.value), timelineRange[0])])}
+              />
+            </div>
+            {(timelineRange[0] !== dataRange[0] || timelineRange[1] !== dataRange[1]) && (
+              <button className="graph-controls__reset" onClick={() => setTimelineRange(dataRange)}>
+                Réinitialiser la période
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {loading && (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ap-overlay0)', fontSize: 14 }}>

@@ -3,13 +3,16 @@ import { useTranslation } from 'react-i18next';
 import {
   X, Sparkles, Send, FileText, Tag, Pencil, Bot, Settings,
   Search, Link, Zap, ArrowDownToLine, Loader, ChevronDown, ChevronUp, Workflow,
-  MessageSquare, Plus, Trash2, Brain, Check,
+  MessageSquare, Plus, Trash2, Brain, Check, HelpCircle,
 } from 'lucide-react';
 import { useOllamaModels, streamLocalOllamaChat, fetchChatPreamble } from '../hooks/useOllama';
-import { suggestTags, suggestLinks, generateFlashcards, generateDiagram } from '../lib/aiPrompts';
+import { suggestTags, suggestLinks, generateFlashcards, generateDiagram, generateQuiz, QuizQuestion } from '../lib/aiPrompts';
+import QuizModal from './QuizModal';
 import { indexAll, agenticRagChat } from '../lib/rag';
 import { Message, filterThinkBlocks } from '../lib/chatTypes';
+import { getActivePersonaInstructions } from '../lib/personas';
 import ChatMessage from './ChatMessage';
+import PersonaPicker from './PersonaPicker';
 import { useAgentMemory, MemoryProposal } from '../hooks/useAgentMemory';
 import OllamaSetup from './OllamaSetup';
 import ModelManager from './ModelManager';
@@ -364,6 +367,20 @@ export default function AIPanel({
     } finally { setGeneratingFlashcards(false); }
   };
 
+  /* ── Generate quiz (chantier #19) — ungraded self-check, distinct from
+     the FSRS flashcard deck above. Opens QuizModal instead of inserting
+     into the pad. ── */
+  const [generatingQuiz, setGeneratingQuiz] = useState(false);
+  const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[] | null>(null);
+  const handleGenerateQuiz = async () => {
+    if (!docContext) return;
+    setGeneratingQuiz(true);
+    try {
+      const questions = await generateQuiz(model, docContext, lang);
+      setQuizQuestions(questions);
+    } finally { setGeneratingQuiz(false); }
+  };
+
   /* ── Generate Mermaid diagram ── */
   const handleGenerateDiagram = async () => {
     if (!docContext || !onInsertContent) return;
@@ -421,6 +438,7 @@ export default function AIPanel({
     try {
       await agenticRagChat(model, q, {
         onSubqueries: (items) => patchLast({ subqueries: items }),
+        onSteps: (items) => patchLast({ steps: items }),
         onSources: (items) => patchLast({ sources: items }),
         onChunk: (chunk) => {
           setRagMessages(prev => {
@@ -431,7 +449,7 @@ export default function AIPanel({
           });
         },
         onFollowups: (items) => patchLast({ followups: items }),
-      }, { lang });
+      }, { lang, personaInstructions: getActivePersonaInstructions() });
     } catch (e) {
       patchLast({ content: e instanceof Error ? e.message : t('ai.error') });
     } finally { setRagStreaming(false); }
@@ -685,7 +703,14 @@ export default function AIPanel({
                       {generatingDiagram ? <Loader size={12} className="ai-spin" /> : <Workflow size={12} />} {t('ai.generateDiagram')}
                     </button>
                   )}
+                  <button className="ai-panel__quick-btn" onClick={handleGenerateQuiz} disabled={streaming || generatingQuiz}>
+                    {generatingQuiz ? <Loader size={12} className="ai-spin" /> : <HelpCircle size={12} />} {t('ai.generateQuiz', { defaultValue: 'Quiz' })}
+                  </button>
                 </div>
+              )}
+
+              {quizQuestions !== null && (
+                <QuizModal questions={quizQuestions} onClose={() => setQuizQuestions(null)} />
               )}
 
               {/* Link suggestions */}
@@ -822,6 +847,7 @@ export default function AIPanel({
               {/* Index controls */}
               <div className="ai-panel__rag-header">
                 <div className="ai-panel__rag-desc">{t('ai.ragDesc')}</div>
+                <PersonaPicker />
                 <button
                   className="ai-panel__rag-index-btn"
                   onClick={handleIndexAll}

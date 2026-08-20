@@ -20,7 +20,9 @@ import { X, Plus, MessageSquare, Trash2, Pencil, Search } from 'lucide-react';
 import { useOllamaModels } from '../hooks/useOllama';
 import { agenticRagChat } from '../lib/rag';
 import { Message } from '../lib/chatTypes';
+import { getActivePersonaInstructions } from '../lib/personas';
 import ChatMessage from './ChatMessage';
+import PersonaPicker from './PersonaPicker';
 import './AIPanel.scss'; // ai-msg__* / ai-panel__empty rules — shared with ChatMessage
 import './ChatView.scss';
 
@@ -184,6 +186,7 @@ export default function ChatView({ onClose }: Props) {
     try {
       await agenticRagChat(model, q, {
         onSubqueries: (items) => patchLast({ subqueries: items }),
+        onSteps: (items) => patchLast({ steps: items }),
         onSources: (items) => patchLast({ sources: items }),
         onChunk: (chunk) => {
           setMessages(prev => {
@@ -194,7 +197,7 @@ export default function ChatView({ onClose }: Props) {
           });
         },
         onFollowups: (items) => patchLast({ followups: items }),
-      }, { lang, signal: ctrl.signal });
+      }, { lang, signal: ctrl.signal, personaInstructions: getActivePersonaInstructions() });
     } catch (e) {
       if ((e as Error)?.name !== 'AbortError') {
         patchLast({ content: (e as Error)?.message || t('ai.error') });
@@ -298,6 +301,7 @@ export default function ChatView({ onClose }: Props) {
       <main className="chatview-main">
         <div className="chatview-main__header">
           <div className="chatview-main__title">{activeTitle}</div>
+          <PersonaPicker />
           <select
             className="chatview-main__model"
             value={model}

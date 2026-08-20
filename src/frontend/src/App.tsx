@@ -45,6 +45,7 @@ import AddFromLink from './ui/AddFromLink';
 import SmartResearch from './ui/SmartResearch';
 import HomeHub from './ui/HomeHub';
 import FlashcardStudio from './ui/FlashcardStudio';
+import ReviewDashboard from './ui/ReviewDashboard';
 import Onboarding, { shouldShowOnboarding } from './ui/Onboarding';
 import UnifiedAddModal from './ui/UnifiedAddModal';
 import ThemePicker from './ui/ThemePicker';
@@ -169,6 +170,7 @@ export default function App() {
   const [themeBuilderOpen, setThemeBuilderOpen] = useState(false);
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [flashcardStudioOpen, setFlashcardStudioOpen] = useState(false);
+  const [reviewDashboardOpen, setReviewDashboardOpen] = useState(false);
   const [unifiedAddOpen, setUnifiedAddOpen] = useState(false);
   const [currentThemeId, setCurrentThemeId] = useState(() => localStorage.getItem('alcove-theme') ?? 'mocha');
   const activeTheme = getTheme(currentThemeId);
@@ -506,6 +508,7 @@ export default function App() {
         onAddFromLink={() => setAddLinkOpen(true)}
         onSmartResearch={() => setSmartResearchOpen(true)}
         onFlashcardStudio={() => setFlashcardStudioOpen(true)}
+        onReviewDashboard={() => setReviewDashboardOpen(true)}
         onNewLatex={() => createNewLatex()}
       />
 
@@ -847,6 +850,14 @@ export default function App() {
           tabs={tabs}
           onClose={() => setFlashcardStudioOpen(false)}
           onSelectPad={selectTab}
+        />
+      )}
+
+      {/* ── Review Dashboard (chantier #20) ── */}
+      {reviewDashboardOpen && (
+        <ReviewDashboard
+          onClose={() => setReviewDashboardOpen(false)}
+          onStartReview={() => { setReviewDashboardOpen(false); setFlashcardStudioOpen(true); }}
         />
       )}
 
