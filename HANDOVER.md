@@ -75,9 +75,19 @@ plus tard** : `TabContextMenu.tsx` (rename + edit-tags) utilise
 natif bloquant, incompatible avec toute automation/CDP). Suggestion envoyée en
 tâche séparée (`task_0ddc8518`) pour remplacer ça par un input inline.
 
-**Reste à faire** : build + déploiement sur alcove-server (build local →
-scp → `docker compose build` → `up`, cf. mémoire restart-vs-build) au prochain
-accès à la tour.
+**Déployé sur alcove-server** — 2026-08-20. Le pipeline de déploiement a
+changé depuis les chantiers précédents : il y a maintenant un CI/CD GitHub
+Actions (`.github/workflows/docker-build.yml`) qui build et push
+`ghcr.io/korokira/alcove:main` automatiquement à chaque push sur `main` — plus
+besoin de build local + scp + `docker compose build` sur la tour (l'ancienne
+méthode, lente à cause du CPU faible d'alcove-server, documentée dans la
+mémoire `feedback_docker_restart_vs_build` — **cette mémoire est maintenant
+partiellement obsolète pour ce repo précis**, à corriger). Déploiement réel :
+`git pull` sur `/srv/docker/alcove` (repo cloné là-bas) puis
+`docker compose -f docker-compose.selfhost.yml pull pad && docker compose
+-f docker-compose.selfhost.yml up -d pad`. Vérifié après coup que l'image
+tournant sur le serveur contient bien le code du payload `tags` (`docker exec
+alcove-pad grep -n 'r.tags' /app/routers/pad_router.py`).
 
 ## 3. Chantier B — Test de charge du graphe à échelle réelle
 
