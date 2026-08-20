@@ -237,9 +237,28 @@ assets JS minifiés).
 
 ## 6. État final — tous les chantiers identifiés sont faits
 
-Chantier A (groupes de couleur, 3 modes tag/contenu/sémantique) et Chantier B
-(fix perf O(n²)→grille spatiale) sont **implémentés, testés, commités et
-déployés en production sur alcove-server**. Rien de connu ne reste ouvert
-dans ce document — seul le bug `window.prompt()` de `TabContextMenu.tsx` a
-été signalé séparément (`task_0ddc8518`), volontairement hors scope de ces
-deux chantiers.
+Chantier A (groupes de couleur, 3 modes tag/contenu/sémantique), Chantier B
+(fix perf O(n²)→grille spatiale), et la passe UI/UX ci-dessous sont **tous
+implémentés, testés en direct, commités et déployés en production sur
+alcove-server**. Rien de connu ne reste ouvert dans ce document.
+
+## 9. Passe UI/UX — ✅ FAIT
+
+Suite à la question "il reste des choses niveau UI/UX ?", trois points
+identifiés et traités, commit `a0d84de`, déployé (vérifié via le label
+`org.opencontainers.image.revision` = `a0d84de...`) :
+
+1. **Bug `window.prompt()`** (renommer/tags dans `TabContextMenu.tsx`) —
+   remplacé par une édition en ligne dans le même popover (nouveau prop
+   `interceptActions` sur `ContextMenu` générique). Testé en direct :
+   renommage et édition de tags fonctionnent, persistent, aucun freeze,
+   aucun dialogue natif.
+2. **Persistance des groupes de couleur** (graphe) — presets localStorage
+   (`alcove-graph-group-presets`) : sauvegarder/sélectionner/supprimer,
+   comme le "Save as preset" de Recall. Testé en direct : sauvegarde,
+   sélection et application du preset fonctionnent.
+3. **Passe de polish** — animations d'entrée (GraphView filtres, ChatView,
+   ReviewDashboard, UnifiedAddModal, toutes apparaissaient sans transition
+   avant), transitions hover/focus manquantes ajoutées, barres du graphique
+   d'activité qui poussent à l'ouverture, points de streak qui "pop" à
+   l'activation.
