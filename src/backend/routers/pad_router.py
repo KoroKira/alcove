@@ -909,8 +909,7 @@ async def update_tags(
     """Update the tags of a pad (owner only)"""
     pad, _ = pad_access
     cleaned = [t.strip()[:50] for t in (tags_update.tags or []) if t.strip()][:20]
-    pad.tags = cleaned
-    await pad.save(session)
+    await pad.update_tags(session, cleaned)
     return {"tags": pad.tags}
 
 
@@ -923,8 +922,7 @@ async def update_folder(
     """Set (or clear, with null/empty) the folder a pad lives under (owner only)."""
     pad, _ = pad_access
     folder = (folder_update.folder or "").strip()[:80] or None
-    pad.folder = folder
-    await pad.save(session)
+    await pad.update_folder(session, folder)
     return {"folder": pad.folder}
 
 
@@ -939,8 +937,7 @@ async def update_theme(
         raise HTTPException(status_code=400, detail="theme must be 'light', 'dark', or null")
     try:
         pad, _ = pad_access
-        pad.theme = theme_update.theme
-        await pad.save(session)
+        await pad.update_theme(session, theme_update.theme)
         return pad.to_dict()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update theme: {str(e)}")

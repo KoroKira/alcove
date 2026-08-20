@@ -2,6 +2,7 @@ from uuid import UUID
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from redis import RedisError
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from config import default_pad
 import json
@@ -232,19 +233,56 @@ class Pad:
         await self.cache()
         return self
 
+    async def _targeted_update(self, session: AsyncSession, **column_values: Any) -> None:
+        """Persist only the given columns via a raw SQL UPDATE, bypassing
+        `_store.save()`'s full-object merge.
+
+        `PadStore.save()` (called by the generic `Pad.save()`) does
+        `session.merge(self._store)`, which writes *every* column currently
+        held in memory — including `data`. A `Pad` built via `get_by_id()`
+        may have come straight from the Redis cache, whose `data` snapshot
+        can lag behind the DB if a concurrent edit landed after that cache
+        entry was written. Renaming, toggling sharing, or editing the
+        whitelist/tags on such a stale instance would silently roll the
+        pad's content back to that lagging snapshot — the exact failure
+        reported as "AI rename deleted my pad's content": the rename itself
+        never touched the content, but the full-object save that carried it
+        did. Restricting the UPDATE to the named columns makes that
+        impossible regardless of cache staleness, and `invalidate_cache()`
+        (delete, not overwrite) ensures the next read falls through to the
+        DB instead of re-caching a value that might itself be stale.
+        """
+        stmt = sa_update(PadStore).where(PadStore.id == self.id).values(**column_values)
+        await session.execute(stmt)
+        await session.commit()
+        await self.invalidate_cache()
+
     async def rename(self, session: AsyncSession, new_display_name: str) -> 'Pad':
         """Rename the pad by updating its display name"""
         self.display_name = new_display_name
         self.updated_at = datetime.now()
-        if self._store:
-            self._store.display_name = new_display_name
-            self._store.updated_at = self.updated_at
-            self._store.sharing_policy = self.sharing_policy
-            self._store.whitelist = self.whitelist
-            self._store = await self._store.save(session)
-            
-        await self.cache()
-            
+        await self._targeted_update(session, display_name=new_display_name, updated_at=self.updated_at)
+        return self
+
+    async def update_tags(self, session: AsyncSession, tags: List[str]) -> 'Pad':
+        """Replace the pad's tags. Same targeted-UPDATE rationale as rename()."""
+        self.tags = tags
+        self.updated_at = datetime.now()
+        await self._targeted_update(session, tags=tags, updated_at=self.updated_at)
+        return self
+
+    async def update_folder(self, session: AsyncSession, folder: Optional[str]) -> 'Pad':
+        """Move the pad to (or out of, with None) a folder. Same targeted-UPDATE rationale as rename()."""
+        self.folder = folder
+        self.updated_at = datetime.now()
+        await self._targeted_update(session, folder=folder, updated_at=self.updated_at)
+        return self
+
+    async def update_theme(self, session: AsyncSession, theme: Optional[str]) -> 'Pad':
+        """Set the pad's forced theme (None = follow the app-wide theme). Same targeted-UPDATE rationale as rename()."""
+        self.theme = theme
+        self.updated_at = datetime.now()
+        await self._targeted_update(session, theme=theme, updated_at=self.updated_at)
         return self
 
     async def delete(self, session: AsyncSession) -> bool:
@@ -302,39 +340,27 @@ class Pad:
             
         print(f"Changing sharing policy for pad {self.id} from {self.sharing_policy} to {policy}")
         self.sharing_policy = policy
-        self._store.sharing_policy = policy
         self.updated_at = datetime.now()
-        self._store.updated_at = self.updated_at
-        
-        await self._store.save(session)
-        await self.cache()
-        
+        await self._targeted_update(session, sharing_policy=policy, updated_at=self.updated_at)
+
         return self
 
     async def add_to_whitelist(self, session: AsyncSession, user_id: UUID) -> 'Pad':
         """Add a user to the pad's whitelist"""
         if user_id not in self.whitelist:
             self.whitelist.append(user_id)
-            self._store.whitelist = self.whitelist
             self.updated_at = datetime.now()
-            self._store.updated_at = self.updated_at
-            
-            await self._store.save(session)
-            await self.cache()
-            
+            await self._targeted_update(session, whitelist=self.whitelist, updated_at=self.updated_at)
+
         return self
 
     async def remove_from_whitelist(self, session: AsyncSession, user_id: UUID) -> 'Pad':
         """Remove a user from the pad's whitelist"""
         if user_id in self.whitelist:
             self.whitelist.remove(user_id)
-            self._store.whitelist = self.whitelist
             self.updated_at = datetime.now()
-            self._store.updated_at = self.updated_at
-            
-            await self._store.save(session)
-            await self.cache()
-            
+            await self._targeted_update(session, whitelist=self.whitelist, updated_at=self.updated_at)
+
         return self
 
     def can_access(self, user_id: UUID) -> bool:
