@@ -361,17 +361,49 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
     const kRep = spacingRef.current;
     const restLen = linkLengthRef.current;
 
-    // repulsion O(n²)
+    // Repulsion via a spatial hash over a cutoff radius, instead of the
+    // naive O(n²) all-pairs loop. Repulsion decays as 1/d², so past a
+    // distance where kRep/d² drops below a small epsilon the force is
+    // visually negligible — bucket nodes into cells sized to that cutoff and
+    // only test pairs sharing a cell or an adjacent one (9-cell
+    // neighborhood). Each unique pair is still tested exactly once (`j > i`
+    // guard on the node's index, not on cell direction, so it stays correct
+    // regardless of which of the two nodes' neighbor scan finds the other
+    // first). This turns the naive O(n²) — ~78M pairs/frame at the 12k-node
+    // scale a real Recall export reaches — into ~O(n) for any layout that
+    // isn't pathologically clustered into one cell. Below a few hundred
+    // nodes the grid overhead roughly cancels the savings, which is fine:
+    // it was already fast there.
+    const REPULSION_CUTOFF = Math.max(120, Math.sqrt(kRep * 20));
+    const cutoff2 = REPULSION_CUTOFF * REPULSION_CUTOFF;
+    const cellOf = (v: number) => Math.floor(v / REPULSION_CUTOFF);
+    const grid = new Map<string, { n: GraphNode; idx: number }[]>();
+    nodes.forEach((n, idx) => {
+      const key = `${cellOf(n.x)},${cellOf(n.y)}`;
+      let bucket = grid.get(key);
+      if (!bucket) { bucket = []; grid.set(key, bucket); }
+      bucket.push({ n, idx });
+    });
     for (let i = 0; i < nodes.length; i++) {
-      for (let j = i + 1; j < nodes.length; j++) {
-        const a = nodes[i], b = nodes[j];
-        const dx = b.x - a.x || 0.01;
-        const dy = b.y - a.y || 0.01;
-        const d2 = dx * dx + dy * dy + 0.01;
-        const f = kRep / d2;
-        const ux = dx / Math.sqrt(d2), uy = dy / Math.sqrt(d2);
-        fx[a.id] -= ux * f; fy[a.id] -= uy * f;
-        fx[b.id] += ux * f; fy[b.id] += uy * f;
+      const a = nodes[i];
+      const cx = cellOf(a.x), cy = cellOf(a.y);
+      for (let gx = cx - 1; gx <= cx + 1; gx++) {
+        for (let gy = cy - 1; gy <= cy + 1; gy++) {
+          const bucket = grid.get(`${gx},${gy}`);
+          if (!bucket) continue;
+          for (const { n: b, idx: j } of bucket) {
+            if (j <= i) continue;
+            const dx = b.x - a.x || 0.01;
+            const dy = b.y - a.y || 0.01;
+            const d2 = dx * dx + dy * dy + 0.01;
+            if (d2 > cutoff2) continue;
+            const f = kRep / d2;
+            const dist = Math.sqrt(d2);
+            const ux = dx / dist, uy = dy / dist;
+            fx[a.id] -= ux * f; fy[a.id] -= uy * f;
+            fx[b.id] += ux * f; fy[b.id] += uy * f;
+          }
+        }
       }
     }
 
