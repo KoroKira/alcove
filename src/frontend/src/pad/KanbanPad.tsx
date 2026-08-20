@@ -6,6 +6,7 @@ import {
 import { FieldValueRow, AttachmentList } from './FieldEditor';
 import type { FieldDef, FieldValue, FieldType, Attachment, Priority } from './fieldTypes';
 import { uid, PRIORITY_LABELS, PRIORITY_COLORS, FIELD_TYPE_LABELS } from './fieldTypes';
+import { snapshotDomPad } from '../lib/thumbnailSnapshot';
 import './KanbanPad.scss';
 
 /* ─── Data types ─── */
@@ -471,6 +472,7 @@ export default function KanbanPad({ padId, data, onDataChange }: Props) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastUpdatedAt = useRef<string | null>(data.updated_at ?? null);
   const [conflict, setConflict] = useState(false);
+  const boardRef = useRef<HTMLDivElement | null>(null);
 
   const save = useCallback((cols: KanbanColumn[], sc: FieldDef[], tpls: KanbanCardTemplate[]) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -491,6 +493,9 @@ export default function KanbanPad({ padId, data, onDataChange }: Props) {
           const j = await res.json().catch(() => null);
           if (j?.updated_at) lastUpdatedAt.current = j.updated_at;
           setConflict(false);
+          // Best-effort Dashboard card thumbnail — throttled internally, so
+          // firing on every save is fine.
+          if (boardRef.current) void snapshotDomPad(padId, boardRef.current);
         }
       } catch (e) {
         console.error(e);
@@ -559,7 +564,7 @@ export default function KanbanPad({ padId, data, onDataChange }: Props) {
   };
 
   return (
-    <div className="kanban">
+    <div className="kanban" ref={boardRef}>
       {conflict && (
         <div style={{ background: '#f5a623', color: '#000', padding: '8px 12px', fontSize: 13, textAlign: 'center' }}>
           ⚠️ Ce tableau a été modifié sur un autre appareil. Recharge la page pour repartir de la version serveur.

@@ -3,6 +3,7 @@ import { Plus, Trash2, Flag, Bookmark, X, ChevronDown } from 'lucide-react';
 import { FieldValueRow, AttachmentList } from './FieldEditor';
 import type { FieldDef, FieldValue, FieldType, Attachment, Priority } from './fieldTypes';
 import { uid, PRIORITY_LABELS, PRIORITY_COLORS, FIELD_TYPE_LABELS } from './fieldTypes';
+import { snapshotDomPad } from '../lib/thumbnailSnapshot';
 import './GanttPad.scss';
 
 /* ─── Types ─── */
@@ -441,6 +442,7 @@ export default function GanttPad({ padId, data, onDataChange }: Props) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastUpdatedAt = useRef<string | null>(data.updated_at ?? null);
   const [conflict, setConflict] = useState(false);
+  const boardRef = useRef<HTMLDivElement | null>(null);
 
   const save = useCallback((t: GanttTask[], sc: FieldDef[], tpls: GanttTaskTemplate[]) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -458,6 +460,7 @@ export default function GanttPad({ padId, data, onDataChange }: Props) {
           const j = await res.json().catch(() => null);
           if (j?.updated_at) lastUpdatedAt.current = j.updated_at;
           setConflict(false);
+          if (boardRef.current) void snapshotDomPad(padId, boardRef.current);
         }
       } catch (e) { console.error(e); }
     }, SAVE_DEBOUNCE);
@@ -508,7 +511,7 @@ export default function GanttPad({ padId, data, onDataChange }: Props) {
   const viewDays = 90;
 
   return (
-    <div className="gantt">
+    <div className="gantt" ref={boardRef}>
       {conflict && (
         <div style={{ background: '#f5a623', color: '#000', padding: '8px 12px', fontSize: 13, textAlign: 'center' }}>
           ⚠️ Ce planning a été modifié sur un autre appareil. Recharge la page pour repartir de la version serveur.

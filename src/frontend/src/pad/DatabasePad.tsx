@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Plus, Trash2, Table2, Columns3, X } from 'lucide-react';
+import { snapshotDomPad } from '../lib/thumbnailSnapshot';
 import './DatabasePad.scss';
 
 export interface DbColumn { id: string; name: string; }
@@ -20,6 +21,7 @@ export default function DatabasePad({ padId, data, onDataChange }: Props) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastUpdatedAt = useRef<string | null>(data.updated_at ?? null);
   const [conflict, setConflict] = useState(false);
+  const boardRef = useRef<HTMLDivElement | null>(null);
 
   // Reset local state when switching to a different database pad.
   useEffect(() => {
@@ -47,6 +49,7 @@ export default function DatabasePad({ padId, data, onDataChange }: Props) {
           const j = await res.json().catch(() => null);
           if (j?.updated_at) lastUpdatedAt.current = j.updated_at;
           setConflict(false);
+          if (boardRef.current) void snapshotDomPad(padId, boardRef.current);
         }
       } catch { /* ignore */ }
     }, 400);
@@ -100,7 +103,7 @@ export default function DatabasePad({ padId, data, onDataChange }: Props) {
   const titleCol = local.columns[0]?.id;
 
   return (
-    <div className="dbpad">
+    <div className="dbpad" ref={boardRef}>
       {conflict && (
         <div style={{ background: '#f5a623', color: '#000', padding: '8px 12px', fontSize: 13, textAlign: 'center' }}>
           ⚠️ Cette base a été modifiée sur un autre appareil. Recharge la page pour repartir de la version serveur.

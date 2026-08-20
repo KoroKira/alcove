@@ -11,6 +11,7 @@ import { useCallbackRefState } from "./hooks/useCallbackRefState";
 import { useAppConfig } from "./hooks/useAppConfig";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { usePad } from "./hooks/usePadData";
+import { snapshotCanvasPad } from "./lib/thumbnailSnapshot";
 
 // Components
 import { MainMenuConfig } from './ui/MainMenu';
@@ -379,6 +380,27 @@ export default function App() {
     const current = excalidrawAPI.getAppState() as any;
     excalidrawAPI.updateScene({ appState: { gridModeEnabled: !current.gridModeEnabled } } as any);
   };
+
+  // Dashboard card thumbnail for canvas pads. Unlike the structured pad
+  // types (kanban/gantt/database each have one debounced save() call site
+  // to hook), canvas content is persisted through the Yjs collab layer —
+  // there's no single "just saved" moment in the React tree to react to.
+  // A 30s interval while a canvas tab is open is the pragmatic equivalent;
+  // snapshotCanvasPad throttles internally too, so this is just the timer
+  // that drives it.
+  useEffect(() => {
+    if (!excalidrawAPI || isStructuredMode || !selectedTabId) return;
+    const id = setInterval(() => {
+      void snapshotCanvasPad(selectedTabId, excalidrawAPI);
+    }, 30_000);
+    // Also catch a quick edit-then-switch-away without waiting for the next
+    // tick — the internal throttle means this never fires more than once
+    // per 30s per pad regardless of how often the effect re-runs.
+    return () => {
+      clearInterval(id);
+      void snapshotCanvasPad(selectedTabId, excalidrawAPI);
+    };
+  }, [excalidrawAPI, isStructuredMode, selectedTabId]);
 
   const exportCanvasPng = async () => {
     if (!excalidrawAPI || isDocumentMode) return;
