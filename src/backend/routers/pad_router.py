@@ -334,7 +334,7 @@ async def get_knowledge_graph(
     # query needed.
     node_stmt = _sa_select(
         PadStore.id, PadStore.display_name, PadStore.pad_type, PadStore.is_scratch,
-        PadStore.created_at,
+        PadStore.created_at, PadStore.tags,
     ).where(PadStore.owner_id == user.id)
     node_rows = (await session.execute(node_stmt)).all()
 
@@ -344,6 +344,7 @@ async def get_knowledge_graph(
         "type": r.pad_type or "canvas",
         "is_scratch": bool(r.is_scratch),
         "created_at": r.created_at.isoformat() if r.created_at else None,
+        "tags": list(r.tags or []),
     } for r in node_rows]
 
     # Wikilinks may target any pad type, so the name→id map covers every node.

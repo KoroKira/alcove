@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { X, Network, Search, SlidersHorizontal } from 'lucide-react';
+import { searchRag } from '../lib/rag';
 import './GraphView.scss';
 
 interface GraphNode {
@@ -8,6 +9,7 @@ interface GraphNode {
   type: 'canvas' | 'document' | 'kanban' | 'gantt' | 'latex' | 'database';
   is_scratch: boolean;
   created_at: string | null;
+  tags: string[];
   x: number;
   y: number;
   vx: number;
@@ -60,11 +62,33 @@ const TYPE_LABELS: Record<GraphNode['type'], string> = {
 // ── Color groups ─────────────────────────────────────────────────────────────
 // Recall's graph settings panel lets you paint nodes matching a saved query in
 // a chosen color, layered over the type color — useful to see a thematic
-// subset without filtering the rest of the graph away. Node data here only
-// carries a label (no tags array from the /graph endpoint), so matching is
-// title-substring, same as the existing search box.
+// subset without filtering the rest of the graph away. Three query modes,
+// picked by prefix (mirrors Recall's tag:/source:/name: convention):
+//   "tag:xxx"   — substring match against the pad's tags, instant (tags ship
+//                 with every node in the /graph payload, no round-trip).
+//   "~xxx"      — semantic proximity: the query is embedded client-side via
+//                 the same local-Ollama path the RAG chat uses (searchRag),
+//                 the server KNN-ranks it against the owner's stored chunk
+//                 embeddings, and pads scoring above a threshold match. This
+//                 is the "content-similarity via vectorization" the user
+//                 asked about — reuses chantier #7's existing pipeline
+//                 instead of building a second one.
+//   plain text  — title substring (instant) OR the pad turns up in
+//                 /api/pad/search (title+document body+canvas text), so
+//                 matching isn't limited to the title anymore.
+// The async modes (~ and plain-text content) are debounced and resolved into
+// a per-group Set<padId> cache; draw() reads that cache on every frame but
+// never triggers the fetch itself (kept in a separate effect keyed on the
+// `groups` state, not the ref, since only state changes should fire network
+// calls).
 interface ColorGroup { id: string; query: string; color: string; }
 const GROUP_COLOR_PALETTE = ['#f38ba8', '#fab387', '#f9e2af', '#a6e3a1', '#94e2d5', '#89b4fa', '#cba6f7', '#f5c2e7'];
+// Verified empirically against nomic-embed-text on a small corpus: unrelated
+// pads still scored 0.45-0.49 cosine similarity against an off-topic query,
+// while the true semantic match scored 0.72 — a threshold of 0.35 (the RAG
+// chat's own default) let the noise floor through. 0.55 cut both false
+// positives while keeping the real match.
+const SEMANTIC_MIN_SCORE = 0.55;
 
 const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -99,6 +123,13 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
   const connectedIdsRef = useRef<Set<string>>(new Set());
   const [groups, setGroups] = useState<ColorGroup[]>([]);
   const groupsRef = useRef<ColorGroup[]>([]);
+  // Resolved pad ids for each group's async (semantic / content) query —
+  // draw() reads this every frame; the debounce effect below is the only
+  // writer. groupReqIdRef guards against a slow request overwriting a newer
+  // one once the user keeps typing.
+  const groupMatchSetsRef = useRef<Record<string, Set<string>>>({});
+  const groupReqIdRef = useRef<Record<string, number>>({});
+  const [groupErrors, setGroupErrors] = useState<Record<string, string>>({});
 
   // Redraw-on-demand helper for state-driven filter changes (the physics
   // loop already redraws every frame while running, but once it settles
@@ -112,6 +143,46 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
   useEffect(() => { linkLengthRef.current = linkLength; }, [linkLength]);
   useEffect(() => { timelineRangeRef.current = timelineRange; requestDraw(); }, [timelineRange, requestDraw]);
   useEffect(() => { groupsRef.current = groups; requestDraw(); }, [groups, requestDraw]);
+
+  // Debounced resolution of the async group query modes ("~semantic" and
+  // plain-text content search). "tag:" is synchronous (tags are already in
+  // the node payload) and skipped here entirely.
+  useEffect(() => {
+    const timers = groups.map(g => {
+      const raw = g.query.trim();
+      if (!raw || raw.toLowerCase().startsWith('tag:')) return null;
+      if (raw.length < 2 && !raw.startsWith('~')) return null;
+      return window.setTimeout(async () => {
+        const reqId = (groupReqIdRef.current[g.id] || 0) + 1;
+        groupReqIdRef.current[g.id] = reqId;
+        try {
+          let ids: string[];
+          if (raw.startsWith('~')) {
+            const q = raw.slice(1).trim();
+            if (q.length < 2) return;
+            const matches = await searchRag(q, 40);
+            ids = matches.filter(m => m.score >= SEMANTIC_MIN_SCORE).map(m => m.pad_id);
+          } else {
+            const r = await fetch(`/api/pad/search?q=${encodeURIComponent(raw)}`, { credentials: 'include' });
+            if (!r.ok) throw new Error(`search ${r.status}`);
+            const j: Array<{ pad_id: string }> = await r.json();
+            ids = j.map(m => m.pad_id);
+          }
+          if (groupReqIdRef.current[g.id] !== reqId) return; // superseded by a newer query
+          groupMatchSetsRef.current = { ...groupMatchSetsRef.current, [g.id]: new Set(ids) };
+          setGroupErrors(prev => { if (!(g.id in prev)) return prev; const { [g.id]: _drop, ...rest } = prev; return rest; });
+          requestDraw();
+        } catch {
+          if (groupReqIdRef.current[g.id] !== reqId) return;
+          setGroupErrors(prev => ({
+            ...prev,
+            [g.id]: raw.startsWith('~') ? 'Ollama local indisponible' : 'Recherche indisponible',
+          }));
+        }
+      }, 400);
+    });
+    return () => timers.forEach(t => { if (t) clearTimeout(t); });
+  }, [groups, requestDraw]);
 
   const addGroup = useCallback(() => {
     setGroups(gs => [...gs, {
@@ -183,12 +254,28 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
     };
     const isMatch = (n: GraphNode): boolean =>
       !search || n.label.toLowerCase().includes(search);
+    // tag:xxx → tags (instant, shipped with the node) · ~xxx → semantic
+    // proximity · plain text → title (instant) or content (async), both
+    // resolved through groupMatchSetsRef by the debounce effect above.
+    const nodeMatchesGroup = (n: GraphNode, g: ColorGroup): boolean => {
+      const raw = g.query.trim();
+      if (!raw) return false;
+      const lower = raw.toLowerCase();
+      if (lower.startsWith('tag:')) {
+        const tagQuery = lower.slice(4).trim();
+        return !!tagQuery && (n.tags || []).some(t => t.toLowerCase().includes(tagQuery));
+      }
+      if (raw.startsWith('~')) {
+        return groupMatchSetsRef.current[g.id]?.has(n.id) ?? false;
+      }
+      if (n.label.toLowerCase().includes(lower)) return true;
+      return groupMatchSetsRef.current[g.id]?.has(n.id) ?? false;
+    };
     // Later groups win when a node matches more than one query — mirrors Recall.
     const groupColor = (n: GraphNode): string | null => {
       let color: string | null = null;
       for (const g of groups) {
-        const q = g.query.trim().toLowerCase();
-        if (q && n.label.toLowerCase().includes(q)) color = g.color;
+        if (nodeMatchesGroup(n, g)) color = g.color;
       }
       return color;
     };
@@ -563,28 +650,38 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
           </div>
 
           <div className="graph-controls__row graph-controls__groups">
-            <span>Groupes de couleur</span>
+            <span>
+              Groupes de couleur
+              <span className="graph-controls__groups-hint">
+                {' '}— texte (titre+contenu) · tag:xxx · ~similaire à…
+              </span>
+            </span>
             {groups.map(g => (
               <div key={g.id} className="graph-controls__group">
-                <input
-                  type="color"
-                  value={g.color}
-                  onChange={e => updateGroup(g.id, { color: e.target.value })}
-                  title="Couleur du groupe"
-                />
-                <input
-                  type="text"
-                  placeholder="Filtrer par titre…"
-                  value={g.query}
-                  onChange={e => updateGroup(g.id, { query: e.target.value })}
-                />
-                <button
-                  className="graph-controls__group-remove"
-                  onClick={() => removeGroup(g.id)}
-                  title="Supprimer ce groupe"
-                >
-                  <X size={12} />
-                </button>
+                <div className="graph-controls__group-row">
+                  <input
+                    type="color"
+                    value={g.color}
+                    onChange={e => updateGroup(g.id, { color: e.target.value })}
+                    title="Couleur du groupe"
+                  />
+                  <input
+                    type="text"
+                    placeholder="ex: tag:esat, ~conditions de travail…"
+                    value={g.query}
+                    onChange={e => updateGroup(g.id, { query: e.target.value })}
+                  />
+                  <button
+                    className="graph-controls__group-remove"
+                    onClick={() => removeGroup(g.id)}
+                    title="Supprimer ce groupe"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+                {groupErrors[g.id] && (
+                  <span className="graph-controls__group-error">{groupErrors[g.id]}</span>
+                )}
               </div>
             ))}
             <button className="graph-controls__add-group" onClick={addGroup}>

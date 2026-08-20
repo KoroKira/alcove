@@ -135,7 +135,18 @@
   gap: 6px;
 }
 
+.graph-controls__groups-hint {
+  color: var(--ap-overlay0);
+  font-weight: 400;
+}
+
 .graph-controls__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.graph-controls__group-row {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -151,7 +162,7 @@
   }
 
   input[type="text"] {
-    width: 160px;
+    width: 220px;
     padding: 4px 8px;
     background: var(--ap-bg2);
     border: none;
@@ -161,6 +172,12 @@
     color: var(--ap-text0);
     &::placeholder { color: var(--ap-text2); }
   }
+}
+
+.graph-controls__group-error {
+  font-size: 10px;
+  color: var(--ap-red, #f38ba8);
+  padding-left: 28px;
 }
 
 .graph-controls__group-remove {
