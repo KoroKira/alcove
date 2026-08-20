@@ -1,9 +1,10 @@
+import json
 from uuid import UUID
 from datetime import datetime, timezone
 from typing import Dict, Any, Tuple, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import update as sa_update, select as sa_select
+from sqlalchemy import update as sa_update, select as sa_select, text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
@@ -811,22 +812,52 @@ async def save_video_meta(
     `pad.data.video` — a document save via /doc will preserve it. Used so
     the "Regenerate report" button can re-run the client-side video report
     (see lib/videoReport.ts) without re-hitting YouTube or re-running
-    Whisper."""
+    Whisper.
+
+    Targeted UPDATE, same rationale as /card-meta and Pad._targeted_update():
+    `pad` can come from a stale Redis cache, so reading `pad.data` into
+    Python and writing the whole blob back (the old approach) could revert
+    a concurrent document edit that landed after the cache entry was
+    written. The merge of the `video` key now happens inside the SQL
+    statement via jsonb `||`, against the row's *current* `data` — never
+    against a Python-held snapshot — so it's correct regardless of cache
+    staleness."""
     pad, _ = pad_access
-    existing = pad.data if isinstance(pad.data, dict) else {}
-    # Drop empty keys so we don't clobber existing values with None on partial
-    # updates.
+    # Drop empty keys so a partial update doesn't clobber existing fields
+    # with None (same semantics as before).
     payload = {k: v for k, v in body.model_dump().items() if v is not None}
-    pad.data = {**existing, "video": {**(existing.get("video") or {}), **payload}}
-    # Mirror the thumbnail URL into the top-level column so the Dashboard grid
-    # can display it without loading the full pad.data blob. Only overwrite
-    # when the payload actually carries a thumbnail — a partial video-meta
-    # update on an unrelated field shouldn't reset an existing preview.
-    if payload.get("thumbnail"):
-        pad.thumbnail_url = payload["thumbnail"]
-    await pad.cache()
-    await pad.save(session)
-    return {"ok": True, "video": pad.data["video"]}
+
+    if not payload:
+        row = (await session.execute(
+            sa_select(PadStore.data).where(PadStore.id == pad.id)
+        )).scalar_one_or_none()
+        current_video = ((row or {}).get("video") or {}) if isinstance(row, dict) else {}
+        return {"ok": True, "video": current_video}
+
+    stmt = sa_text("""
+        UPDATE pad_ws.pads
+        SET data = jsonb_set(
+                COALESCE(data, '{}'::jsonb),
+                '{video}',
+                COALESCE(data->'video', '{}'::jsonb) || CAST(:new_video AS jsonb)
+            ),
+            thumbnail_url = COALESCE(CAST(:thumbnail AS text), thumbnail_url),
+            updated_at = now()
+        WHERE id = CAST(:pad_id AS uuid)
+        RETURNING (data->'video')::text AS video
+    """)
+    result = await session.execute(stmt, {
+        "new_video": json.dumps(payload),
+        "thumbnail": payload.get("thumbnail"),
+        "pad_id": str(pad.id),
+    })
+    # Cast to text + json.loads sidesteps any ambiguity in whether asyncpg's
+    # raw-text path auto-decodes jsonb (it doesn't get the ORM column's
+    # result_processor the way a typed Column select does).
+    updated_video = json.loads(result.scalar_one())
+    await session.commit()
+    await pad.invalidate_cache()
+    return {"ok": True, "video": updated_video}
 
 
 class ThumbnailPayload(BaseModel):
