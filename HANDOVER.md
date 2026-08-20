@@ -22,7 +22,15 @@ Comparaison finale Alcove vs GetRecall (faite en direct, captures à l'appui) :
   côté Alcove et correspond au panneau "Graph Settings" de Recall. **Deux
   écarts identifiés, ce sont les 2 chantiers ci-dessous.**
 
-## 2. Chantier A — Groupes de couleur par requête (graphe)
+## 2. Chantier A — Groupes de couleur par requête (graphe) — ✅ FAIT
+
+Implémenté et commité (`0ca5909`), pas encore déployé sur alcove-server
+(build local vérifié OK — `npm run build` propre, `tsc --noEmit` propre sur
+GraphView.tsx). Reste à faire au prochain accès à la tour : build + scp +
+`docker compose build alcove-pad` + `up` (cf. mémoire sur restart vs build),
+puis test visuel en direct dans le navigateur.
+
+Détails de l'implémentation (pour référence, plus besoin de replanifier) :
 
 **Ce que fait Recall** (vu en direct sur `/knowledge-graph` → panneau
 "Groups") : l'utilisateur définit une ou plusieurs requêtes de filtre (même
