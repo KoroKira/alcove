@@ -129,6 +129,64 @@
   input[type="range"] { width: 100%; margin: 0; }
 }
 
+.graph-controls__groups {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.graph-controls__group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  input[type="color"] {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid var(--ap-bg3);
+    border-radius: var(--ap-radius-xs);
+    background: none;
+    cursor: pointer;
+  }
+
+  input[type="text"] {
+    width: 160px;
+    padding: 4px 8px;
+    background: var(--ap-bg2);
+    border: none;
+    border-radius: var(--ap-radius-xs);
+    outline: none;
+    font-size: 11px;
+    color: var(--ap-text0);
+    &::placeholder { color: var(--ap-text2); }
+  }
+}
+
+.graph-controls__group-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--ap-text2);
+  cursor: pointer;
+  border-radius: var(--ap-radius-xs);
+  &:hover { background: var(--ap-bg2); color: var(--ap-red, #f38ba8); }
+}
+
+.graph-controls__add-group {
+  border: none;
+  background: transparent;
+  color: var(--ap-accent, #7c56ff);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 0;
+  &:hover { text-decoration: underline; }
+}
+
 .graph-controls__reset {
   border: none;
   background: transparent;

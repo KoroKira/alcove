@@ -57,6 +57,15 @@ const TYPE_LABELS: Record<GraphNode['type'], string> = {
   gantt: 'Gantt', latex: 'LaTeX', database: 'Database',
 };
 
+// ── Color groups ─────────────────────────────────────────────────────────────
+// Recall's graph settings panel lets you paint nodes matching a saved query in
+// a chosen color, layered over the type color — useful to see a thematic
+// subset without filtering the rest of the graph away. Node data here only
+// carries a label (no tags array from the /graph endpoint), so matching is
+// title-substring, same as the existing search box.
+interface ColorGroup { id: string; query: string; color: string; }
+const GROUP_COLOR_PALETTE = ['#f38ba8', '#fab387', '#f9e2af', '#a6e3a1', '#94e2d5', '#89b4fa', '#cba6f7', '#f5c2e7'];
+
 const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const nodesRef  = useRef<GraphNode[]>([]);
@@ -88,6 +97,8 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
   const [timelineRange, setTimelineRange] = useState<[number, number]>([0, 1]);
   const timelineRangeRef = useRef<[number, number]>([0, 1]);
   const connectedIdsRef = useRef<Set<string>>(new Set());
+  const [groups, setGroups] = useState<ColorGroup[]>([]);
+  const groupsRef = useRef<ColorGroup[]>([]);
 
   // Redraw-on-demand helper for state-driven filter changes (the physics
   // loop already redraws every frame while running, but once it settles
@@ -100,6 +111,21 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
   useEffect(() => { spacingRef.current = spacing; }, [spacing]);
   useEffect(() => { linkLengthRef.current = linkLength; }, [linkLength]);
   useEffect(() => { timelineRangeRef.current = timelineRange; requestDraw(); }, [timelineRange, requestDraw]);
+  useEffect(() => { groupsRef.current = groups; requestDraw(); }, [groups, requestDraw]);
+
+  const addGroup = useCallback(() => {
+    setGroups(gs => [...gs, {
+      id: Math.random().toString(36).slice(2),
+      query: '',
+      color: GROUP_COLOR_PALETTE[gs.length % GROUP_COLOR_PALETTE.length],
+    }]);
+  }, []);
+  const updateGroup = useCallback((id: string, patch: Partial<ColorGroup>) => {
+    setGroups(gs => gs.map(g => (g.id === id ? { ...g, ...patch } : g)));
+  }, []);
+  const removeGroup = useCallback((id: string) => {
+    setGroups(gs => gs.filter(g => g.id !== id));
+  }, []);
 
   const toWorld = useCallback((cx: number, cy: number) => {
     const t = transformRef.current;
@@ -145,6 +171,7 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
     const showUnconnected = showUnconnectedRef.current;
     const [tMin, tMax] = timelineRangeRef.current;
     const connected = connectedIdsRef.current;
+    const groups = groupsRef.current;
 
     const isVisible = (n: GraphNode): boolean => {
       if (!showUnconnected && !connected.has(n.id)) return false;
@@ -156,6 +183,15 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
     };
     const isMatch = (n: GraphNode): boolean =>
       !search || n.label.toLowerCase().includes(search);
+    // Later groups win when a node matches more than one query — mirrors Recall.
+    const groupColor = (n: GraphNode): string | null => {
+      let color: string | null = null;
+      for (const g of groups) {
+        const q = g.query.trim().toLowerCase();
+        if (q && n.label.toLowerCase().includes(q)) color = g.color;
+      }
+      return color;
+    };
 
     // edges — only drawn when both endpoints are visible under the current filters.
     edges.forEach(e => {
@@ -175,7 +211,7 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
     nodes.forEach(n => {
       if (!isVisible(n)) return;
       const dimmed = !isMatch(n);
-      const color = nodeColors[n.type] || text0;
+      const color = groupColor(n) || nodeColors[n.type] || text0;
       const isHovered = n.id === hoveredId;
       const r = isHovered ? NODE_R + 3 : NODE_R;
 
@@ -524,6 +560,36 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
                 Réinitialiser la période
               </button>
             )}
+          </div>
+
+          <div className="graph-controls__row graph-controls__groups">
+            <span>Groupes de couleur</span>
+            {groups.map(g => (
+              <div key={g.id} className="graph-controls__group">
+                <input
+                  type="color"
+                  value={g.color}
+                  onChange={e => updateGroup(g.id, { color: e.target.value })}
+                  title="Couleur du groupe"
+                />
+                <input
+                  type="text"
+                  placeholder="Filtrer par titre…"
+                  value={g.query}
+                  onChange={e => updateGroup(g.id, { query: e.target.value })}
+                />
+                <button
+                  className="graph-controls__group-remove"
+                  onClick={() => removeGroup(g.id)}
+                  title="Supprimer ce groupe"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+            <button className="graph-controls__add-group" onClick={addGroup}>
+              + Nouveau groupe
+            </button>
           </div>
         </div>
       )}
