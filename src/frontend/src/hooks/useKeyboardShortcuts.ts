@@ -14,6 +14,7 @@ type ShortcutHandlers = {
   onShortcuts?: () => void;
   onHome?: () => void;
   onUnifiedAdd?: () => void;
+  onChat?: () => void;
 };
 
 const isTyping = () => {
@@ -106,6 +107,13 @@ export const useKeyboardShortcuts = (handlers: ShortcutHandlers) => {
       if (mod && e.shiftKey && e.key === 'A') {
         e.preventDefault();
         handlers.onUnifiedAdd?.();
+        return;
+      }
+
+      // Cmd+Shift+C / Ctrl+Shift+C → full-page AI Chat view
+      if (mod && e.shiftKey && e.key === 'C') {
+        e.preventDefault();
+        handlers.onChat?.();
         return;
       }
     };

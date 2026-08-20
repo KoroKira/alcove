@@ -37,6 +37,7 @@ import PomodoroTimer from './ui/PomodoroTimer';
 import DocumentTemplateDialog from './ui/DocumentTemplateDialog';
 // Lazy — statically imports DocumentPad, so keeping it eager would defeat the split.
 const SplitDocPanel = lazy(() => import('./ui/SplitDocPanel'));
+const ChatView = lazy(() => import('./ui/ChatView'));
 import AIPanel from './ui/AIPanel';
 import QuickCapture from './ui/QuickCapture';
 import ObsidianImport from './ui/ObsidianImport';
@@ -143,6 +144,7 @@ export default function App() {
   );
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [graphOpen, setGraphOpen] = useState(false);
+  const [chatViewOpen, setChatViewOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const [pomodoroOpen, setPomodoroOpen] = useState(false);
@@ -436,6 +438,7 @@ export default function App() {
     onShortcuts: () => setShortcutOpen(v => !v),
     onHome: () => { if (isAuthenticated) setHomeOpen(v => !v); },
     onUnifiedAdd: () => { if (isAuthenticated) setUnifiedAddOpen(v => !v); },
+    onChat: () => { if (isAuthenticated) setChatViewOpen(v => !v); },
   });
 
   // Escape exits focus mode
@@ -570,6 +573,7 @@ export default function App() {
             onCommandPalette={() => setCommandPaletteOpen(true)}
             onDailyNote={() => createDailyNote()}
             onGraph={() => setGraphOpen(true)}
+            onChat={() => setChatViewOpen(true)}
           />
 
           {!isLoadingAuth && !isAuthenticated && <AuthDialog />}
@@ -887,6 +891,12 @@ export default function App() {
           onClose={() => setGraphOpen(false)}
           onSelectPad={(id) => { selectTab(id); setGraphOpen(false); }}
         />
+      )}
+
+      {chatViewOpen && isAuthenticated && (
+        <Suspense fallback={<PadLoading />}>
+          <ChatView onClose={() => setChatViewOpen(false)} />
+        </Suspense>
       )}
 
       {isOffline && (

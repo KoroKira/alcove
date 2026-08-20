@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import type { ExcalidrawImperativeAPI } from '@atyrode/excalidraw/types';
 import type { MainMenu as MainMenuType } from '@atyrode/excalidraw';
 
-import { LogOut, SquarePlus, LayoutDashboard, User, Text, Settings, Terminal, FileText, FlaskConical, FileCode, MonitorPlay, Grid3X3, BookOpen, PenLine, CalendarDays, Network, Command, Archive } from 'lucide-react';
+import { LogOut, SquarePlus, LayoutDashboard, User, Text, Settings, Terminal, FileText, FlaskConical, FileCode, MonitorPlay, Grid3X3, BookOpen, PenLine, CalendarDays, Network, Command, Archive, Sparkles } from 'lucide-react';
 import md5 from 'crypto-js/md5';
 
 // Components
@@ -33,6 +33,7 @@ interface MainMenuConfigProps {
   onCommandPalette?: () => void;
   onDailyNote?: () => void;
   onGraph?: () => void;
+  onChat?: () => void;
 }
 
 export const MainMenuConfig: React.FC<MainMenuConfigProps> = ({
@@ -43,6 +44,7 @@ export const MainMenuConfig: React.FC<MainMenuConfigProps> = ({
   onCommandPalette,
   onDailyNote,
   onGraph,
+  onChat,
 }) => {
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -303,6 +305,9 @@ export const MainMenuConfig: React.FC<MainMenuConfigProps> = ({
       <MainMenu.Group title="Knowledge">
         <MainMenu.Item icon={<Command />} onClick={() => onCommandPalette?.()}>
           Command Palette (⌘P)
+        </MainMenu.Item>
+        <MainMenu.Item icon={<Sparkles />} onClick={() => onChat?.()}>
+          AI Chat (⌘⇧C)
         </MainMenu.Item>
         <MainMenu.Item icon={<BookOpen />} onClick={() => onOpenDashboard?.()}>
           Knowledge Hub (⌘D)
