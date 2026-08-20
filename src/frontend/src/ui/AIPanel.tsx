@@ -3,10 +3,13 @@ import { useTranslation } from 'react-i18next';
 import {
   X, Sparkles, Send, FileText, Tag, Pencil, Bot, Settings,
   Search, Link, Zap, ArrowDownToLine, Loader, ChevronDown, ChevronUp, Workflow,
-  MessageSquare, Plus, Trash2, Brain, Check, HelpCircle,
+  MessageSquare, Plus, Trash2, Brain, Check, HelpCircle, Users,
 } from 'lucide-react';
 import { useOllamaModels, streamLocalOllamaChat, fetchChatPreamble } from '../hooks/useOllama';
-import { suggestTags, suggestLinks, generateFlashcards, generateDiagram, generateQuiz, QuizQuestion } from '../lib/aiPrompts';
+import {
+  suggestTags, suggestLinks, generateFlashcards, generateDiagram, generateQuiz, QuizQuestion,
+  extractEntities, fetchWikipediaSummary, EntityType, WikipediaSummary,
+} from '../lib/aiPrompts';
 import QuizModal from './QuizModal';
 import { indexAll, agenticRagChat } from '../lib/rag';
 import { Message, filterThinkBlocks } from '../lib/chatTypes';
@@ -355,6 +358,73 @@ export default function AIPanel({
 
   const rejectLink = (name: string) => {
     setLinkSuggestions(prev => prev?.map(l => l.name === name ? { ...l, accepted: false } : l) ?? null);
+  };
+
+  /* ── Named entity extraction (chantier #6) ──────────────────────────────
+     Each entity: not-yet-checked -> either "already exists as a pad" (dedup
+     by case-insensitive name match against padTitles) or a Wikipedia
+     summary preview with a "Créer la fiche" button. Mirrors the
+     linkSuggestions accept/reject UX above for a consistent feel. */
+  interface EntityResult {
+    name: string;
+    type: EntityType;
+    status: 'checking' | 'exists' | 'no-wiki' | 'ready' | 'created';
+    summary?: WikipediaSummary;
+  }
+  const [entityResults, setEntityResults] = useState<EntityResult[] | null>(null);
+  const [extractingEntities, setExtractingEntities] = useState(false);
+
+  const handleExtractEntities = async () => {
+    if (!docContext) return;
+    setExtractingEntities(true);
+    setEntityResults(null);
+    try {
+      const entities = await extractEntities(model, docContext, lang);
+      if (!entities.length) { setEntityResults([]); return; }
+      const existingLower = new Set(padTitles.map(t => t.toLowerCase()));
+      const initial: EntityResult[] = entities.map(e => ({
+        name: e.name, type: e.type,
+        status: existingLower.has(e.name.toLowerCase()) ? 'exists' : 'checking',
+      }));
+      setEntityResults(initial);
+
+      // Fetch Wikipedia summaries in parallel for everything not already a pad.
+      await Promise.all(entities.map(async (e, i) => {
+        if (initial[i].status === 'exists') return;
+        const summary = await fetchWikipediaSummary(e.name, lang);
+        setEntityResults(prev => {
+          if (!prev) return prev;
+          const copy = [...prev];
+          copy[i] = { ...copy[i], status: summary ? 'ready' : 'no-wiki', summary: summary ?? undefined };
+          return copy;
+        });
+      }));
+    } finally { setExtractingEntities(false); }
+  };
+
+  const createEntityPad = async (index: number) => {
+    const it = entityResults?.[index];
+    if (!it?.summary) return;
+    const parts = [
+      `# ${it.summary.title}`,
+      '',
+      it.summary.extract,
+      '',
+      '---',
+      `Source : [${it.summary.title} sur Wikipédia](${it.summary.url})`,
+    ];
+    try {
+      await fetch('/api/pad/new', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pad_type: 'document', display_name: it.summary.title, content: parts.join('\n') }),
+      });
+      onInsertContent?.(`[[${it.summary.title}]]`);
+      setEntityResults(prev => prev?.map((r, i) => i === index ? { ...r, status: 'created' } : r) ?? null);
+    } catch { /* leave status as 'ready' so the user can retry */ }
+  };
+
+  const createAllEntityPads = () => {
+    entityResults?.forEach((r, i) => { if (r.status === 'ready') createEntityPad(i); });
   };
 
   /* ── Generate flashcards ── */
@@ -706,6 +776,58 @@ export default function AIPanel({
                   <button className="ai-panel__quick-btn" onClick={handleGenerateQuiz} disabled={streaming || generatingQuiz}>
                     {generatingQuiz ? <Loader size={12} className="ai-spin" /> : <HelpCircle size={12} />} {t('ai.generateQuiz', { defaultValue: 'Quiz' })}
                   </button>
+                  {onInsertContent && (
+                    <button className="ai-panel__quick-btn" onClick={handleExtractEntities} disabled={streaming || extractingEntities}>
+                      {extractingEntities ? <Loader size={12} className="ai-spin" /> : <Users size={12} />} {t('ai.extractEntities', { defaultValue: 'Entités' })}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Entity extraction results (chantier #6) */}
+              {entityResults !== null && entityResults.length > 0 && (
+                <div className="ai-panel__link-suggestions">
+                  <div className="ai-panel__link-suggestions-title">
+                    {t('ai.entitiesTitle', { defaultValue: 'Entités détectées' })}
+                    {entityResults.some(r => r.status === 'ready') && (
+                      <button className="ai-panel__entities-createall" onClick={createAllEntityPads}>
+                        {t('ai.entitiesCreateAll', { defaultValue: 'Tout créer' })}
+                      </button>
+                    )}
+                  </div>
+                  {entityResults.map((r, i) => (
+                    <div key={r.name} className="ai-panel__entity-row">
+                      <div className="ai-panel__entity-head">
+                        <span className="ai-panel__entity-name">{r.name}</span>
+                        <span className={`ai-panel__entity-type ai-panel__entity-type--${r.type}`}>{r.type}</span>
+                      </div>
+                      {r.status === 'checking' && (
+                        <span className="ai-panel__entity-status"><Loader size={11} className="ai-spin" /> {t('ai.entitiesChecking', { defaultValue: 'Recherche Wikipédia…' })}</span>
+                      )}
+                      {r.status === 'exists' && (
+                        <span className="ai-panel__entity-status">✓ {t('ai.entitiesExists', { defaultValue: 'Fiche déjà existante' })}</span>
+                      )}
+                      {r.status === 'no-wiki' && (
+                        <span className="ai-panel__entity-status ai-panel__entity-status--muted">{t('ai.entitiesNoWiki', { defaultValue: 'Aucun article Wikipédia trouvé' })}</span>
+                      )}
+                      {r.status === 'created' && (
+                        <span className="ai-panel__entity-status">✓ {t('ai.entitiesCreated', { defaultValue: 'Fiche créée' })}</span>
+                      )}
+                      {r.status === 'ready' && r.summary && (
+                        <>
+                          <p className="ai-panel__entity-excerpt">{r.summary.extract.slice(0, 160)}{r.summary.extract.length > 160 ? '…' : ''}</p>
+                          <button className="ai-panel__entity-create" onClick={() => createEntityPad(i)}>
+                            {t('ai.entitiesCreate', { defaultValue: 'Créer la fiche' })}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {entityResults !== null && entityResults.length === 0 && !extractingEntities && (
+                <div className="ai-panel__link-suggestions ai-panel__link-suggestions--empty">
+                  {t('ai.entitiesEmpty', { defaultValue: 'Aucune entité notable détectée.' })}
                 </div>
               )}
 

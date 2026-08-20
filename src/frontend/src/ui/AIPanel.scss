@@ -686,6 +686,85 @@
   text-transform: uppercase;
   color: var(--color-on-surface-low, var(--ap-text2));
   margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* ── Entity extraction (chantier #6) ── */
+.ai-panel__entities-createall {
+  text-transform: none;
+  font-weight: 600;
+  font-size: 10px;
+  border: 1px solid var(--ap-accent, #7c56ff);
+  background: transparent;
+  color: var(--ap-accent, #7c56ff);
+  border-radius: var(--ap-radius-xs);
+  padding: 3px 8px;
+  cursor: pointer;
+  letter-spacing: normal;
+  &:hover { background: var(--ap-accent-tint, rgba(124, 86, 255, 0.14)); }
+}
+
+.ai-panel__entity-row {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-surface-mid, var(--ap-bg2));
+  &:last-child { border-bottom: none; }
+}
+
+.ai-panel__entity-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+
+.ai-panel__entity-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-on-surface, var(--ap-text0));
+}
+
+.ai-panel__entity-type {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--color-surface-mid, var(--ap-bg2));
+  color: var(--color-on-surface-low, var(--ap-text2));
+
+  &--person { color: var(--ap-accent2, #89b4fa); }
+  &--org { color: var(--ap-peach, #fab387); }
+  &--place { color: var(--ap-green, #a6e3a1); }
+  &--concept { color: var(--ap-mauve, #cba6f7); }
+}
+
+.ai-panel__entity-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--color-on-surface-low, var(--ap-text2));
+  &--muted { opacity: 0.6; }
+}
+
+.ai-panel__entity-excerpt {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-on-surface-low, var(--ap-text2));
+  margin: 2px 0 6px;
+}
+
+.ai-panel__entity-create {
+  font-size: 11px;
+  border: 1px solid var(--color-surface-mid, var(--ap-bg2));
+  background: transparent;
+  color: var(--color-on-surface, var(--ap-text0));
+  border-radius: var(--ap-radius-xs);
+  padding: 4px 10px;
+  cursor: pointer;
+  &:hover { background: var(--color-surface-mid, var(--ap-bg2)); }
 }
 
 .ai-panel__link-row {

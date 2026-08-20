@@ -215,6 +215,85 @@ export async function generateQuiz(
 }
 
 
+// ── Named entity extraction (chantier #6) ───────────────────────────────────
+//
+// Recall's most distinctive feature: every proper noun in a summary becomes a
+// first-class pad, auto-seeded from Wikipedia. Client-side per the Phase 3C
+// pattern — extraction via the local Ollama, Wikipedia fetch via its public
+// REST API (CORS-enabled, no key needed), pad creation via the existing
+// POST /api/pad/new (now takes `content` for document pads).
+
+export type EntityType = 'person' | 'org' | 'place' | 'concept';
+
+export interface ExtractedEntity {
+  name: string;
+  type: EntityType;
+}
+
+export async function extractEntities(
+  model: string, content: string, lang: Lang,
+): Promise<ExtractedEntity[]> {
+  const prompt = lang === 'fr'
+    ? `Voici le contenu d'une note :\n\n${content.slice(0, 6000)}\n\n`
+      + `Identifie les entités nommées importantes (personnes, organisations, lieux, concepts notables) `
+      + `qui mériteraient chacune leur propre fiche de référence. Ignore les entités trop génériques ou triviales.\n\n`
+      + `Réponds STRICTEMENT en JSON, aucun texte hors du JSON :\n`
+      + `{"entities": [{"name": "Nom exact", "type": "person|org|place|concept"}]}\n\n`
+      + `Maximum 10 entités, seulement les plus pertinentes.`
+    : `Here is a note's content:\n\n${content.slice(0, 6000)}\n\n`
+      + `Identify important named entities (people, organizations, places, notable concepts) `
+      + `that would each deserve their own reference card. Skip anything too generic or trivial.\n\n`
+      + `Reply STRICTLY as JSON, no text outside the JSON:\n`
+      + `{"entities": [{"name": "Exact name", "type": "person|org|place|concept"}]}\n\n`
+      + `Maximum 10 entities, only the most relevant ones.`;
+  const raw = await oneShotLocalOllama(model, [{ role: 'user', content: prompt }], { format: 'json', timeoutMs: 60_000 });
+  const obj = extractJsonObject(raw);
+  const list = obj.entities;
+  if (!Array.isArray(list)) return [];
+  const validTypes: EntityType[] = ['person', 'org', 'place', 'concept'];
+  const out: ExtractedEntity[] = [];
+  const seen = new Set<string>();
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue;
+    const name = String((item as Record<string, unknown>).name ?? '').trim();
+    const rawType = String((item as Record<string, unknown>).type ?? '').trim() as EntityType;
+    if (!name || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    out.push({ name, type: validTypes.includes(rawType) ? rawType : 'concept' });
+  }
+  return out.slice(0, 10);
+}
+
+export interface WikipediaSummary {
+  title: string;
+  extract: string;
+  url: string;
+  thumbnail?: string;
+}
+
+/** Fetch a Wikipedia intro summary via the public REST API. No key, CORS
+ * enabled on Wikimedia's side. Returns null on a 404 (no matching article) —
+ * that's an expected outcome for niche/local entities, not an error. */
+export async function fetchWikipediaSummary(
+  name: string, lang: Lang,
+): Promise<WikipediaSummary | null> {
+  const wikiLang = lang === 'fr' ? 'fr' : 'en';
+  const url = `https://${wikiLang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(name.replace(/ /g, '_'))}`;
+  try {
+    const resp = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (data.type === 'disambiguation' || !data.extract) return null;
+    return {
+      title: data.title || name,
+      extract: data.extract as string,
+      url: data.content_urls?.desktop?.page || `https://${wikiLang}.wikipedia.org/wiki/${encodeURIComponent(name)}`,
+      thumbnail: data.thumbnail?.source,
+    };
+  } catch { return null; }
+}
+
+
 // ── Generate diagram (one-shot, Mermaid code block) ────────────────────────
 
 const MERMAID_KINDS = 'flowchart, sequenceDiagram, classDiagram, stateDiagram-v2, erDiagram, gantt, mindmap, or pie';

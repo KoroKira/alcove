@@ -1,0 +1,110 @@
+.bookmarklet-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bookmarklet-dialog__panel {
+  width: min(440px, 92vw);
+  background: var(--color-surface-lowest, var(--ap-bg0));
+  border: 1px solid var(--color-surface-mid, var(--ap-bg2));
+  border-radius: var(--ap-radius-lg, 14px);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  padding: 18px 20px 22px;
+}
+
+.bookmarklet-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.bookmarklet-dialog__title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-on-surface, var(--ap-text0));
+}
+
+.bookmarklet-dialog__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  color: var(--color-on-surface-low, var(--ap-text2));
+  border-radius: var(--ap-radius-xs);
+  cursor: pointer;
+  &:hover { background: var(--color-surface-mid, var(--ap-bg2)); }
+}
+
+.bookmarklet-dialog__intro {
+  font-size: 12px;
+  color: var(--color-on-surface-low, var(--ap-text2));
+  line-height: 1.5;
+  margin: 0 0 14px;
+}
+
+.bookmarklet-dialog__drag-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: var(--color-surface-mid, var(--ap-bg2));
+  border-radius: var(--ap-radius-md, 10px);
+  margin-bottom: 14px;
+}
+
+.bookmarklet-dialog__bookmarklet {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: var(--ap-accent, #7c56ff);
+  color: #fff;
+  border-radius: var(--ap-radius-md, 10px);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: grab;
+  flex-shrink: 0;
+  &:active { cursor: grabbing; }
+}
+
+.bookmarklet-dialog__drag-hint {
+  font-size: 11px;
+  color: var(--color-on-surface-low, var(--ap-text2));
+  font-style: italic;
+}
+
+.bookmarklet-dialog__steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.bookmarklet-dialog__step {
+  font-size: 12px;
+  color: var(--color-on-surface, var(--ap-text0));
+  line-height: 1.4;
+  strong { color: var(--ap-accent, #7c56ff); margin-right: 4px; }
+}
+
+.bookmarklet-dialog__note {
+  font-size: 11px;
+  color: var(--color-on-surface-low, var(--ap-text2));
+  line-height: 1.4;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-surface-mid, var(--ap-bg2));
+}

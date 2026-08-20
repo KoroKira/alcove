@@ -19,6 +19,7 @@ import { Link, History, Bookmark, Download, FileText, List, Maximize2, Minimize2
 import { useRelatedPads } from '../hooks/useRelatedPads';
 import { readVideoMeta, stripVideoMeta, parseTimestamp, replaceReportBody } from '../lib/videoMeta';
 import VideoEmbed, { VideoEmbedHandle } from '../ui/VideoEmbed';
+import ListenButton from '../ui/ListenButton';
 
 /** Server-persisted video block: transcript segments + chapters + language.
  * Distinct from `readVideoMeta` (which parses the inline HTML comment): this
@@ -321,7 +322,7 @@ Bienvenue dans l'éditeur \\LaTeX{} intégré.
 
 const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark = true, format = 'markdown', tabs = [], onSelectPad, focusMode = false, onToggleFocus, pendingContent, onContentLoaded, onContentChange, contentToAppend, onContentAppended }) => {
   const isLatex = format === 'latex';
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [content, setContent] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('split');
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved' | 'conflict'>('saved');
@@ -1052,6 +1053,12 @@ ${renderedHtml}
                 <span className="document-pad__stats" title={`${wordCount} mots · ${readingTime} min`}>
                   {t('editor.words', { count: wordCount })} · {t('editor.readingTime', { min: readingTime })}
                 </span>
+              )}
+              {wordCount > 0 && viewMode !== 'edit' && (
+                <ListenButton
+                  getText={() => previewRef.current?.innerText ?? ''}
+                  lang={i18n.language.startsWith('fr') ? 'fr' : 'en'}
+                />
               )}
               {flashcardCount > 0 && (
                 <button

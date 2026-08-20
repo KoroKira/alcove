@@ -85,11 +85,96 @@ def _extract_og_image(html: str, base_url: str) -> Optional[str]:
     return None
 
 
+def _reddit_comments_to_markdown(children: list[dict], depth: int = 0, max_comments: int = 15) -> list[str]:
+    """Flatten Reddit's nested comment tree into a depth-indented list,
+    capped at max_comments top-level-equivalent entries so a huge thread
+    doesn't blow past _MAX_CHARS. "more" stub nodes (Reddit's "load more
+    comments" placeholders) are skipped — they carry no text."""
+    lines: list[str] = []
+    count = 0
+    for child in children:
+        if count >= max_comments:
+            break
+        if child.get("kind") != "t1":
+            continue
+        data = child.get("data", {})
+        body = (data.get("body") or "").strip()
+        author = data.get("author", "[deleted]")
+        if body and body != "[deleted]" and body != "[removed]":
+            indent = "  " * depth
+            lines.append(f"{indent}- **{author}** : {body[:600]}")
+            count += 1
+        replies = data.get("replies")
+        if isinstance(replies, dict):
+            nested = replies.get("data", {}).get("children", [])
+            lines.extend(_reddit_comments_to_markdown(nested, depth + 1, max_comments - count))
+    return lines
+
+
+async def _fetch_reddit(url: str) -> dict:
+    """Reddit posts expose their full thread as public JSON at
+    `{permalink}.json` — no auth, no API key, just the same URL a browser
+    would load with `.json` appended. Returns {title, markdown, metadata,
+    source_type} matching fetch_web's shape so callers don't need to know
+    the source was Reddit rather than a generic page."""
+    json_url = url.split("?")[0].rstrip("/") + ".json"
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
+            resp = await client.get(json_url, headers={"User-Agent": _UA}, params={"raw_json": 1})
+            resp.raise_for_status()
+            data = resp.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Impossible de récupérer le post Reddit : {e}")
+
+    if not isinstance(data, list) or len(data) < 1:
+        raise HTTPException(502, "Réponse Reddit inattendue.")
+
+    post = data[0]["data"]["children"][0]["data"]
+    title = post.get("title", "Post Reddit")
+    subreddit = post.get("subreddit_name_prefixed", post.get("subreddit", ""))
+    author = post.get("author", "[deleted]")
+    score = post.get("score", 0)
+    selftext = (post.get("selftext") or "").strip()
+    external_url = post.get("url_overridden_by_dest") or post.get("url", "")
+    permalink = f"https://www.reddit.com{post.get('permalink', '')}"
+
+    parts = [f"**{subreddit}** · posté par u/{author} · {score} points", ""]
+    if selftext:
+        parts.append(selftext)
+    elif external_url and external_url != permalink:
+        parts.append(f"Lien externe : {external_url}")
+    parts.append("")
+
+    comments = data[1]["data"]["children"] if len(data) > 1 else []
+    comment_lines = _reddit_comments_to_markdown(comments)
+    if comment_lines:
+        parts.append("## Commentaires")
+        parts.append("")
+        parts.extend(comment_lines)
+
+    markdown = "\n".join(parts)
+    if len(markdown) > _MAX_CHARS:
+        markdown = markdown[:_MAX_CHARS] + "\n\n*[contenu tronqué]*"
+
+    thumb = post.get("thumbnail")
+    meta: dict[str, Any] = {"source_url": permalink}
+    if thumb and thumb.startswith("http"):
+        meta["thumbnail"] = thumb
+
+    return {"title": title, "markdown": markdown, "metadata": meta, "source_type": "reddit"}
+
+
 async def fetch_web(url: str) -> dict:
     """Fetch a web page (or raw text/markdown file) → {title, markdown}."""
     url = url.strip()
     if not url.startswith(("http://", "https://")):
         raise HTTPException(400, "URL invalide (http/https uniquement)")
+    # Reddit posts: pull the public JSON thread (post + top comments) instead
+    # of scraping the client-rendered HTML, which readability can't parse.
+    if re.match(r"https?://(www\.|old\.)?reddit\.com/r/[^/]+/comments/", url):
+        return await _fetch_reddit(url)
     # GitHub blob pages: fetch the raw file instead of the HTML viewer.
     gh = re.match(r"https://github\.com/([^/]+/[^/]+)/blob/(.+)", url)
     if gh:

@@ -41,6 +41,8 @@ const ChatView = lazy(() => import('./ui/ChatView'));
 import AIPanel from './ui/AIPanel';
 import QuickCapture from './ui/QuickCapture';
 import ObsidianImport from './ui/ObsidianImport';
+import BookmarksImport from './ui/BookmarksImport';
+import BookmarkletDialog from './ui/BookmarkletDialog';
 import AddFromLink from './ui/AddFromLink';
 import SmartResearch from './ui/SmartResearch';
 import HomeHub from './ui/HomeHub';
@@ -162,7 +164,10 @@ export default function App() {
   const [databaseData, setDatabaseData] = useState<DatabaseData | null>(null);
   const [quickCaptureOpen, setQuickCaptureOpen] = useState(false);
   const [obsidianImportOpen, setObsidianImportOpen] = useState(false);
+  const [bookmarksImportOpen, setBookmarksImportOpen] = useState(false);
+  const [bookmarkletDialogOpen, setBookmarkletDialogOpen] = useState(false);
   const [addLinkOpen, setAddLinkOpen] = useState(false);
+  const [bookmarkletUrl, setBookmarkletUrl] = useState<string | null>(null);
   const [smartResearchOpen, setSmartResearchOpen] = useState(false);
   const [homeOpen, setHomeOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(shouldShowOnboarding);
@@ -203,6 +208,24 @@ export default function App() {
   const isStructuredMode = isDocumentMode || isKanbanMode || isGanttMode || isLatexMode || isDatabaseMode;
   const firstDocTab = tabs.find(t => t.padType === 'document');
   const splitPanelDocId = splitDocId || firstDocTab?.id || null;
+
+  // Bookmarklet entry point (chantier #12): `?add=<url>` opens AddFromLink
+  // pre-filled and auto-ingesting. Reuses the browser's existing Alcove
+  // session cookie — no new auth mechanism needed, unlike a true
+  // cross-origin extension call (that's the scoped-down, deliverable-today
+  // version of the roadmap's bookmarklet step). The query param is stripped
+  // immediately so a page refresh doesn't re-trigger ingestion.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const params = new URLSearchParams(window.location.search);
+    const addUrl = params.get('add');
+    if (!addUrl) return;
+    setBookmarkletUrl(addUrl);
+    setAddLinkOpen(true);
+    params.delete('add');
+    const next = params.toString();
+    window.history.replaceState({}, '', window.location.pathname + (next ? `?${next}` : ''));
+  }, [isAuthenticated]);
 
   // Single source of truth for the canvas background/ink. Fires on both theme
   // change AND pad selection change (previously two overlapping effects that
@@ -753,6 +776,8 @@ export default function App() {
           onClose={() => setUnifiedAddOpen(false)}
           onIngest={() => { setUnifiedAddOpen(false); setAddLinkOpen(true); }}
           onImportObsidian={() => { setUnifiedAddOpen(false); setObsidianImportOpen(true); }}
+          onImportBookmarks={() => { setUnifiedAddOpen(false); setBookmarksImportOpen(true); }}
+          onShowBookmarklet={() => { setUnifiedAddOpen(false); setBookmarkletDialogOpen(true); }}
           onQuickCapture={() => { setUnifiedAddOpen(false); setQuickCaptureOpen(true); }}
           onCreateCanvas={() => { setUnifiedAddOpen(false); setDashboardOpen(false); createNewPadAsync(); }}
           onCreateDocument={() => { setUnifiedAddOpen(false); setDashboardOpen(false); createNewDocumentAsync(); }}
@@ -880,11 +905,28 @@ export default function App() {
         />
       )}
 
+      {/* ── Bookmarks import dialog (chantier #11) ── */}
+      {bookmarksImportOpen && (
+        <BookmarksImport
+          onClose={() => setBookmarksImportOpen(false)}
+          onImported={(ids) => {
+            refetchTabs();
+            if (ids.length) selectTab(ids[0]);
+          }}
+        />
+      )}
+
+      {/* ── Bookmarklet dialog (chantier #12) ── */}
+      {bookmarkletDialogOpen && (
+        <BookmarkletDialog onClose={() => setBookmarkletDialogOpen(false)} />
+      )}
+
       {/* ── Add from link (web / PDF / YouTube ingestion) ── */}
       {addLinkOpen && (
         <AddFromLink
           tabs={tabs}
-          onClose={() => setAddLinkOpen(false)}
+          initialUrl={bookmarkletUrl ?? undefined}
+          onClose={() => { setAddLinkOpen(false); setBookmarkletUrl(null); }}
           onCreated={(id) => { refetchTabs(); selectTab(id); }}
         />
       )}

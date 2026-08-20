@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   X, Link2, FileText, Youtube, Globe, Loader2, CheckCircle, AlertCircle, Sparkles, Mic,
   PlayCircle, XCircle,
@@ -10,6 +10,9 @@ import './AddFromLink.scss';
 
 interface Props {
   onClose: () => void;
+  /** Pre-fill the URL field and auto-start ingestion (chantier #12's
+   * bookmarklet: `?add=<url>` on app load routes here). */
+  initialUrl?: string;
   /** Called with the created/updated pad id so App can refetch + select it. */
   onCreated: (id: string) => void;
   tabs: Tab[];
@@ -140,11 +143,11 @@ async function videoReport(
   return doc.trim();
 }
 
-export default function AddFromLink({ onClose, onCreated, tabs }: Props) {
+export default function AddFromLink({ onClose, onCreated, tabs, initialUrl }: Props) {
   const { i18n } = useTranslation();
   const lang = i18n.language.startsWith('fr') ? 'fr' : 'en';
 
-  const [url, setUrl] = useState('');
+  const [url, setUrl] = useState(initialUrl ?? '');
   const [files, setFiles] = useState<File[]>([]);
   const [ingested, setIngested] = useState<Ingested | null>(null);
   const [loading, setLoading] = useState(false);
@@ -236,6 +239,13 @@ export default function AddFromLink({ onClose, onCreated, tabs }: Props) {
       setLoading(false);
     }
   };
+
+  // Bookmarklet entry point (chantier #12): auto-start ingestion once, on
+  // mount, when the app opened this dialog with a URL already known.
+  useEffect(() => {
+    if (initialUrl) ingest();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /* ── Whisper: transcribe a captionless video locally ── */
   const transcribe = async () => {

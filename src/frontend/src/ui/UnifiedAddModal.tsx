@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import {
   X, Link2, FileText, Presentation, KanbanSquare, GanttChartSquare,
-  Sigma, Table2, CalendarDays, StickyNote, Import, Mic,
+  Sigma, Table2, CalendarDays, StickyNote, Import, Mic, Bookmark, MousePointerClick,
 } from 'lucide-react';
 import './UnifiedAddModal.scss';
 
@@ -23,6 +23,8 @@ interface Props {
   onClose: () => void;
   onIngest: () => void;                // → ouvre AddFromLink
   onImportObsidian: () => void;        // → ouvre ObsidianImport
+  onImportBookmarks: () => void;       // → ouvre BookmarksImport
+  onShowBookmarklet: () => void;       // → ouvre BookmarkletDialog
   onQuickCapture: () => void;          // → ouvre QuickCapture (note express)
   onCreateCanvas: () => void;
   onCreateDocument: () => void;
@@ -43,7 +45,7 @@ interface Tile {
 }
 
 export default function UnifiedAddModal({
-  onClose, onIngest, onImportObsidian, onQuickCapture,
+  onClose, onIngest, onImportObsidian, onImportBookmarks, onShowBookmarklet, onQuickCapture,
   onCreateCanvas, onCreateDocument, onCreateKanban, onCreateGantt,
   onCreateLatex, onCreateDatabase, onCreateDaily,
 }: Props) {
@@ -72,6 +74,22 @@ export default function UnifiedAddModal({
       title: 'Importer un vault Obsidian',
       hint: 'Batch import de .md et assets',
       onClick: closeAfter(onImportObsidian),
+      accent: 'ingest',
+    },
+    {
+      key: 'bookmarks',
+      icon: <Bookmark size={20} />,
+      title: 'Importer des favoris',
+      hint: 'Export .html Chrome/Firefox/Safari — chaque favori devient un pad',
+      onClick: closeAfter(onImportBookmarks),
+      accent: 'ingest',
+    },
+    {
+      key: 'bookmarklet',
+      icon: <MousePointerClick size={20} />,
+      title: 'Bookmarklet "Enregistrer"',
+      hint: 'Un clic depuis n\'importe quel site pour l\'envoyer dans Alcove',
+      onClick: closeAfter(onShowBookmarklet),
       accent: 'ingest',
     },
   ];
