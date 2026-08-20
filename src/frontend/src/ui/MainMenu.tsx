@@ -307,7 +307,7 @@ export const MainMenuConfig: React.FC<MainMenuConfigProps> = ({
           Command Palette (⌘P)
         </MainMenu.Item>
         <MainMenu.Item icon={<Sparkles />} onClick={() => onChat?.()}>
-          AI Chat (⌘⇧C)
+          AI Chat (⌘⇧O)
         </MainMenu.Item>
         <MainMenu.Item icon={<BookOpen />} onClick={() => onOpenDashboard?.()}>
           Knowledge Hub (⌘D)

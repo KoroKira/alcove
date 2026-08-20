@@ -110,8 +110,10 @@ export const useKeyboardShortcuts = (handlers: ShortcutHandlers) => {
         return;
       }
 
-      // Cmd+Shift+C / Ctrl+Shift+C → full-page AI Chat view
-      if (mod && e.shiftKey && e.key === 'C') {
+      // Cmd+Shift+O / Ctrl+Shift+O → full-page AI Chat view.
+      // NOT Ctrl+Shift+C — Chrome reserves that for "Inspect Element" and
+      // eats the keystroke before page JS ever sees it.
+      if (mod && e.shiftKey && e.key === 'O') {
         e.preventDefault();
         handlers.onChat?.();
         return;
