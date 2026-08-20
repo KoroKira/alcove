@@ -66,4 +66,4 @@ Thumbs.db
 alcove.tar.gz
 
 # Local-only reference data (personal Recall export, not for commit — copyrighted PDFs/notes)
-docs/recall-export-sample/
+docs/recall-export-*/
