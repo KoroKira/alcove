@@ -309,6 +309,25 @@ async def _tool_write_note(
     )
     await session.execute(stmt)
     await session.commit()
+
+    # Pad.create() unconditionally treats every new pad as a live canvas: it
+    # seeds Redis with a canvas-shaped snapshot (pad_type="canvas", tags=[],
+    # data=<excalidraw shape>) and attaches a CanvasWorker via
+    # ensure_worker() — pad.ws lineage, meant for real-time collaborative
+    # editing. Nobody is co-editing a note created headlessly via MCP, but
+    # the worker doesn't know that: canvas_worker.SAVE_INTERVAL (30s) later
+    # reloads that STALE Redis snapshot and calls pad.save(), which
+    # overwrites pad_type/tags/data right back to the pre-update canvas
+    # shape — silently reverting the document we just wrote above and
+    # losing its content. Stop the worker before that first tick fires
+    # (graceful=False: skip stop_processing_pad's own "final save", which
+    # would perform exactly the clobber this is trying to prevent) and drop
+    # the stale cache entry so no other path reads or re-persists it.
+    from workers.canvas_worker import CanvasWorker
+    worker = await CanvasWorker.get_instance()
+    await worker.stop_processing_pad(pad.id, graceful=False)
+    await pad.invalidate_cache()
+
     return {
         "pad_id": str(pad.id),
         "title": title,
