@@ -7,7 +7,6 @@ import {
   PenLine,
   Pin,
   CalendarDays,
-  Network,
   Layers,
   MoreHorizontal,
   Hash,
@@ -18,7 +17,6 @@ import {
   Columns3,
   GanttChart,
   Table2,
-  Home,
   Palette,
   Keyboard,
   Zap,
@@ -54,8 +52,6 @@ interface PadSidebarProps {
   onNewGantt?: () => void;
   onNewDatabase?: () => void;
   onDailyNote: () => void;
-  onGraph: () => void;
-  onTemplates: () => void;
   onRename: (args: { padId: string; newName: string }) => void;
   onDelete: (padId: string) => void;
   onLeaveSharedPad: (padId: string) => void;
@@ -71,8 +67,6 @@ interface PadSidebarProps {
   splitActive?: boolean;
   onToggleAI?: () => void;
   aiActive?: boolean;
-  onHome?: () => void;
-  homeActive?: boolean;
   onTheme?: () => void;
   onShortcuts?: () => void;
   currentThemeId?: string;
@@ -117,8 +111,6 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
   onNewGantt,
   onNewDatabase,
   onDailyNote,
-  onGraph,
-  onTemplates,
   onRename,
   onDelete,
   onLeaveSharedPad,
@@ -134,8 +126,6 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
   splitActive,
   onToggleAI,
   aiActive,
-  onHome,
-  homeActive,
   onTheme,
   onShortcuts,
   currentThemeId,
@@ -610,17 +600,9 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
         </div>
       )}
 
-      {/* Bottom toolbar — the five recurring destinations stay visible;
-          occasional utilities live in the labelled Tools menu. */}
+      {/* Outils contextuels à l'éditeur. Les destinations globales vivent
+          dans AppRail pour rester stables quelle que soit la vue ouverte. */}
       <div className="pad-sidebar__bottom">
-        {onHome && (
-          <button className={`pad-sidebar__icon-btn${homeActive ? ' pad-sidebar__icon-btn--active' : ''}`} onClick={onHome} title={t('sidebar.home')} aria-label={t('sidebar.home')}>
-            <Home size={16} />
-          </button>
-        )}
-        <button className="pad-sidebar__icon-btn" onClick={onGraph} title={t('sidebar.graph')} aria-label={t('sidebar.graph')}>
-          <Network size={16} />
-        </button>
         {onToggleSplit && (
           <button className={`pad-sidebar__icon-btn${splitActive ? ' pad-sidebar__icon-btn--active' : ''}`} onClick={onToggleSplit} title={t('sidebar.split')} aria-label={t('sidebar.split')}>
             <Columns2 size={16} />

@@ -7,11 +7,14 @@
   /* Document/kanban/gantt panels: don't reserve space for the sidebar — it
      overlays instead. `!important` beats the inline `left: sidebarWidth`. */
   .app-doc-wrap {
-    left: 0 !important;
+    left: 52px !important;
   }
+
+  .pad-sidebar { left: 52px; }
 
   /* Sidebar becomes a slide-over drawer with a drop shadow. */
   .pad-sidebar:not(.pad-sidebar--collapsed) {
+    left: 52px;
     width: min(84vw, 320px);
     box-shadow: 0 0 48px rgba(0, 0, 0, 0.55);
     z-index: 300;

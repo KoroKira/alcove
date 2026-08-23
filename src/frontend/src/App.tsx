@@ -33,6 +33,7 @@ import type { DatabaseData } from './pad/DatabasePad';
 import PresentationMode from './ui/PresentationMode';
 import CommandPalette from './ui/CommandPalette';
 import GraphView from './ui/GraphView';
+import AppRail from './ui/AppRail';
 import PadSidebar from './ui/PadSidebar';
 import PomodoroTimer from './ui/PomodoroTimer';
 import DocumentTemplateDialog from './ui/DocumentTemplateDialog';
@@ -145,7 +146,7 @@ export default function App() {
   const [dashboardOpen, setDashboardOpen] = useState(
     () => !shouldShowOnboarding() && localStorage.getItem('alcove-landing') !== 'canvas',
   );
-  const [dashboardInitialView, setDashboardInitialView] = useState<'pads' | 'templates'>('pads');
+  const [dashboardInitialView, setDashboardInitialView] = useState<'pads' | 'templates' | 'favorites'>('pads');
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [graphOpen, setGraphOpen] = useState(false);
   const [chatViewOpen, setChatViewOpen] = useState(false);
@@ -477,12 +478,35 @@ export default function App() {
     }
   }, [config, configError]);
 
-  const sidebarWidth = sidebarCollapsed ? 40 : 240;
+  const railWidth = 58;
+  const sidebarWidth = focusMode ? 0 : railWidth + (sidebarCollapsed ? 40 : 240);
+
+  const closeGlobalViews = () => {
+    setDashboardOpen(false);
+    setGraphOpen(false);
+    setChatViewOpen(false);
+    setReviewDashboardOpen(false);
+    setSearchOpen(false);
+  };
 
   return (
     <>
-      {/* ── Sidebar — position:fixed, floats above canvas at z-index 100 ── */}
-      <PadSidebar
+      {/* Navigation globale persistante + sidebar contextuelle des fichiers. */}
+      {!focusMode && <AppRail
+        active={dashboardOpen ? (dashboardInitialView === 'favorites' ? 'favorites' : 'home') : graphOpen ? 'graph' : chatViewOpen ? 'chat' : reviewDashboardOpen ? 'review' : searchOpen ? 'search' : null}
+        sidebarCollapsed={sidebarCollapsed}
+        onHome={() => { closeGlobalViews(); setDashboardInitialView('pads'); setDashboardOpen(true); }}
+        onSearch={() => { closeGlobalViews(); setSearchOpen(true); }}
+        onChat={() => { closeGlobalViews(); setChatViewOpen(true); }}
+        onGraph={() => { closeGlobalViews(); setGraphOpen(true); }}
+        onReview={() => { closeGlobalViews(); setReviewDashboardOpen(true); }}
+        onFavorites={() => { closeGlobalViews(); setDashboardInitialView('favorites'); setDashboardOpen(true); }}
+        onAdd={() => setUnifiedAddOpen(true)}
+        onToggleSidebar={() => setSidebarCollapsed(v => !v)}
+        onCommands={() => setCommandPaletteOpen(true)}
+        onTheme={() => setThemePickerOpen(true)}
+      />}
+      {!focusMode && <PadSidebar
         tabs={tabs}
         selectedTabId={selectedTabId ?? ''}
         isAuthenticated={isAuthenticated}
@@ -495,8 +519,6 @@ export default function App() {
         onNewGantt={() => createNewGantt()}
         onNewDatabase={() => createNewDatabase()}
         onDailyNote={createDailyNote}
-        onGraph={() => setGraphOpen(v => !v)}
-        onTemplates={() => { setDashboardInitialView('templates'); setDashboardOpen(true); }}
         onRename={renamePad}
         onDelete={deletePad}
         onLeaveSharedPad={leaveSharedPad}
@@ -504,7 +526,7 @@ export default function App() {
         onUpdateTheme={updateTheme}
         onUpdateTags={updateTags}
         onUpdateFolder={updateFolder}
-        collapsed={sidebarCollapsed || focusMode}
+        collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(v => !v)}
         onTogglePomodoro={() => setPomodoroOpen(v => !v)}
         pomodoroActive={pomodoroOpen}
@@ -512,8 +534,6 @@ export default function App() {
         splitActive={splitOpen}
         onToggleAI={() => setAiOpen(v => !v)}
         aiActive={aiOpen}
-        onHome={() => { setDashboardInitialView('pads'); setDashboardOpen(true); }}
-        homeActive={dashboardOpen && dashboardInitialView === 'pads'}
         onTheme={() => setThemePickerOpen(v => !v)}
         onShortcuts={() => setShortcutOpen(v => !v)}
         currentThemeId={currentThemeId}
@@ -525,7 +545,7 @@ export default function App() {
         onFlashcardStudio={() => setFlashcardStudioOpen(true)}
         onReviewDashboard={() => setReviewDashboardOpen(true)}
         onNewLatex={() => createNewLatex()}
-      />
+      />}
 
       {/* ── Canvas — position:fixed inset:0, always full viewport so Excalidraw pointer math is correct ── */}
       <div
@@ -752,6 +772,7 @@ export default function App() {
       {dashboardOpen && isAuthenticated && (
         <Dashboard
           initialView={dashboardInitialView}
+          leftOffset={sidebarWidth}
           tabs={tabs}
           selectedTabId={selectedTabId ?? ''}
           onSelectPad={(padId) => { selectTab(padId); setDashboardOpen(false); }}

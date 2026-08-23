@@ -1,24 +1,21 @@
 .dashboard-overlay {
   position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(4px);
-  z-index: 200;
+  inset: 0 0 0 auto;
+  background: var(--ap-bg0);
+  z-index: 90;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  transition: left .16s ease;
 }
 
 .dashboard {
   background: var(--island-bg-color, var(--ap-bg0));
-  border: 1px solid var(--color-surface-mid, var(--ap-bg3));
-  border-radius: var(--ap-radius-lg);
-  width: min(1180px, 96vw);
-  height: min(900px, 94vh);
-  max-height: 94vh;
+  border: 0;
+  border-radius: 0;
+  width: 100%;
+  height: 100%;
+  max-height: none;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
   overflow: hidden;
 
   &__header {
@@ -200,8 +197,19 @@
 
   &__sort {
     display: flex;
-    gap: 2px;
+    gap: 5px;
+    align-items: center;
+
+    select, button { border: 1px solid var(--color-surface-mid, var(--ap-bg3)); background: var(--color-surface, var(--ap-bg2)); color: var(--color-on-surface-low, var(--ap-text2)); border-radius: 8px; height: 32px; }
+    select { padding: 0 28px 0 9px; font-size: 11px; }
+    button { width: 32px; display: grid; place-items: center; cursor: pointer; }
+    button.active, button:hover { color: var(--ap-accent); border-color: color-mix(in srgb, var(--ap-accent) 40%, transparent); }
   }
+
+  &__filters { display: flex; align-items: center; gap: 7px; padding: 0 16px 10px; border-bottom: 1px solid var(--color-surface-mid, var(--ap-bg2)); flex-shrink: 0; }
+  &__filters > span { display: flex; align-items: center; gap: 6px; color: var(--ap-text2); font-size: 11px; font-weight: 650; margin-right: 2px; }
+  &__filters select, &__filters button { height: 29px; border: 1px solid var(--ap-bg3); border-radius: 8px; background: var(--ap-bg1); color: var(--ap-text1); font-size: 11px; padding: 0 9px; }
+  &__filters button { cursor: pointer; color: var(--ap-accent); }
 
   &__sort-btn {
     background: none;
@@ -286,6 +294,18 @@
   }
 
   &__grid--flat { padding: 20px; }
+
+  &__resume { margin: 22px 20px 28px; padding: 18px; border-radius: 16px; background: color-mix(in srgb, var(--ap-accent) 5%, var(--ap-bg1)); border: 1px solid color-mix(in srgb, var(--ap-accent) 16%, transparent); }
+  &__resume-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+  &__resume-head > span { display: flex; align-items: center; gap: 7px; color: var(--ap-text0); font: 600 18px/1.2 ui-serif, Georgia, serif; }
+  &__resume-head > span svg { color: var(--ap-accent); }
+  &__resume-head small { color: var(--ap-text2); font-size: 11px; }
+  &__grid--resume { grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; }
+  &__grid--list { display: flex; flex-direction: column; gap: 8px; }
+  &__grid--list .dashboard__card { min-height: 94px; flex-direction: row; }
+  &__grid--list .dashboard__card-thumb { width: 150px; min-width: 150px; aspect-ratio: auto; }
+  &__grid--list .dashboard__card-body { flex: 1; justify-content: center; }
+  &__grid--list .dashboard__card-title { -webkit-line-clamp: 1; }
 
   &__card-empty {
     color: var(--ap-orange);
@@ -692,7 +712,7 @@
 }
 
 @media (max-width: 768px) {
-  .dashboard-overlay { align-items: stretch; background: var(--ap-bg0); }
+  .dashboard-overlay { left: 52px !important; align-items: stretch; background: var(--ap-bg0); }
   .dashboard {
     border: 0;
     border-radius: 0;
@@ -706,6 +726,8 @@
     &__create-btn--primary { min-height: 40px; }
     &__close { align-items: center; justify-content: center; min-height: 40px; min-width: 40px; }
     &__controls { align-items: stretch; flex-direction: column; padding: 10px 12px; }
+    &__filters { overflow-x: auto; padding: 0 12px 10px; }
+    &__filters > span { display: none; }
     &__sort { overflow-x: auto; padding-bottom: 2px; }
     &__sort-btn { min-height: 36px; white-space: nowrap; }
     &__heatmap { display: none; }
@@ -713,9 +735,14 @@
     &__capture button { justify-content: center; min-height: 44px; }
     &__section { margin: 18px 12px 0; }
     &__grid { columns: 1; }
+    &__grid--resume { grid-template-columns: 1fr; }
+    &__resume { margin: 14px 12px 22px; padding: 12px; }
+    &__resume-head { align-items: flex-start; flex-direction: column; gap: 4px; }
     &__templates { padding: 16px 12px; }
     &__templates-grid { grid-template-columns: 1fr 1fr; }
     &__tag-filter { flex-wrap: nowrap; overflow-x: auto; padding: 0 12px 8px; }
     &__tag-chip { min-height: 34px; white-space: nowrap; }
   }
+
+  &__card-saved { position: absolute; left: 10px; bottom: 10px; z-index: 2; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 9px; color: var(--ap-yellow, #e5c07b); background: rgba(10,10,12,.62); backdrop-filter: blur(6px); }
 }

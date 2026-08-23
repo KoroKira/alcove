@@ -1,11 +1,13 @@
 .chatview-overlay {
   position: fixed;
-  inset: 0;
-  z-index: 260;
+  inset: 0 0 0 58px;
+  z-index: 120;
   display: flex;
   background: var(--color-surface-lowest, var(--ap-bg0));
   animation: chatview-in 0.15s ease-out;
 }
+
+@media (max-width: 768px) { .chatview-overlay { left: 52px; } }
 
 @keyframes chatview-in {
   from { opacity: 0; }

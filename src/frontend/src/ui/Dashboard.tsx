@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  X, Plus, FileText, PenLine, Search, Grid2X2, Layers, Link as LinkIcon, PenTool,
-  Kanban, GanttChart, Sigma, Database, StickyNote,
+  X, Plus, FileText, Search, Grid2X2, Layers, Link as LinkIcon, PenTool,
+  Kanban, GanttChart, Sigma, Database, List, SlidersHorizontal, Clock3, Bookmark,
 } from 'lucide-react';
 import { Tab } from '../hooks/usePadTabs';
 import { CANVAS_TEMPLATES, CanvasTemplate } from '../constants/templates';
@@ -10,7 +10,8 @@ import { cardTint } from '../lib/cardTint';
 import './Dashboard.scss';
 
 interface Props {
-  initialView?: 'pads' | 'templates';
+  initialView?: 'pads' | 'templates' | 'favorites';
+  leftOffset?: number;
   tabs: Tab[];
   selectedTabId: string;
   onSelectPad: (padId: string) => void;
@@ -22,9 +23,11 @@ interface Props {
 }
 
 type SortKey = 'updated' | 'created' | 'name' | 'type';
+type StatusFilter = 'all' | 'ready' | 'empty' | 'saved';
+type LayoutMode = 'grid' | 'list';
 
 const allTags = (tabs: Tab[]): string[] =>
-  Array.from(new Set(tabs.flatMap(t => t.tags || []))).sort();
+  Array.from(new Set(tabs.flatMap(t => t.tags || []).filter(tag => tag !== 'read-later'))).sort();
 
 // TYPE_LABELS is now built dynamically using t() inside the component
 
@@ -86,6 +89,7 @@ const Dashboard: React.FC<Props> = ({
   onUnifiedAdd,
   onCreateFromTemplate,
   onClose,
+  leftOffset = 0,
 }) => {
   const { t } = useTranslation();
   const typeLabels: Record<string, string> = {
@@ -98,8 +102,12 @@ const Dashboard: React.FC<Props> = ({
   };
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('updated');
-  const [activeView, setActiveView] = useState<'pads' | 'templates'>(initialView);
+  const [activeView, setActiveView] = useState<'pads' | 'templates'>(initialView === 'templates' ? 'templates' : 'pads');
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [folderFilter, setFolderFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(initialView === 'favorites' ? 'saved' : 'all');
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>('grid');
   const [tagsExpanded, setTagsExpanded] = useState(false);
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [emptyPadIds, setEmptyPadIds] = useState<Set<string>>(new Set());
@@ -145,7 +153,13 @@ const Dashboard: React.FC<Props> = ({
     searchRef.current?.focus();
   }, []);
 
-  useEffect(() => setActiveView(initialView), [initialView]);
+  useEffect(() => {
+    setActiveView(initialView === 'templates' ? 'templates' : 'pads');
+    if (initialView === 'favorites') setStatusFilter('saved');
+    else if (statusFilter === 'saved') setStatusFilter('all');
+  // statusFilter is deliberately excluded: navigation is the source of truth here.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialView]);
 
   // Close on Escape
   useEffect(() => {
@@ -207,10 +221,25 @@ const Dashboard: React.FC<Props> = ({
         ? aiHits.has(t.id)
         : t.title.toLowerCase().includes(query.toLowerCase());
     const matchesTag = !activeTag || (t.tags || []).includes(activeTag);
-    return matchesQuery && matchesTag;
+    const matchesType = typeFilter === 'all' || (t.padType || 'canvas') === typeFilter;
+    const matchesFolder = folderFilter === 'all' || (folderFilter === '__none' ? !t.folder : t.folder === folderFilter);
+    const matchesStatus = statusFilter === 'all'
+      || (statusFilter === 'empty' && emptyPadIds.has(t.id))
+      || (statusFilter === 'ready' && !emptyPadIds.has(t.id))
+      || (statusFilter === 'saved' && (t.tags || []).includes('read-later'));
+    return matchesQuery && matchesTag && matchesType && matchesFolder && matchesStatus;
   });
 
   const tagList = allTags(tabs);
+  const folderList = Array.from(new Set(tabs.map(t => t.folder).filter(Boolean) as string[])).sort();
+  const resumeTabs = [...tabs]
+    .filter(t => !emptyPadIds.has(t.id))
+    .sort((a, b) => {
+      const aSaved = (a.tags || []).includes('read-later') ? 1 : 0;
+      const bSaved = (b.tags || []).includes('read-later') ? 1 : 0;
+      return bSaved - aSaved || new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    })
+    .slice(0, 3);
 
   const handleSelect = (id: string) => {
     onSelectPad(id);
@@ -309,6 +338,7 @@ const Dashboard: React.FC<Props> = ({
             {typeLabel}
           </span>
           {tab.isScratch && <span className="dashboard__card-scratch">Scratch</span>}
+          {(tab.tags || []).includes('read-later') && <span className="dashboard__card-saved" title="À lire / favori"><Bookmark size={13} fill="currentColor" /></span>}
         </div>
         <div className="dashboard__card-body">
           {sourceHost && (
@@ -333,9 +363,9 @@ const Dashboard: React.FC<Props> = ({
           {emptyPadIds.has(tab.id) && (
             <div className="dashboard__card-empty">Document vide · ouvre-le pour commencer</div>
           )}
-          {(tab.tags || []).length > 0 && (
+          {(tab.tags || []).some(tag => tag !== 'read-later') && (
             <div className="dashboard__card-tags">
-              {(tab.tags || []).slice(0, 4).map(tag => (
+              {(tab.tags || []).filter(tag => tag !== 'read-later').slice(0, 4).map(tag => (
                 <span
                   key={tag}
                   className="dashboard__card-tag"
@@ -351,8 +381,8 @@ const Dashboard: React.FC<Props> = ({
   };
 
   return (
-    <div className="dashboard-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="dashboard" role="dialog" aria-modal="true" aria-labelledby="dashboard-title">
+    <div className="dashboard-overlay" style={{ left: leftOffset }}>
+      <div className="dashboard" role="main" aria-labelledby="dashboard-title">
         {/* Header */}
         <div className="dashboard__header">
           <div className="dashboard__title" id="dashboard-title">
@@ -440,16 +470,25 @@ const Dashboard: React.FC<Props> = ({
                 </div>
               </div>
               <div className="dashboard__sort">
-                {(['updated', 'created', 'name', 'type'] as SortKey[]).map(k => (
-                  <button
-                    key={k}
-                    className={`dashboard__sort-btn ${sortKey === k ? 'active' : ''}`}
-                    onClick={() => setSortKey(k)}
-                  >
-                    {t(`dashboard.sort.${k}`)}
-                  </button>
-                ))}
+                <select value={sortKey} onChange={e => setSortKey(e.target.value as SortKey)} aria-label="Trier la bibliothèque">
+                  <option value="updated">Modifiés récemment</option><option value="created">Créés récemment</option><option value="name">Nom</option><option value="type">Type</option>
+                </select>
+                <button className={layoutMode === 'grid' ? 'active' : ''} onClick={() => setLayoutMode('grid')} title="Grille"><Grid2X2 size={14} /></button>
+                <button className={layoutMode === 'list' ? 'active' : ''} onClick={() => setLayoutMode('list')} title="Liste"><List size={15} /></button>
               </div>
+            </div>
+            <div className="dashboard__filters">
+              <span><SlidersHorizontal size={13} /> Filtrer</span>
+              <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} aria-label="Type de pad">
+                <option value="all">Tous les types</option><option value="document">Documents</option><option value="canvas">Canvas</option><option value="kanban">Kanban</option><option value="gantt">Gantt</option><option value="latex">LaTeX</option><option value="database">Bases de données</option>
+              </select>
+              <select value={folderFilter} onChange={e => setFolderFilter(e.target.value)} aria-label="Collection">
+                <option value="all">Toutes les collections</option><option value="__none">Sans collection</option>{folderList.map(folder => <option key={folder} value={folder}>{folder}</option>)}
+              </select>
+              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as StatusFilter)} aria-label="Statut">
+                <option value="all">Tous les statuts</option><option value="ready">Avec contenu</option><option value="empty">À compléter</option><option value="saved">À lire / favoris</option>
+              </select>
+              {(typeFilter !== 'all' || folderFilter !== 'all' || statusFilter !== 'all' || activeTag) && <button onClick={() => { setTypeFilter('all'); setFolderFilter('all'); setStatusFilter('all'); setActiveTag(null); }}>Réinitialiser</button>}
             </div>
             {tagList.length > 0 && (
               <div className="dashboard__tag-filter">
@@ -472,6 +511,12 @@ const Dashboard: React.FC<Props> = ({
               </div>
             )}
             <div className="dashboard__library">
+              {!query && typeFilter === 'all' && folderFilter === 'all' && statusFilter === 'all' && !activeTag && resumeTabs.length > 0 && (
+                <section className="dashboard__resume">
+                  <div className="dashboard__resume-head"><span><Clock3 size={15} /> À reprendre</span><small>Ta lecture en attente et tes derniers espaces actifs</small></div>
+                  <div className="dashboard__grid dashboard__grid--resume">{resumeTabs.map(tab => renderCard(tab))}</div>
+                </section>
+              )}
               {filtered.length === 0 && (
                 <div className="dashboard__empty">{t('search.noResults')}</div>
               )}
@@ -481,13 +526,13 @@ const Dashboard: React.FC<Props> = ({
                     <span className="dashboard__section-label">{sectionLabel(iso)}</span>
                     <span className="dashboard__section-count">{group.length}</span>
                   </h3>
-                  <div className="dashboard__grid">
+                  <div className={`dashboard__grid${layoutMode === 'list' ? ' dashboard__grid--list' : ''}`}>
                     {group.map(tab => renderCard(tab))}
                   </div>
                 </section>
               ))}
               {filtered.length > 0 && !useDateGrouping && (
-                <div className="dashboard__grid dashboard__grid--flat">
+                <div className={`dashboard__grid dashboard__grid--flat${layoutMode === 'list' ? ' dashboard__grid--list' : ''}`}>
                   {filtered.map(tab => renderCard(tab))}
                 </div>
               )}

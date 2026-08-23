@@ -1,7 +1,7 @@
 .review-dashboard-overlay {
   position: fixed;
-  inset: 0;
-  z-index: 220;
+  inset: 0 0 0 58px;
+  z-index: 120;
   background: rgba(0, 0, 0, 0.65);
   backdrop-filter: blur(4px);
   display: flex;
@@ -9,6 +9,8 @@
   justify-content: center;
   animation: review-dashboard-backdrop-in 0.14s ease-out;
 }
+
+@media (max-width: 768px) { .review-dashboard-overlay { left: 52px; } }
 
 .review-dashboard {
   width: min(640px, 92vw);

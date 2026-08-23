@@ -1,7 +1,7 @@
 .graph-overlay {
   position: fixed;
-  inset: 0;
-  z-index: 250;
+  inset: 0 0 0 58px;
+  z-index: 120;
   background: var(--ap-bg0);
   display: flex;
   flex-direction: column;
@@ -53,6 +53,8 @@
     &:hover { background: var(--ap-bg2); color: var(--ap-text0); }
   }
 }
+
+@media (max-width: 768px) { .graph-overlay { left: 52px; } }
 
 .graph-empty {
   background: var(--ap-bg1);
