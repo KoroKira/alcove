@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
+import { Download, FilePlus2, LayoutTemplate, Maximize2, Play, Sparkles } from 'lucide-react';
 import type { CanvasTemplate } from './constants/templates';
 import { Excalidraw, MainMenu } from "@atyrode/excalidraw";
 import type { ExcalidrawImperativeAPI, AppState } from "@atyrode/excalidraw/types";
@@ -45,7 +46,6 @@ import BookmarksImport from './ui/BookmarksImport';
 import BookmarkletDialog from './ui/BookmarkletDialog';
 import AddFromLink from './ui/AddFromLink';
 import SmartResearch from './ui/SmartResearch';
-import HomeHub from './ui/HomeHub';
 import FlashcardStudio from './ui/FlashcardStudio';
 import ReviewDashboard from './ui/ReviewDashboard';
 import Onboarding, { shouldShowOnboarding } from './ui/Onboarding';
@@ -145,6 +145,7 @@ export default function App() {
   const [dashboardOpen, setDashboardOpen] = useState(
     () => !shouldShowOnboarding() && localStorage.getItem('alcove-landing') !== 'canvas',
   );
+  const [dashboardInitialView, setDashboardInitialView] = useState<'pads' | 'templates'>('pads');
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [graphOpen, setGraphOpen] = useState(false);
   const [chatViewOpen, setChatViewOpen] = useState(false);
@@ -173,7 +174,7 @@ export default function App() {
   const [addLinkOpen, setAddLinkOpen] = useState(false);
   const [bookmarkletUrl, setBookmarkletUrl] = useState<string | null>(null);
   const [smartResearchOpen, setSmartResearchOpen] = useState(false);
-  const [homeOpen, setHomeOpen] = useState(false);
+  const [canvasEmpty, setCanvasEmpty] = useState(true);
   const [onboardingOpen, setOnboardingOpen] = useState(shouldShowOnboarding);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [themeBuilderOpen, setThemeBuilderOpen] = useState(false);
@@ -185,20 +186,20 @@ export default function App() {
   const activeTheme = getTheme(currentThemeId);
   const prevThemeDarkRef = useRef<boolean>(activeTheme.dark);
 
-  // Canvas colors for the current pad. Excalidraw's appState.theme stays "light"
-  // (its dark mode applies an invert() filter that flips custom backgrounds);
-  // we drive the background and default ink directly, so the canvas is WYSIWYG.
+  // Canvas colours follow the active paper while Excalidraw's contrast model
+  // follows its polarity. CSS disables Excalidraw's old invert filter, so the
+  // result stays WYSIWYG and the native grid remains soft like pad.ws.
   // A per-pad theme override opposite to the app polarity uses fixed "paper" colors.
   const canvasColors = useCallback((padTheme?: string) => {
     const wants = padTheme ?? (activeTheme.dark ? 'dark' : 'light');
     if (wants === 'dark') {
       return activeTheme.dark
-        ? { bg: activeTheme.vars['--ap-bg0'] ?? '#1e1e2e', ink: activeTheme.vars['--ap-text0'] ?? '#cdd6f4' }
-        : { bg: '#1e1e2e', ink: '#cdd6f4' };
+        ? { bg: activeTheme.vars['--ap-bg0'] ?? '#1e1e2e', ink: activeTheme.vars['--ap-text0'] ?? '#cdd6f4', dark: true }
+        : { bg: '#1e1e2e', ink: '#cdd6f4', dark: true };
     }
     return activeTheme.dark
-      ? { bg: '#f6f7f9', ink: '#1f2328' }
-      : { bg: activeTheme.vars['--ap-bg0'] ?? '#eff1f5', ink: activeTheme.vars['--ap-text0'] ?? '#4c4f69' };
+      ? { bg: '#f6f7f9', ink: '#1f2328', dark: false }
+      : { bg: activeTheme.vars['--ap-bg0'] ?? '#eff1f5', ink: activeTheme.vars['--ap-text0'] ?? '#4c4f69', dark: false };
   }, [activeTheme]);
 
   // Derived pad-mode flags — declared here (before the canvas effect below) so
@@ -239,11 +240,11 @@ export default function App() {
     if (!excalidrawAPI || isDocumentMode) return;
     const theme = activeTheme;
     const tab = tabs.find(tb => tb.id === selectedTabId);
-    const { bg, ink } = canvasColors(tab?.theme);
+    const { bg, ink, dark } = canvasColors(tab?.theme);
     const wasDark = prevThemeDarkRef.current;
     const isDark = theme.dark;
 
-    const baseAppState = { theme: 'light', viewBackgroundColor: bg, currentItemStrokeColor: ink };
+    const baseAppState = { theme: dark ? 'dark' : 'light', viewBackgroundColor: bg, currentItemStrokeColor: ink };
 
     if (wasDark !== isDark) {
       const elements = excalidrawAPI.getSceneElements();
@@ -262,26 +263,13 @@ export default function App() {
     prevThemeDarkRef.current = isDark;
   }, [currentThemeId, selectedTabId, excalidrawAPI, isDocumentMode, canvasColors, tabs, activeTheme]);
 
-  // Bulletproof guard: Excalidraw toggles a `theme--dark` class on its container
-  // whenever its internal state.theme is "dark", and that class both (a) applies
-  // an invert(93%) filter to the <canvas> and (b) overrides our chrome colors via
-  // higher-specificity vars. Our updateScene calls keep theme "light", but any
-  // transient race (pad load, HMR, StrictMode double-mount) can flip it for a beat.
-  // A MutationObserver strips the class the instant it appears, so the canvas can
-  // never invert regardless of Excalidraw's internal state.
+  // Track whether the current canvas has meaningful content. This powers the
+  // quiet first-action prompt without intercepting canvas pointer events.
   useEffect(() => {
     if (!excalidrawAPI) return;
-    const container = document.querySelector<HTMLElement>('.excalidraw');
-    if (!container) return;
-    const strip = () => {
-      if (container.classList.contains('theme--dark')) {
-        container.classList.remove('theme--dark');
-      }
-    };
-    strip();
-    const obs = new MutationObserver(strip);
-    obs.observe(container, { attributes: true, attributeFilter: ['class'] });
-    return () => obs.disconnect();
+    const sync = () => setCanvasEmpty(excalidrawAPI.getSceneElements().length === 0);
+    sync();
+    return excalidrawAPI.onChange(sync);
   }, [excalidrawAPI]);
 
   const pendingTemplateRef = useRef<CanvasTemplate | null>(null);
@@ -465,7 +453,7 @@ export default function App() {
     onFocusMode: () => { if (isDocumentMode) setFocusMode(v => !v); },
     onQuickCapture: () => { if (isAuthenticated) setQuickCaptureOpen(true); },
     onShortcuts: () => setShortcutOpen(v => !v),
-    onHome: () => { if (isAuthenticated) setHomeOpen(v => !v); },
+    onHome: () => { if (isAuthenticated) { setDashboardInitialView('pads'); setDashboardOpen(v => !v); } },
     onUnifiedAdd: () => { if (isAuthenticated) setUnifiedAddOpen(v => !v); },
     onChat: () => { if (isAuthenticated) setChatViewOpen(v => !v); },
   });
@@ -508,7 +496,7 @@ export default function App() {
         onNewDatabase={() => createNewDatabase()}
         onDailyNote={createDailyNote}
         onGraph={() => setGraphOpen(v => !v)}
-        onTemplates={() => setDashboardOpen(true)}
+        onTemplates={() => { setDashboardInitialView('templates'); setDashboardOpen(true); }}
         onRename={renamePad}
         onDelete={deletePad}
         onLeaveSharedPad={leaveSharedPad}
@@ -524,8 +512,8 @@ export default function App() {
         splitActive={splitOpen}
         onToggleAI={() => setAiOpen(v => !v)}
         aiActive={aiOpen}
-        onHome={() => setHomeOpen(v => !v)}
-        homeActive={homeOpen}
+        onHome={() => { setDashboardInitialView('pads'); setDashboardOpen(true); }}
+        homeActive={dashboardOpen && dashboardInitialView === 'pads'}
         onTheme={() => setThemePickerOpen(v => !v)}
         onShortcuts={() => setShortcutOpen(v => !v)}
         currentThemeId={currentThemeId}
@@ -555,42 +543,27 @@ export default function App() {
             renderCustomEmbeddable(element, appState, excalidrawAPI)
           }
           renderTopRightUI={() => (
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div className="canvas-quick-controls">
               <button
                 onClick={() => excalidrawAPI?.scrollToContent(excalidrawAPI.getSceneElements(), { fitToViewport: true })}
                 title={t('canvas.fitToContent')}
-                style={{
-                  background: 'var(--color-surface-mid, rgba(30,30,46,0.9))',
-                  border: '1px solid var(--color-surface-high, rgba(255,255,255,0.1))',
-                  borderRadius: 8, color: 'var(--color-text-muted, #7f849c)',
-                  cursor: 'pointer', fontSize: 13, padding: '5px 9px',
-                }}
+                aria-label={t('canvas.fitToContent')}
               >
-                ⊡
+                <Maximize2 size={15} />
               </button>
               <button
                 onClick={() => setPresentationMode(true)}
-                title="Mode présentation"
-                style={{
-                  background: 'var(--color-surface-mid, rgba(30,30,46,0.9))',
-                  border: '1px solid var(--color-surface-high, rgba(255,255,255,0.1))',
-                  borderRadius: 8, color: 'var(--color-text-muted, #7f849c)',
-                  cursor: 'pointer', fontSize: 12, padding: '5px 10px',
-                }}
+                title={t('canvas.presentation')}
+                aria-label={t('canvas.presentation')}
               >
-                ▶
+                <Play size={15} />
               </button>
               <button
                 onClick={exportCanvasPng}
                 title={t('canvas.exportPng')}
-                style={{
-                  background: 'var(--color-surface-mid, rgba(30,30,46,0.9))',
-                  border: '1px solid var(--color-surface-high, rgba(255,255,255,0.1))',
-                  borderRadius: 8, color: 'var(--color-text-muted, #7f849c)',
-                  cursor: 'pointer', fontSize: 12, padding: '5px 10px',
-                }}
+                aria-label={t('canvas.exportPng')}
               >
-                PNG ↓
+                <Download size={15} /><span>PNG</span>
               </button>
             </div>
           )}
@@ -618,6 +591,17 @@ export default function App() {
             />
           )}
         </Excalidraw>
+        {canvasEmpty && isAuthenticated && !dashboardOpen && !onboardingOpen && (
+          <div className="canvas-empty" aria-live="polite">
+            <div className="canvas-empty__mark"><Sparkles size={19} /></div>
+            <div className="canvas-empty__title">{t('canvas.emptyTitle')}</div>
+            <div className="canvas-empty__subtitle">{t('canvas.emptySubtitle')}</div>
+            <div className="canvas-empty__actions">
+              <button onClick={() => { setDocTemplateOpen(true); }}><FilePlus2 size={15} />{t('canvas.newNote')}</button>
+              <button onClick={() => { setDashboardInitialView('templates'); setDashboardOpen(true); }}><LayoutTemplate size={15} />{t('canvas.useTemplate')}</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Document pad — slides right of sidebar ── */}
@@ -766,6 +750,7 @@ export default function App() {
 
       {dashboardOpen && isAuthenticated && (
         <Dashboard
+          initialView={dashboardInitialView}
           tabs={tabs}
           selectedTabId={selectedTabId ?? ''}
           onSelectPad={(padId) => { selectTab(padId); setDashboardOpen(false); }}
@@ -814,23 +799,6 @@ export default function App() {
           onSmartResearch={() => { setCommandPaletteOpen(false); setSmartResearchOpen(true); }}
           onFlashcardStudio={() => { setCommandPaletteOpen(false); setFlashcardStudioOpen(true); }}
           onOpenGuide={() => { setCommandPaletteOpen(false); seedWelcomeGuide({ open: true }); }}
-        />
-      )}
-
-      {/* ── Home Hub ── */}
-      {homeOpen && isAuthenticated && (
-        <HomeHub
-          tabs={tabs}
-          user={user ? { name: user.name, email: user.email } : undefined}
-          onSelectPad={(id) => { selectTab(id); setHomeOpen(false); }}
-          onNewCanvas={() => { createNewPadAsync(); setHomeOpen(false); }}
-          onNewDocument={() => { createNewDocumentAsync(); setHomeOpen(false); }}
-          onNewKanban={() => { createNewKanban(); setHomeOpen(false); }}
-          onNewGantt={() => { createNewGantt(); setHomeOpen(false); }}
-          onDailyNote={() => { createDailyNote(); setHomeOpen(false); }}
-          onQuickCapture={() => { setHomeOpen(false); setQuickCaptureOpen(true); }}
-          onImportObsidian={() => { setHomeOpen(false); setObsidianImportOpen(true); }}
-          onClose={() => setHomeOpen(false)}
         />
       )}
 

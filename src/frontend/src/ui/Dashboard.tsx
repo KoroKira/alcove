@@ -10,6 +10,7 @@ import { cardTint } from '../lib/cardTint';
 import './Dashboard.scss';
 
 interface Props {
+  initialView?: 'pads' | 'templates';
   tabs: Tab[];
   selectedTabId: string;
   onSelectPad: (padId: string) => void;
@@ -78,6 +79,7 @@ const ActivityHeatmap: React.FC = () => {
 };
 
 const Dashboard: React.FC<Props> = ({
+  initialView = 'pads',
   tabs,
   selectedTabId,
   onSelectPad,
@@ -96,7 +98,7 @@ const Dashboard: React.FC<Props> = ({
   };
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('updated');
-  const [activeView, setActiveView] = useState<'pads' | 'templates'>('pads');
+  const [activeView, setActiveView] = useState<'pads' | 'templates'>(initialView);
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const searchRef = useRef<HTMLInputElement>(null);
@@ -140,6 +142,8 @@ const Dashboard: React.FC<Props> = ({
   useEffect(() => {
     searchRef.current?.focus();
   }, []);
+
+  useEffect(() => setActiveView(initialView), [initialView]);
 
   // Close on Escape
   useEffect(() => {
@@ -253,15 +257,16 @@ const Dashboard: React.FC<Props> = ({
    *  thumb quand aucune image n'a été extraite. Chaque type garde une
    *  identité visuelle même sans cover : canvas dessine, kanban range,
    *  gantt planifie, latex calcule. */
-  const iconForType = (padType?: string): React.ReactNode => {
+  const iconForType = (padType?: string, size?: number): React.ReactNode => {
+    const props = size ? { size } : {};
     switch (padType) {
-      case 'canvas':   return <PenTool />;
-      case 'kanban':   return <Kanban />;
-      case 'gantt':    return <GanttChart />;
-      case 'latex':    return <Sigma />;
-      case 'database': return <Database />;
+      case 'canvas':   return <PenTool {...props} />;
+      case 'kanban':   return <Kanban {...props} />;
+      case 'gantt':    return <GanttChart {...props} />;
+      case 'latex':    return <Sigma {...props} />;
+      case 'database': return <Database {...props} />;
       case 'document':
-      default:         return <FileText />;
+      default:         return <FileText {...props} />;
     }
   };
 
@@ -299,7 +304,7 @@ const Dashboard: React.FC<Props> = ({
             iconForType(tab.padType)
           )}
           <span className="dashboard__card-type">
-            {React.cloneElement(iconForType(tab.padType) as React.ReactElement, { size: 11 })}
+            {iconForType(tab.padType, 11)}
             {typeLabel}
           </span>
           {tab.isScratch && <span className="dashboard__card-scratch">Scratch</span>}
@@ -347,7 +352,14 @@ const Dashboard: React.FC<Props> = ({
    *  quelle action route vers la modale unifiée (qui garde la source de
    *  vérité de tout le flow de création). */
   const QuickActionsTile: React.FC = () => (
-    <div className="dashboard__card dashboard__card--quick" onClick={onUnifiedAdd} role="button" tabIndex={0}>
+    <div
+      className="dashboard__card dashboard__card--quick"
+      onClick={onUnifiedAdd}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') onUnifiedAdd(); }}
+      role="button"
+      tabIndex={0}
+      aria-label={t('dashboard.add')}
+    >
       <div className="dashboard__quick-grid">
         <div className="dashboard__quick-item"><LinkIcon size={18} /><span>{t('dashboard.addLink')}</span></div>
         <div className="dashboard__quick-item"><FileText size={18} /><span>{t('dashboard.newDocument')}</span></div>
@@ -359,17 +371,17 @@ const Dashboard: React.FC<Props> = ({
 
   return (
     <div className="dashboard-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="dashboard">
+      <div className="dashboard" role="dialog" aria-modal="true" aria-labelledby="dashboard-title">
         {/* Header */}
         <div className="dashboard__header">
-          <div className="dashboard__title">
+          <div className="dashboard__title" id="dashboard-title">
             <Grid2X2 size={18} />
             {t('dashboard.title')}
           </div>
           <div className="dashboard__actions">
             <div className="dashboard__tabs">
               <button className={`dashboard__tab-btn ${activeView === 'pads' ? 'active' : ''}`} onClick={() => setActiveView('pads')}>
-                <Grid2X2 size={13} /> Pads
+                <Grid2X2 size={13} /> {t('dashboard.pads')}
               </button>
               <button className={`dashboard__tab-btn ${activeView === 'templates' ? 'active' : ''}`} onClick={() => setActiveView('templates')}>
                 <Layers size={13} /> {t('dashboard.templates')}
@@ -378,11 +390,11 @@ const Dashboard: React.FC<Props> = ({
             <button
               className="dashboard__create-btn dashboard__create-btn--primary"
               onClick={onUnifiedAdd}
-              title="Ajouter un contenu ou créer un pad (⌘⇧A)"
+              title={t('dashboard.addTitle')}
             >
-              <Plus size={14} /> Ajouter
+              <Plus size={14} /> {t('dashboard.add')}
             </button>
-            <button className="dashboard__close" onClick={onClose}><X size={18} /></button>
+            <button className="dashboard__close" onClick={onClose} aria-label={t('dashboard.close')} title={t('dashboard.close')}><X size={18} /></button>
           </div>
         </div>
 
@@ -427,14 +439,14 @@ const Dashboard: React.FC<Props> = ({
                     role="tab"
                     aria-selected={searchMode === 'text'}
                     title={t('search.textTooltip')}
-                  >Text</button>
+                  >{t('search.text')}</button>
                   <button
                     className={`dashboard__search-mode-btn ${searchMode === 'ai' ? 'active' : ''}`}
                     onClick={() => setSearchMode('ai')}
                     role="tab"
                     aria-selected={searchMode === 'ai'}
                     title={t('search.aiTooltip')}
-                  >AI{aiSearching ? '…' : ''}</button>
+                  >{t('search.ai')}{aiSearching ? '…' : ''}</button>
                 </div>
               </div>
               <div className="dashboard__sort">
@@ -444,7 +456,7 @@ const Dashboard: React.FC<Props> = ({
                     className={`dashboard__sort-btn ${sortKey === k ? 'active' : ''}`}
                     onClick={() => setSortKey(k)}
                   >
-                    {k.charAt(0).toUpperCase() + k.slice(1)}
+                    {t(`dashboard.sort.${k}`)}
                   </button>
                 ))}
               </div>

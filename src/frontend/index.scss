@@ -23,6 +23,81 @@ body {
   z-index: 1;
 }
 
+/* pad.ws-inspired canvas chrome: translucent neutral islands and a quiet
+   first-action prompt. The actual grid is rendered by Excalidraw; matching
+   its dark/light contrast model plus a single subdivision keeps it subtle. */
+.canvas-quick-controls {
+  display: flex;
+  gap: 6px;
+
+  button {
+    align-items: center;
+    background: color-mix(in srgb, var(--ap-bg1) 90%, transparent);
+    border: 1px solid color-mix(in srgb, var(--ap-text0) 9%, transparent);
+    border-radius: 9px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+    color: var(--ap-text2);
+    cursor: pointer;
+    display: flex;
+    gap: 5px;
+    min-height: 32px;
+    padding: 6px 9px;
+    transition: background .15s ease, color .15s ease, transform .15s ease;
+
+    &:hover { background: var(--ap-bg2); color: var(--ap-text0); transform: translateY(-1px); }
+  }
+}
+
+.canvas-empty {
+  left: calc(50% + 20px);
+  max-width: 390px;
+  pointer-events: none;
+  position: fixed;
+  text-align: center;
+  top: 52%;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+
+  &__mark {
+    align-items: center;
+    background: rgba(var(--ap-accent-rgb), .09);
+    border: 1px solid rgba(var(--ap-accent-rgb), .18);
+    border-radius: 14px;
+    color: var(--ap-accent);
+    display: inline-flex;
+    height: 44px;
+    justify-content: center;
+    margin-bottom: 14px;
+    width: 44px;
+  }
+  &__title { color: var(--ap-text1); font-size: 17px; font-weight: 650; }
+  &__subtitle { color: var(--ap-text2); font-size: 12px; line-height: 1.55; margin-top: 6px; opacity: .75; }
+  &__actions { display: flex; gap: 8px; justify-content: center; margin-top: 18px; pointer-events: auto; }
+  &__actions button {
+    align-items: center;
+    background: rgba(var(--ap-bg1-rgb), .88);
+    border: 1px solid rgba(var(--ap-text0-rgb), .11);
+    border-radius: 9px;
+    color: var(--ap-text1);
+    cursor: pointer;
+    display: flex;
+    font: inherit;
+    font-size: 12px;
+    gap: 7px;
+    padding: 8px 12px;
+    transition: border-color .15s, background .15s, color .15s;
+    &:hover { background: var(--ap-bg2); border-color: rgba(var(--ap-accent-rgb), .35); color: var(--ap-text0); }
+  }
+}
+
+@media (max-width: 768px) {
+  .canvas-empty { left: 50%; width: calc(100vw - 48px); }
+  .canvas-empty__actions { flex-direction: column; align-items: stretch; }
+  .canvas-empty__actions button { justify-content: center; min-height: 44px; }
+  .canvas-quick-controls button { min-height: 38px; }
+  .canvas-quick-controls span { display: none; }
+}
+
 /* Document pad: fixed, slides right of sidebar */
 .app-doc-wrap {
   position: fixed;

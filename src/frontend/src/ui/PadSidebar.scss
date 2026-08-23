@@ -307,6 +307,52 @@
     flex-shrink: 0;
   }
 
+  &__tools {
+    background: color-mix(in srgb, var(--ap-bg1) 96%, transparent);
+    border: 1px solid rgba(var(--ap-text0-rgb), .09);
+    border-radius: 10px;
+    box-shadow: var(--ap-shadow-md);
+    margin: 0 8px 6px;
+    padding: 6px;
+  }
+
+  &__tools-title {
+    color: var(--ap-text2);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    padding: 5px 8px 6px;
+    text-transform: uppercase;
+  }
+
+  &__tools button {
+    align-items: center;
+    background: transparent;
+    border: 0;
+    border-radius: 7px;
+    color: var(--ap-text1);
+    cursor: pointer;
+    display: flex;
+    font: inherit;
+    font-size: 11px;
+    gap: 9px;
+    min-height: 34px;
+    padding: 7px 9px;
+    text-align: left;
+    width: 100%;
+    &:hover { background: rgba(var(--ap-accent-rgb), .09); color: var(--ap-text0); }
+  }
+
+  &__tools-count {
+    background: var(--ap-red);
+    border-radius: 999px;
+    color: var(--ap-bg0);
+    font-size: 9px;
+    font-weight: 700;
+    margin-left: auto;
+    padding: 1px 6px;
+  }
+
   // ── Bottom bar (theme / lang / shortcuts) ────────────────────────────────
   &__bottom-bar {
     align-items: center;

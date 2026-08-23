@@ -4,8 +4,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-support-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/guilhemdl)
 
-> Fork personnel de [pad.ws](https://github.com/pad-ws/pad.ws) — un espace de travail visuel combinant tableau blanc (Excalidraw), éditeur de documents et outils de gestion de connaissances personnelle, avec IA locale via Ollama. **Vos notes et votre IA ne quittent jamais votre machine.**
-> Je n'ai **rien créé** fondamentalement parlant. Tout ceci n'est que des briques assemblées faites par de plus grands génies que moi, que j'ai adaptées à mes besoins.
+> **Alcove** est un espace de travail personnel open source combinant tableau blanc (Excalidraw), documents, organisation de projets et gestion de connaissances, avec IA locale via Ollama. **Vos notes et votre IA ne quittent jamais votre machine.**
+>
+> Le projet a été initialement dérivé de [pad.ws](https://github.com/coderamp-labs/pad.ws), puis a évolué en un produit indépendant. Alcove conserve avec reconnaissance l'historique et l'attribution du projet d'origine.
 
 ---
 
@@ -235,7 +236,7 @@ Contributions bienvenues — voir [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Crédits
 
-- [pad.ws](https://github.com/pad-ws/pad.ws) — projet upstream
+- [pad.ws](https://github.com/coderamp-labs/pad.ws) — projet d'origine dont Alcove a été initialement dérivé
 - [Excalidraw](https://github.com/excalidraw/excalidraw) — moteur de canvas
 - [Ollama](https://ollama.com) — inférence LLM locale
 - [Alexandrie](https://github.com/Smaug6739/Alexandrie) - Surement l'une des meilleures app qui puisse exister, qui m'a bien inspiré pour mon projet

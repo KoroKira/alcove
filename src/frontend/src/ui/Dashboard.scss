@@ -639,3 +639,30 @@
   &.l3 { background: rgba(var(--ap-accent-rgb), 0.8); }
   &.l4 { background: var(--ap-accent); }
 }
+
+@media (max-width: 768px) {
+  .dashboard-overlay { align-items: stretch; background: var(--ap-bg0); }
+  .dashboard {
+    border: 0;
+    border-radius: 0;
+    height: 100dvh;
+    max-height: none;
+    width: 100vw;
+
+    &__header { align-items: flex-start; padding: 12px; }
+    &__title { padding-top: 7px; }
+    &__actions { flex-wrap: wrap; justify-content: flex-end; }
+    &__create-btn--primary { min-height: 40px; }
+    &__close { align-items: center; justify-content: center; min-height: 40px; min-width: 40px; }
+    &__controls { align-items: stretch; flex-direction: column; padding: 10px 12px; }
+    &__sort { overflow-x: auto; padding-bottom: 2px; }
+    &__sort-btn { min-height: 36px; white-space: nowrap; }
+    &__heatmap { display: none; }
+    &__section { margin: 18px 12px 0; }
+    &__grid { columns: 1; }
+    &__templates { padding: 16px 12px; }
+    &__templates-grid { grid-template-columns: 1fr 1fr; }
+    &__tag-filter { flex-wrap: nowrap; overflow-x: auto; padding: 0 12px 8px; }
+    &__tag-chip { min-height: 34px; white-space: nowrap; }
+  }
+}

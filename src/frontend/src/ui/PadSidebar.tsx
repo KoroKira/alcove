@@ -152,6 +152,7 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
   const theme = getTheme(currentThemeId ?? 'mocha');
   const [query, setQuery] = useState('');
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [toolsOpen, setToolsOpen] = useState(false);
 
   // Flashcards due today (FSRS-5 state lives in localStorage — see
   // FlashcardStudio / lib/reviewActivity.ts). Was reading the legacy SM-2 key
@@ -586,72 +587,54 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
 
       <div className="pad-sidebar__spacer" />
 
-      {/* Bottom toolbar row 1 — tools */}
+      {toolsOpen && (
+        <div className="pad-sidebar__tools" role="menu" aria-label={t('sidebar.tools')}>
+          <div className="pad-sidebar__tools-title">{t('sidebar.tools')}</div>
+          {onTogglePomodoro && <button role="menuitem" onClick={() => { onTogglePomodoro(); setToolsOpen(false); }}><span>🍅</span>{t('sidebar.pomodoro')}</button>}
+          {onAddFromLink && <button role="menuitem" onClick={() => { onAddFromLink(); setToolsOpen(false); }}><Link2 size={15} />{t('sidebar.addFromLink')}</button>}
+          {onSmartResearch && <button role="menuitem" onClick={() => { onSmartResearch(); setToolsOpen(false); }}><Telescope size={15} />{t('sidebar.smartResearch')}</button>}
+          {onImportObsidian && <button role="menuitem" onClick={() => { onImportObsidian(); setToolsOpen(false); }}><Upload size={15} />{t('sidebar.importObsidian')}</button>}
+          {onFlashcardStudio && <button role="menuitem" onClick={() => { onFlashcardStudio(); setToolsOpen(false); }}><BookOpen size={15} />{t('sidebar.flashcards')}{dueFlashcards > 0 && <span className="pad-sidebar__tools-count">{dueFlashcards}</span>}</button>}
+          {onReviewDashboard && <button role="menuitem" onClick={() => { onReviewDashboard(); setToolsOpen(false); }}><GraduationCap size={15} />{t('sidebar.review')}</button>}
+        </div>
+      )}
+
+      {/* Bottom toolbar — the five recurring destinations stay visible;
+          occasional utilities live in the labelled Tools menu. */}
       <div className="pad-sidebar__bottom">
         {onHome && (
-          <button className={`pad-sidebar__icon-btn${homeActive ? ' pad-sidebar__icon-btn--active' : ''}`} onClick={onHome} title="Accueil (Cmd+⇧H)">
+          <button className={`pad-sidebar__icon-btn${homeActive ? ' pad-sidebar__icon-btn--active' : ''}`} onClick={onHome} title={t('sidebar.home')} aria-label={t('sidebar.home')}>
             <Home size={16} />
           </button>
         )}
-        <button className="pad-sidebar__icon-btn" onClick={onGraph} title={t('sidebar.graph')}>
+        <button className="pad-sidebar__icon-btn" onClick={onGraph} title={t('sidebar.graph')} aria-label={t('sidebar.graph')}>
           <Network size={16} />
         </button>
-        <button className="pad-sidebar__icon-btn" onClick={onTemplates} title={t('sidebar.templates')}>
-          <Layers size={16} />
-        </button>
         {onToggleSplit && (
-          <button className={`pad-sidebar__icon-btn${splitActive ? ' pad-sidebar__icon-btn--active' : ''}`} onClick={onToggleSplit} title="Split view">
+          <button className={`pad-sidebar__icon-btn${splitActive ? ' pad-sidebar__icon-btn--active' : ''}`} onClick={onToggleSplit} title={t('sidebar.split')} aria-label={t('sidebar.split')}>
             <Columns2 size={16} />
           </button>
         )}
         {onToggleAI && (
-          <button className={`pad-sidebar__icon-btn${aiActive ? ' pad-sidebar__icon-btn--active' : ''}`} onClick={onToggleAI} title={t('ai.title')} style={aiActive ? { color: 'var(--ap-accent, #cba6f7)' } : undefined}>
+          <button className={`pad-sidebar__icon-btn${aiActive ? ' pad-sidebar__icon-btn--active' : ''}`} onClick={onToggleAI} title={t('ai.title')} aria-label={t('ai.title')} style={aiActive ? { color: 'var(--ap-accent, #cba6f7)' } : undefined}>
             <Sparkles size={16} />
           </button>
         )}
-        {onTogglePomodoro && (
-          <button className={`pad-sidebar__icon-btn${pomodoroActive ? ' pad-sidebar__icon-btn--active' : ''}`} onClick={onTogglePomodoro} title={t('sidebar.pomodoro')}>
-            <span style={{ fontSize: 14 }}>🍅</span>
-          </button>
-        )}
         {onQuickCapture && (
-          <button className="pad-sidebar__icon-btn" onClick={onQuickCapture} title="Capture rapide (⌘⇧N)">
+          <button className="pad-sidebar__icon-btn" onClick={onQuickCapture} title={t('sidebar.quickCapture')} aria-label={t('sidebar.quickCapture')}>
             <Zap size={15} />
           </button>
         )}
-        {onAddFromLink && (
-          <button className="pad-sidebar__icon-btn" onClick={onAddFromLink} title="Ajouter depuis un lien (web / PDF / YouTube / audio / vidéo)">
-            <Link2 size={15} />
-          </button>
-        )}
-        {onSmartResearch && (
-          <button className="pad-sidebar__icon-btn" onClick={onSmartResearch} title="Smart Research (recherche web → note citée)">
-            <Telescope size={15} />
-          </button>
-        )}
-        {onImportObsidian && (
-          <button className="pad-sidebar__icon-btn" onClick={onImportObsidian} title="Importer Obsidian">
-            <Upload size={15} />
-          </button>
-        )}
-        {onFlashcardStudio && (
-          <button className="pad-sidebar__icon-btn pad-sidebar__icon-btn--badged" onClick={onFlashcardStudio} title="Studio de révision (flashcards)">
-            <BookOpen size={15} />
-            {dueFlashcards > 0 && <span className="pad-sidebar__badge">{dueFlashcards > 99 ? '99+' : dueFlashcards}</span>}
-          </button>
-        )}
-        {onReviewDashboard && (
-          <button className="pad-sidebar__icon-btn" onClick={onReviewDashboard} title="Tableau de révision">
-            <GraduationCap size={15} />
-          </button>
-        )}
+        <button className={`pad-sidebar__icon-btn${toolsOpen ? ' pad-sidebar__icon-btn--active' : ''}`} onClick={() => setToolsOpen(v => !v)} title={t('sidebar.tools')} aria-label={t('sidebar.tools')} aria-expanded={toolsOpen}>
+          <MoreHorizontal size={16} />
+        </button>
       </div>
 
       {/* Bottom toolbar row 2 — theme / lang / shortcuts */}
       <div className="pad-sidebar__bottom-bar">
         {/* Theme swatch button */}
         {onTheme && (
-          <button className="pad-sidebar__bar-btn pad-sidebar__bar-btn--theme" onClick={onTheme} title={`Thème : ${theme.name}`}>
+          <button className="pad-sidebar__bar-btn pad-sidebar__bar-btn--theme" onClick={onTheme} title={`${t('sidebar.theme')} : ${theme.name}`} aria-label={`${t('sidebar.theme')} : ${theme.name}`}>
             <span className="pad-sidebar__theme-dot" style={{ background: theme.swatches[1] }} />
             <span className="pad-sidebar__theme-dot" style={{ background: theme.swatches[2] }} />
             <Palette size={12} />
@@ -665,6 +648,8 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
               key={code}
               className={`pad-sidebar__lang-flag${i18n.language.startsWith(code) ? ' pad-sidebar__lang-flag--active' : ''}`}
               title={label}
+              aria-label={label}
+              aria-pressed={i18n.language.startsWith(code)}
               onClick={() => setLanguage(code)}
             >
               {flag}
@@ -674,7 +659,7 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
 
         {/* Shortcuts */}
         {onShortcuts && (
-          <button className="pad-sidebar__bar-btn" onClick={onShortcuts} title="Raccourcis (⌘/)">
+          <button className="pad-sidebar__bar-btn" onClick={onShortcuts} title={t('sidebar.shortcuts')} aria-label={t('sidebar.shortcuts')}>
             <Keyboard size={13} />
           </button>
         )}

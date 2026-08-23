@@ -31,7 +31,7 @@ const fetchPadById = async (padId: string): Promise<PadData> => {
 export const usePad = (
     padId: string | null,
     excalidrawAPI: ExcalidrawImperativeAPI | null,
-    themeColors?: { bg: string; ink: string },
+    themeColors?: { bg: string; ink: string; dark: boolean },
 ) => {
     const isTemporaryPad = padId?.startsWith('temp-');
 
@@ -46,7 +46,7 @@ export const usePad = (
 
     useEffect(() => {
         const applyThemeOverride = (scene: PadData) =>
-            themeColors ? adaptSceneToTheme(scene, themeColors.bg, themeColors.ink) : scene;
+            themeColors ? adaptSceneToTheme(scene, themeColors.bg, themeColors.ink, themeColors.dark) : scene;
 
         if (isTemporaryPad && excalidrawAPI) {
             console.debug(`[alcove] Initializing new temporary pad ${padId}`);
@@ -63,7 +63,7 @@ export const usePad = (
             console.debug(`[alcove] Loading pad ${padId}`);
             excalidrawAPI.updateScene(normalizedData);
         }
-    }, [data, excalidrawAPI, padId, isTemporaryPad, themeColors?.bg, themeColors?.ink]);
+    }, [data, excalidrawAPI, padId, isTemporaryPad, themeColors?.bg, themeColors?.ink, themeColors?.dark]);
 
     if (isTemporaryPad) {
         return {

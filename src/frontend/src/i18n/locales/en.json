@@ -9,6 +9,17 @@
     "dailyNote": "Daily note (Cmd+T)",
     "graph": "Knowledge graph",
     "templates": "Canvas templates",
+    "home": "Home (Cmd+⇧H)",
+    "split": "Split view",
+    "tools": "Tools",
+    "theme": "Theme",
+    "shortcuts": "Shortcuts (Cmd+/)",
+    "quickCapture": "Quick capture (Cmd+⇧N)",
+    "addFromLink": "Add from link",
+    "smartResearch": "Assisted web research",
+    "importObsidian": "Import from Obsidian",
+    "flashcards": "Review studio",
+    "review": "Review dashboard",
     "pomodoro": "Pomodoro timer",
     "toggleOpen": "Open sidebar (Cmd+\\)",
     "toggleClose": "Close (Cmd+\\)",
@@ -62,7 +73,9 @@
     "today": "Today",
     "yesterday": "Yesterday",
     "moreTypes": "More…",
-    "addLink": "Add link"
+    "addLink": "Add link",
+    "pads": "Pads", "add": "Add", "addTitle": "Add content or create a pad (Cmd+⇧A)", "close": "Close home",
+    "sort": { "updated": "Updated", "created": "Created", "name": "Name", "type": "Type" }
   },
   "search": {
     "placeholder": "Search in pads…",
@@ -73,7 +86,8 @@
     "matches_plural": "{{count}} results",
     "mode": "Search mode",
     "textTooltip": "Full-text search on titles.",
-    "aiTooltip": "Semantic search — understands meaning, not just keywords. Best for fuzzy or multilingual queries."
+    "aiTooltip": "Semantic search — understands meaning, not just keywords. Best for fuzzy or multilingual queries.",
+    "text": "Text", "ai": "AI"
   },
   "command": {
     "placeholder": "Search or run a command…",
@@ -128,7 +142,9 @@
   },
   "canvas": {
     "exportPng": "Export canvas as PNG",
-    "fitToContent": "Fit to content (Shift+1)"
+    "fitToContent": "Fit to content (Shift+1)",
+    "presentation": "Presentation mode", "emptyTitle": "A quiet space to begin",
+    "emptySubtitle": "Draw freely, or start from a note or template.", "newNote": "New note", "useTemplate": "Choose a template"
   },
   "templates": {
     "title": "New document",

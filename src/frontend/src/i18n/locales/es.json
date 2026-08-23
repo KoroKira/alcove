@@ -9,6 +9,10 @@
     "dailyNote": "Nota diaria (Cmd+T)",
     "graph": "Gráfico de conocimiento",
     "templates": "Plantillas de canvas",
+    "home": "Inicio (Cmd+⇧H)", "split": "Vista dividida", "tools": "Herramientas", "theme": "Tema",
+    "shortcuts": "Atajos (Cmd+/)", "quickCapture": "Captura rápida (Cmd+⇧N)",
+    "addFromLink": "Añadir desde enlace", "smartResearch": "Búsqueda web asistida", "importObsidian": "Importar desde Obsidian",
+    "flashcards": "Estudio de repaso", "review": "Panel de repaso",
     "pomodoro": "Temporizador Pomodoro",
     "toggleOpen": "Abrir barra lateral (Cmd+\\)",
     "toggleClose": "Cerrar (Cmd+\\)",
@@ -57,14 +61,17 @@
     "typeCanvas": "Canvas",
     "typeDocument": "Documento",
     "heatmapTitle": "Actividad de los últimos 6 meses",
-    "heatmapEdits": "edición(es)"
+    "heatmapEdits": "edición(es)", "today": "Hoy", "yesterday": "Ayer", "moreTypes": "Más…", "addLink": "Añadir enlace",
+    "pads": "Pads", "add": "Añadir", "addTitle": "Añadir contenido o crear un pad (Cmd+⇧A)", "close": "Cerrar inicio",
+    "sort": { "updated": "Modificados", "created": "Creados", "name": "Nombre", "type": "Tipo" }
   },
   "search": {
     "placeholder": "Buscar en los pads…",
     "loading": "Buscando…",
     "noResults": "Sin resultados",
     "matches": "{{count}} resultado",
-    "matches_plural": "{{count}} resultados"
+    "matches_plural": "{{count}} resultados", "aiPlaceholder": "Búsqueda semántica…", "mode": "Modo de búsqueda",
+    "textTooltip": "Búsqueda de texto en títulos.", "aiTooltip": "Búsqueda semántica por significado.", "text": "Texto", "ai": "IA"
   },
   "command": {
     "placeholder": "Buscar o ejecutar un comando…",
@@ -119,7 +126,9 @@
   },
   "canvas": {
     "exportPng": "Exportar canvas como PNG",
-    "fitToContent": "Centrar en el contenido (Shift+1)"
+    "fitToContent": "Centrar en el contenido (Shift+1)", "presentation": "Modo presentación",
+    "emptyTitle": "Un espacio tranquilo para empezar", "emptySubtitle": "Dibuja libremente o empieza con una nota o plantilla.",
+    "newNote": "Nueva nota", "useTemplate": "Elegir plantilla"
   },
   "templates": {
     "title": "Nuevo documento",

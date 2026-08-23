@@ -9,6 +9,10 @@
     "dailyNote": "Tagesnotiz (Cmd+T)",
     "graph": "Wissensgraph",
     "templates": "Canvas-Vorlagen",
+    "home": "Startseite (Cmd+⇧H)", "split": "Geteilte Ansicht", "tools": "Werkzeuge", "theme": "Design",
+    "shortcuts": "Tastenkürzel (Cmd+/)", "quickCapture": "Schnellerfassung (Cmd+⇧N)",
+    "addFromLink": "Aus Link hinzufügen", "smartResearch": "Unterstützte Websuche", "importObsidian": "Aus Obsidian importieren",
+    "flashcards": "Lernstudio", "review": "Lernübersicht",
     "pomodoro": "Pomodoro-Timer",
     "toggleOpen": "Seitenleiste öffnen (Cmd+\\)",
     "toggleClose": "Schließen (Cmd+\\)",
@@ -57,14 +61,17 @@
     "typeCanvas": "Canvas",
     "typeDocument": "Dokument",
     "heatmapTitle": "Aktivität der letzten 6 Monate",
-    "heatmapEdits": "Änderung(en)"
+    "heatmapEdits": "Änderung(en)", "today": "Heute", "yesterday": "Gestern", "moreTypes": "Weitere…", "addLink": "Link hinzufügen",
+    "pads": "Pads", "add": "Hinzufügen", "addTitle": "Inhalt hinzufügen oder Pad erstellen (Cmd+⇧A)", "close": "Startseite schließen",
+    "sort": { "updated": "Geändert", "created": "Erstellt", "name": "Name", "type": "Typ" }
   },
   "search": {
     "placeholder": "In Pads suchen…",
     "loading": "Suche…",
     "noResults": "Keine Ergebnisse",
     "matches": "{{count}} Treffer",
-    "matches_plural": "{{count}} Treffer"
+    "matches_plural": "{{count}} Treffer", "aiPlaceholder": "Semantische Suche…", "mode": "Suchmodus",
+    "textTooltip": "Textsuche in Titeln.", "aiTooltip": "Semantische Suche nach Bedeutung.", "text": "Text", "ai": "KI"
   },
   "command": {
     "placeholder": "Suchen oder Befehl ausführen…",
@@ -119,7 +126,9 @@
   },
   "canvas": {
     "exportPng": "Canvas als PNG exportieren",
-    "fitToContent": "Auf Inhalt zoomen (Shift+1)"
+    "fitToContent": "Auf Inhalt zoomen (Shift+1)", "presentation": "Präsentationsmodus",
+    "emptyTitle": "Ein ruhiger Ort zum Beginnen", "emptySubtitle": "Frei zeichnen oder mit einer Notiz oder Vorlage starten.",
+    "newNote": "Neue Notiz", "useTemplate": "Vorlage wählen"
   },
   "templates": {
     "title": "Neues Dokument",

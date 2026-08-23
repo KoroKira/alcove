@@ -15,7 +15,7 @@ function lightness(hex: string): number | null {
  * would be invisible against the new background (e.g. black strokes from
  * scenes authored on a white canvas).
  */
-export function adaptSceneToTheme(scene: any, bg: string, ink: string) {
+export function adaptSceneToTheme(scene: any, bg: string, ink: string, dark: boolean) {
   if (!scene) return scene;
   const bgL = lightness(bg) ?? 15;
 
@@ -38,7 +38,10 @@ export function adaptSceneToTheme(scene: any, bg: string, ink: string) {
     elements,
     appState: {
       ...(scene.appState ?? {}),
-      theme: 'light',
+      // Keep Excalidraw's own contrast model in sync with the paper. Alcove
+      // disables Excalidraw's legacy canvas invert filter in CSS, so dark mode
+      // now gives us its pleasantly subtle grid without changing our colours.
+      theme: dark ? 'dark' : 'light',
       viewBackgroundColor: bg,
       currentItemStrokeColor: rescue(scene.appState?.currentItemStrokeColor) ?? ink,
     },

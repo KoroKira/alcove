@@ -8,8 +8,19 @@
     "newCanvas": "Nouveau canvas",
     "dailyNote": "Daily note (Cmd+T)",
     "graph": "Graphe de connaissance",
-    "templates": "Templates canvas",
-    "pomodoro": "Pomodoro timer",
+    "templates": "Modèles de canvas",
+    "home": "Accueil (Cmd+⇧H)",
+    "split": "Vue partagée",
+    "tools": "Outils",
+    "theme": "Thème",
+    "shortcuts": "Raccourcis (Cmd+/)",
+    "quickCapture": "Capture rapide (Cmd+⇧N)",
+    "addFromLink": "Ajouter depuis un lien",
+    "smartResearch": "Recherche web assistée",
+    "importObsidian": "Importer depuis Obsidian",
+    "flashcards": "Studio de révision",
+    "review": "Tableau de révision",
+    "pomodoro": "Minuteur Pomodoro",
     "toggleOpen": "Ouvrir la sidebar (Cmd+\\)",
     "toggleClose": "Fermer (Cmd+\\)",
     "noFiles": "Aucun fichier",
@@ -62,7 +73,12 @@
     "today": "Aujourd'hui",
     "yesterday": "Hier",
     "moreTypes": "Autres types…",
-    "addLink": "Ajouter un lien"
+    "addLink": "Ajouter un lien",
+    "pads": "Pads",
+    "add": "Ajouter",
+    "addTitle": "Ajouter un contenu ou créer un pad (Cmd+⇧A)",
+    "close": "Fermer l'accueil",
+    "sort": { "updated": "Modifiés", "created": "Créés", "name": "Nom", "type": "Type" }
   },
   "search": {
     "placeholder": "Rechercher dans les pads…",
@@ -73,7 +89,9 @@
     "matches_plural": "{{count}} résultats",
     "mode": "Mode de recherche",
     "textTooltip": "Recherche textuelle sur les titres.",
-    "aiTooltip": "Recherche sémantique — comprend le sens, pas juste les mots-clés. Pratique pour les requêtes floues ou multilingues."
+    "aiTooltip": "Recherche sémantique — comprend le sens, pas juste les mots-clés. Pratique pour les requêtes floues ou multilingues.",
+    "text": "Texte",
+    "ai": "IA"
   },
   "command": {
     "placeholder": "Rechercher ou lancer une commande…",
@@ -128,7 +146,12 @@
   },
   "canvas": {
     "exportPng": "Exporter canvas en PNG",
-    "fitToContent": "Centrer sur le contenu (Shift+1)"
+    "fitToContent": "Centrer sur le contenu (Shift+1)",
+    "presentation": "Mode présentation",
+    "emptyTitle": "Un espace calme pour commencer",
+    "emptySubtitle": "Dessine librement, ou pars d'une note ou d'un modèle.",
+    "newNote": "Nouvelle note",
+    "useTemplate": "Choisir un modèle"
   },
   "templates": {
     "title": "Nouveau document",
