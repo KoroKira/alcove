@@ -53,7 +53,7 @@ import UnifiedAddModal from './ui/UnifiedAddModal';
 import ThemePicker from './ui/ThemePicker';
 import ThemeBuilder from './ui/ThemeBuilder';
 import ShortcutOverlay from './ui/ShortcutOverlay';
-import { applyTheme, loadSavedTheme, getTheme, type Theme } from './themes';
+import { applyTheme, loadSavedTheme, getTheme, DEFAULT_THEME_ID, type Theme } from './themes';
 
 // Apply theme before first render (no FOUC)
 applyTheme(loadSavedTheme());
@@ -182,7 +182,7 @@ export default function App() {
   const [flashcardStudioOpen, setFlashcardStudioOpen] = useState(false);
   const [reviewDashboardOpen, setReviewDashboardOpen] = useState(false);
   const [unifiedAddOpen, setUnifiedAddOpen] = useState(false);
-  const [currentThemeId, setCurrentThemeId] = useState(() => localStorage.getItem('alcove-theme') ?? 'mocha');
+  const [currentThemeId, setCurrentThemeId] = useState(() => loadSavedTheme().id ?? DEFAULT_THEME_ID);
   const activeTheme = getTheme(currentThemeId);
   const prevThemeDarkRef = useRef<boolean>(activeTheme.dark);
 

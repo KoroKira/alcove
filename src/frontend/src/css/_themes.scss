@@ -1,45 +1,45 @@
-/* ── Global CSS variables (defaults = Mocha dark) ──
+/* ── Global CSS variables (defaults = pad.ws light) ──
    applyTheme() in themes/index.ts overwrites these at runtime and auto-derives
    every "-rgb" companion; the values here only cover the first paint. */
 :root {
-  --ap-sidebar-bg: #11111b;
-  --color-surface: #181825;
-  --ap-bg0: #1e1e2e;
-  --ap-bg1: #181825;
-  --ap-bg2: #313244;
-  --ap-bg3: #45475a;
-  --ap-bg4: #585b70;
-  --ap-text0: #cdd6f4;
-  --ap-text1: #bac2de;
-  --ap-text2: #a6adc8;
-  --ap-accent: #cba6f7;
-  --ap-accent2: #89b4fa;
-  --ap-green: #a6e3a1;
-  --ap-red: #f38ba8;
-  --ap-yellow: #f9e2af;
-  --ap-orange: #fab387;
-  --ap-overlay0: #6c7086;
-  --ap-sidebar-bg-rgb: 17,17,27;
-  --ap-bg0-rgb: 30,30,46;
-  --ap-bg1-rgb: 24,24,37;
-  --ap-bg2-rgb: 49,50,68;
-  --ap-bg3-rgb: 69,71,90;
-  --ap-bg4-rgb: 88,91,112;
-  --ap-text0-rgb: 205,214,244;
-  --ap-text1-rgb: 186,194,222;
-  --ap-text2-rgb: 166,173,200;
-  --ap-accent-rgb: 203,166,247;
-  --ap-accent2-rgb: 137,180,250;
-  --ap-green-rgb: 166,227,161;
-  --ap-red-rgb: 243,139,168;
-  --ap-yellow-rgb: 249,226,175;
-  --ap-orange-rgb: 250,179,135;
-  --ap-overlay0-rgb: 108,112,134;
-  --color-surface-lowest: #1e1e2e;
-  --color-surface-mid: #313244;
-  --color-surface-high: #45475a;
-  --color-on-surface: #cdd6f4;
-  --color-on-surface-low: #a6adc8;
+  --ap-sidebar-bg: #eeeeee;
+  --color-surface: #f6f6f6;
+  --ap-bg0: #fafafa;
+  --ap-bg1: #f6f6f6;
+  --ap-bg2: #dddddd;
+  --ap-bg3: #cccccc;
+  --ap-bg4: #999999;
+  --ap-text0: #333333;
+  --ap-text1: #595959;
+  --ap-text2: #666666;
+  --ap-accent: #f06800;
+  --ap-accent2: #e06100;
+  --ap-green: #4d8b31;
+  --ap-red: #d20f39;
+  --ap-yellow: #cc7700;
+  --ap-orange: #ff7d1a;
+  --ap-overlay0: #999999;
+  --ap-sidebar-bg-rgb: 238,238,238;
+  --ap-bg0-rgb: 250,250,250;
+  --ap-bg1-rgb: 246,246,246;
+  --ap-bg2-rgb: 221,221,221;
+  --ap-bg3-rgb: 204,204,204;
+  --ap-bg4-rgb: 153,153,153;
+  --ap-text0-rgb: 51,51,51;
+  --ap-text1-rgb: 89,89,89;
+  --ap-text2-rgb: 102,102,102;
+  --ap-accent-rgb: 240,104,0;
+  --ap-accent2-rgb: 224,97,0;
+  --ap-green-rgb: 77,139,49;
+  --ap-red-rgb: 210,15,57;
+  --ap-yellow-rgb: 204,119,0;
+  --ap-orange-rgb: 255,125,26;
+  --ap-overlay0-rgb: 153,153,153;
+  --color-surface-lowest: #fafafa;
+  --color-surface-mid: #dddddd;
+  --color-surface-high: #cccccc;
+  --color-on-surface: #333333;
+  --color-on-surface-low: #666666;
 
   /* Typography — system stack: SF Pro on macOS, Segoe on Windows */
   --ap-font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;

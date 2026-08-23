@@ -375,8 +375,11 @@ const Dashboard: React.FC<Props> = ({
         {/* Header */}
         <div className="dashboard__header">
           <div className="dashboard__title" id="dashboard-title">
-            <Grid2X2 size={18} />
-            {t('dashboard.title')}
+            <span className="dashboard__brand-mark"><LinkIcon size={17} /></span>
+            <span>
+              <strong>Alcove</strong>
+              <small>Ta mémoire personnelle, retrouvable.</small>
+            </span>
           </div>
           <div className="dashboard__actions">
             <div className="dashboard__tabs">
@@ -421,7 +424,13 @@ const Dashboard: React.FC<Props> = ({
         {/* Search + Sort + Grid */}
         {activeView === 'pads' && (
           <>
-            <ActivityHeatmap />
+            <div className="dashboard__capture">
+              <div>
+                <strong>Garde ce qui compte.</strong>
+                <span>Ajoute un lien, une vidéo, un PDF ou une idée. Alcove résume, organise et te permet de tout retrouver.</span>
+              </div>
+              <button onClick={onUnifiedAdd}><Plus size={16} /> Ajouter une source</button>
+            </div>
             <div className="dashboard__controls">
               <div className="dashboard__search-wrap">
                 <Search size={14} className="dashboard__search-icon" />

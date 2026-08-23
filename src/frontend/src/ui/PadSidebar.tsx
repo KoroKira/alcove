@@ -152,6 +152,7 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
   const theme = getTheme(currentThemeId ?? 'mocha');
   const [query, setQuery] = useState('');
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [tagsExpanded, setTagsExpanded] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
 
   // Flashcards due today (FSRS-5 state lives in localStorage — see
@@ -190,6 +191,7 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
     () => Array.from(new Set(tabs.flatMap(t => t.tags || []).filter(tag => tag !== 'read-later'))).sort(),
     [tabs],
   );
+  const visibleTags = tagsExpanded ? allTags : allTags.slice(0, 8);
 
   const readLaterTabs = useMemo(
     () => tabs.filter(t => (t.tags || []).includes('read-later')),
@@ -572,7 +574,7 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
             <span className="pad-sidebar__section-label">{t('sidebar.tags').toUpperCase()}</span>
           </div>
           <div className="pad-sidebar__tags">
-            {allTags.map(tag => (
+            {visibleTags.map(tag => (
               <button
                 key={tag}
                 className={`pad-sidebar__tag${activeTag === tag ? ' pad-sidebar__tag--active' : ''}`}
@@ -581,6 +583,15 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
                 #{tag}
               </button>
             ))}
+            {allTags.length > 8 && (
+              <button
+                className="pad-sidebar__tag pad-sidebar__tag--more"
+                onClick={() => setTagsExpanded(v => !v)}
+                aria-expanded={tagsExpanded}
+              >
+                {tagsExpanded ? '−' : `+${allTags.length - 8}`}
+              </button>
+            )}
           </div>
         </div>
       )}

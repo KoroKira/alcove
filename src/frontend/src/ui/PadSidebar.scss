@@ -265,6 +265,8 @@
     flex-wrap: wrap;
     gap: 4px;
     padding: 3px 12px 10px;
+    max-height: 76px;
+    overflow-y: auto;
   }
 
   &__tag {
@@ -286,6 +288,12 @@
       background: rgba(var(--ap-accent2-rgb), 0.08);
       border-color: rgba(var(--ap-accent2-rgb), 0.35);
       color: var(--ap-accent2);
+    }
+
+    &--more {
+      border-style: dashed;
+      color: var(--ap-text2);
+      font-weight: 700;
     }
   }
 

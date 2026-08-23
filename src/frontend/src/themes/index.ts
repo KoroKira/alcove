@@ -473,7 +473,10 @@ export const THEMES: Theme[] = [
   },
 ];
 
-export const DEFAULT_THEME_ID = 'mocha';
+// Alcove grew out of pad.ws: the first-run experience should keep its quiet
+// paper greys and warm orange signature instead of dropping users into an
+// unrelated editor palette.
+export const DEFAULT_THEME_ID = 'pad-light';
 
 export function getTheme(id: string): Theme {
   return THEMES.find(t => t.id === id) ?? THEMES[0];
@@ -503,5 +506,12 @@ export function applyTheme(theme: Theme): void {
 }
 
 export function loadSavedTheme(): Theme {
-  return getTheme(localStorage.getItem('alcove-theme') ?? DEFAULT_THEME_ID);
+  const saved = localStorage.getItem('alcove-theme');
+  // One-time migration from the former implicit default. Explicit choices made
+  // after this migration are preserved, including choosing Mocha again.
+  if ((!saved || saved === 'mocha') && !localStorage.getItem('alcove-theme-v2')) {
+    localStorage.setItem('alcove-theme-v2', '1');
+    return getTheme(DEFAULT_THEME_ID);
+  }
+  return getTheme(saved ?? DEFAULT_THEME_ID);
 }
