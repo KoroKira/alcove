@@ -448,7 +448,15 @@ async def get_knowledge_graph(
     grouped: Dict[UUID, list[list[float]]] = {}
     try:
         from database.models.embedding_model import PadEmbedding
-        emb_rows = await PadEmbedding.get_all_for_owner(session, user.id)
+        # A graph centroid uses at most six chunks per pad. Do that cap in SQL
+        # so large PDFs don't ship hundreds of JSON vectors to Python merely
+        # to discard them a line later.
+        emb_stmt = (
+            _sa_select(PadEmbedding.pad_id, PadEmbedding.embedding)
+            .join(PadStore, PadStore.id == PadEmbedding.pad_id)
+            .where(PadStore.owner_id == user.id, PadEmbedding.chunk_index < 6)
+        )
+        emb_rows = (await session.execute(emb_stmt)).all()
         for row in emb_rows:
             if isinstance(row.embedding, list) and row.embedding:
                 grouped.setdefault(row.pad_id, []).append(row.embedding)
