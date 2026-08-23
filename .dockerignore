@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/node_modules
+src/frontend/dist
+.env
+.env.*
+!.env.template
+!.env.local.template
+!.env.selfhost.example
+data
+pads
+notify.log
