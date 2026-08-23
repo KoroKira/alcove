@@ -199,7 +199,7 @@ export async function resolveAvailableChatModel(preferred?: string): Promise<str
   if (!resp.ok) throw new Error(`Impossible de lire les modèles IA (${resp.status})`);
   const raw = (await resp.json()).models ?? [];
   const names = raw.map((m: { name: string }) => m.name);
-  const selected = pickChatModel(names, preferred || serverDefault);
+  const selected = pickChatModel(names, !preferred || isEmbeddingModel(preferred) ? serverDefault : preferred);
   if (!selected) throw new Error('Aucun modèle de génération n’est installé (seulement un modèle d’embedding).');
   return selected;
 }

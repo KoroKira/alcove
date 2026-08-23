@@ -5,7 +5,7 @@ import {
   Search, Link, Zap, ArrowDownToLine, Loader, ChevronDown, ChevronUp, Workflow,
   MessageSquare, Plus, Trash2, Brain, Check, HelpCircle, Users,
 } from 'lucide-react';
-import { useOllamaModels, streamLocalOllamaChat, fetchChatPreamble, pickChatModel } from '../hooks/useOllama';
+import { useOllamaModels, streamLocalOllamaChat, fetchChatPreamble, isEmbeddingModel, pickChatModel } from '../hooks/useOllama';
 import {
   suggestTags, suggestLinks, generateFlashcards, generateDiagram, generateQuiz, QuizQuestion,
   extractEntities, fetchWikipediaSummary, EntityType, WikipediaSummary,
@@ -85,7 +85,8 @@ export default function AIPanel({
   // Never select an embedding-only model for chat, even if a stale browser
   // preference points to one or Ollama returns it first.
   useEffect(() => {
-    const usable = pickChatModel(models, model || defaultModel);
+    const preferred = !model || isEmbeddingModel(model) ? defaultModel : model;
+    const usable = pickChatModel(models, preferred);
     if (usable && usable !== model) saveModel(usable);
   }, [models, model, defaultModel, saveModel]);
 

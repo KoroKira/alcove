@@ -17,7 +17,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Plus, MessageSquare, Trash2, Pencil, Search } from 'lucide-react';
-import { useOllamaModels, pickChatModel } from '../hooks/useOllama';
+import { useOllamaModels, isEmbeddingModel, pickChatModel } from '../hooks/useOllama';
 import { agenticRagChat } from '../lib/rag';
 import { Message } from '../lib/chatTypes';
 import { getActivePersonaInstructions } from '../lib/personas';
@@ -73,7 +73,8 @@ export default function ChatView({ onClose }: Props) {
     if (!localStorage.getItem(SAVED_MODEL_KEY) && defaultModel) setModel(defaultModel);
   }, [defaultModel]);
   useEffect(() => {
-    const usable = pickChatModel(models, model || defaultModel);
+    const preferred = !model || isEmbeddingModel(model) ? defaultModel : model;
+    const usable = pickChatModel(models, preferred);
     if (usable && usable !== model) {
       setModel(usable);
       localStorage.setItem(SAVED_MODEL_KEY, usable);
