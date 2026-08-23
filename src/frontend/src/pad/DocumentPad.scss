@@ -11,6 +11,7 @@
 }
 
 .document-pad {
+  &__source-link { text-decoration: none; }
   display: flex;
   flex-direction: column;
   height: 100%;

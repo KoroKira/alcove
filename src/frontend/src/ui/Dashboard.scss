@@ -13,8 +13,9 @@
   background: var(--island-bg-color, var(--ap-bg0));
   border: 1px solid var(--color-surface-mid, var(--ap-bg3));
   border-radius: var(--ap-radius-lg);
-  width: min(900px, 92vw);
-  max-height: 80vh;
+  width: min(1180px, 96vw);
+  height: min(900px, 94vh);
+  max-height: 94vh;
   display: flex;
   flex-direction: column;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
@@ -218,12 +219,10 @@
   }
 
   &__grid {
-    // Masonry via CSS columns : chaque carte reste entière, la variation
-    // de hauteur donne le rythme. Colonnes de 260px pour laisser respirer
-    // le contenu (les 230px précédents faisaient trop confus).
-    columns: 260px;
-    column-gap: 20px;
-    padding: 0 4px 4px;
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    padding: 0;
     overflow-y: auto;
     flex: 1;
   }
@@ -262,8 +261,8 @@
     display: flex;
     flex-direction: column;
     width: 100%;
-    break-inside: avoid;
-    margin-bottom: 20px;
+    min-width: 0;
+    margin: 0;
 
     &:hover {
       transform: translateY(-2px);
@@ -276,6 +275,22 @@
                   0 10px 26px rgba(0, 0, 0, 0.24);
     }
     &.scratch { border-style: dashed; }
+    &.empty { opacity: .72; }
+  }
+
+  &__library {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-bottom: 24px;
+  }
+
+  &__grid--flat { padding: 20px; }
+
+  &__card-empty {
+    color: var(--ap-orange);
+    font-size: 11px;
+    line-height: 1.4;
   }
 
   // ── Zone thumb — dominante, 16:10, colle aux bords via overflow: hidden
@@ -408,7 +423,7 @@
     // une longue liste : "Aujourd'hui · 12", puis "Hier · 3", puis les
     // dates plus anciennes. Le compteur à droite du label rend la
     // taille de chaque groupe lisible en scroll rapide.
-    margin-top: 24px;
+    margin: 24px 20px 0;
     &:first-of-type { margin-top: 0; }
   }
 
@@ -604,7 +619,8 @@
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    padding: 0 0 8px;
+    border-bottom: 1px solid var(--ap-bg2);
+    padding: 8px 16px 10px;
   }
 
   &__tag-chip {

@@ -19,15 +19,18 @@ import os
 import re
 import shutil
 import tempfile
+import uuid
 from typing import Any, Optional
 
 import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from dependencies import UserSession, require_auth
 from routers.ai.clip import _MarkdownExtractor  # reuse the stdlib readability
+from config import SYNC_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +38,28 @@ ingest_router = APIRouter(prefix="/api/ingest")
 
 _UA = "Mozilla/5.0 (alcove ingest)"
 _MAX_CHARS = 200_000
+
+
+def _persist_pdf(data: bytes) -> Optional[str]:
+    """Keep uploaded PDFs so an ingested note can reopen its source later."""
+    if not SYNC_DIR:
+        return None
+    token = f"{uuid.uuid4()}.pdf"
+    folder = os.path.join(SYNC_DIR, "_files")
+    os.makedirs(folder, exist_ok=True)
+    with open(os.path.join(folder, token), "wb") as handle:
+        handle.write(data)
+    return f"/api/ingest/pdf-file/{token}"
+
+
+@ingest_router.get("/pdf-file/{token}")
+async def read_pdf_file(token: str, _: UserSession = Depends(require_auth)):
+    if not re.fullmatch(r"[0-9a-f-]{36}\.pdf", token) or not SYNC_DIR:
+        raise HTTPException(404, "PDF introuvable")
+    path = os.path.join(SYNC_DIR, "_files", token)
+    if not os.path.isfile(path):
+        raise HTTPException(404, "PDF introuvable")
+    return FileResponse(path, media_type="application/pdf", filename=token)
 
 
 class IngestUrlRequest(BaseModel):
@@ -281,6 +306,7 @@ async def ingest_pdf(
     if file is not None:
         data = await file.read()
         filename = file.filename or filename
+        src_url = _persist_pdf(data)
     elif url:
         src_url = url.strip()
         if not src_url.startswith(("http://", "https://")):
@@ -885,10 +911,11 @@ async def ingest_file(
                 422,
                 "Aucun texte extractible du PDF (probablement scanné — OCR non géré).",
             )
+        stored_url = _persist_pdf(data)
         return {
             "title": title or filename,
             "markdown": text[:_MAX_CHARS],
-            "metadata": {"filename": filename},
+            "metadata": {"filename": filename, "source_url": stored_url},
             "source_type": "pdf",
         }
 

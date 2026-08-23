@@ -375,7 +375,68 @@ async def get_knowledge_graph(
                 seen.add((src, tgt))
                 edges.append({"from": src, "to": tgt})
 
-    return {"nodes": nodes, "edges": edges}
+    # Imported libraries rarely contain hand-authored [[wikilinks]]. Enrich the
+    # graph with a few strong semantic neighbours from the existing RAG index.
+    grouped: Dict[UUID, list[list[float]]] = {}
+    try:
+        from database.models.embedding_model import PadEmbedding
+        emb_rows = await PadEmbedding.get_all_for_owner(session, user.id)
+        for row in emb_rows:
+            if isinstance(row.embedding, list) and row.embedding:
+                grouped.setdefault(row.pad_id, []).append(row.embedding)
+        reps: Dict[UUID, list[float]] = {}
+        for pid, vectors in grouped.items():
+            vectors = vectors[:6]
+            dim = min(len(v) for v in vectors)
+            reps[pid] = [sum(v[i] for v in vectors) / len(vectors) for i in range(dim)]
+        candidates: list[tuple[float, UUID, UUID]] = []
+        ids = list(reps)
+        for i, left in enumerate(ids):
+            a = reps[left]; an = sum(x * x for x in a) ** .5
+            if not an: continue
+            for right in ids[i + 1:]:
+                b = reps[right]; bn = sum(x * x for x in b) ** .5
+                if not bn: continue
+                score = sum(x * y for x, y in zip(a, b)) / (an * bn)
+                if score >= .68: candidates.append((score, left, right))
+        degree: Dict[str, int] = {}
+        for score, left, right in sorted(candidates, reverse=True):
+            src, tgt = str(left), str(right)
+            if degree.get(src, 0) >= 3 or degree.get(tgt, 0) >= 3: continue
+            if (src, tgt) in seen or (tgt, src) in seen: continue
+            edges.append({"from": src, "to": tgt, "kind": "semantic", "score": round(score, 3)})
+            degree[src] = degree.get(src, 0) + 1
+            degree[tgt] = degree.get(tgt, 0) + 1
+    except Exception:
+        pass
+
+    return {"nodes": nodes, "edges": edges, "indexed_nodes": len(grouped)}
+
+
+@pad_router.get("/previews")
+async def get_document_previews(
+    user: UserSession = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> Dict[str, Any]:
+    """Return every document preview in one query.
+
+    The former Dashboard issued one `/api/pad/{id}` request per document on
+    every open. A medium library could exhaust PostgreSQL before the graph or
+    AI helpers got a connection. Keep the response intentionally small.
+    """
+    stmt = sa_select(
+        PadStore.id,
+        PadStore.data["content"].astext,
+    ).where(PadStore.owner_id == user.id, PadStore.pad_type == "document")
+    rows = (await session.execute(stmt)).all()
+    previews: Dict[str, str] = {}
+    empty: list[str] = []
+    for pad_id, content in rows:
+        raw = (content or "").strip()
+        if not raw:
+            empty.append(str(pad_id))
+        previews[str(pad_id)] = raw[:1200]
+    return {"previews": previews, "empty": empty}
 
 
 def _match_pad(pad_type: str, data: Any, display_name: str, query: str):

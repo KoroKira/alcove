@@ -53,9 +53,28 @@ function saveFSRS(cards: Card[], state: FSRSCard[]) {
 }
 
 function parseFlashcards(raw: string, padId = 'generated', padName = 'IA'): Card[] {
+  const cleaned = raw.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+  // Accept JSON too: smaller local models often obey the content but choose a
+  // safer structured representation despite the requested Q:/A: format.
+  try {
+    const start = cleaned.indexOf('['), end = cleaned.lastIndexOf(']');
+    if (start >= 0 && end > start) {
+      const items = JSON.parse(cleaned.slice(start, end + 1));
+      if (Array.isArray(items)) {
+        const cards = items.map(x => ({ q: String(x.q || x.question || '').trim(), a: String(x.a || x.answer || '').trim(), padId, padName }))
+          .filter(x => x.q && x.a);
+        if (cards.length) return cards;
+      }
+    }
+  } catch { /* fall through to tolerant Q/A parser */ }
+
   const pairs: Card[] = [];
-  const matches = [...raw.matchAll(/^Q:[ \t]*(.+?)$\n^A:[ \t]*(.+?)$/gm)];
-  matches.forEach(m => pairs.push({ q: m[1].trim(), a: m[2].trim(), padId, padName }));
+  const block = /^\s*(?:[-*]\s*)?Q\s*:\s*(.+?)\r?\n\s*(?:[-*]\s*)?A\s*:\s*([\s\S]*?)(?=\r?\n\s*(?:[-*]\s*)?Q\s*:|$)/gim;
+  for (const match of cleaned.matchAll(block)) {
+    const q = match[1].trim();
+    const a = match[2].trim().replace(/\n{3,}/g, '\n\n');
+    if (q && a) pairs.push({ q, a, padId, padName });
+  }
   return pairs;
 }
 
@@ -131,7 +150,9 @@ export default function FlashcardStudio({ tabs, onClose, onSelectPad }: Props) {
       const all = parseFlashcards(raw);
       if (!all.length) { setError("L'IA n'a pas produit de flashcards. Réessaie."); setStatus('idle'); return; }
       startSession(all);
-    } catch { setError('Erreur : Ollama non joignable.'); }
+    } catch (e) {
+      setError(`Génération impossible : ${e instanceof Error ? e.message : 'Ollama indisponible'}`);
+    }
     setStatus('idle');
   };
 

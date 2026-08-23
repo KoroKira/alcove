@@ -31,7 +31,17 @@ DB_PORT = os.getenv('POSTGRES_PORT', '5432')
 DATABASE_URL = f"postgresql+asyncpg://{DB_USER}:{urlquote(DB_PASSWORD)}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 # Create async engine
-engine = create_async_engine(DATABASE_URL, echo=False)
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=False,
+    # A dashboard used to fan out one request per document preview. Keep the
+    # API inside a deliberately small budget so a burst cannot consume all of
+    # PostgreSQL's connections and take unrelated features down with it.
+    pool_size=int(os.getenv("DB_POOL_SIZE", "5")),
+    max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "5")),
+    pool_timeout=15,
+    pool_pre_ping=True,
+)
 
 # Create async session factory
 async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

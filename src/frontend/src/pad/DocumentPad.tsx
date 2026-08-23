@@ -15,7 +15,7 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import katex from 'katex';
 import mermaid from 'mermaid';
-import { Link, History, Bookmark, Download, FileText, List, Maximize2, Minimize2, BookOpen, Save, Play, Globe, Terminal, Sparkles } from 'lucide-react';
+import { Link, History, Bookmark, Download, FileText, List, Maximize2, Minimize2, BookOpen, Save, Play, Globe, Terminal, Sparkles, ExternalLink } from 'lucide-react';
 import { useRelatedPads } from '../hooks/useRelatedPads';
 import { readVideoMeta, stripVideoMeta, parseTimestamp, replaceReportBody } from '../lib/videoMeta';
 import VideoEmbed, { VideoEmbedHandle } from '../ui/VideoEmbed';
@@ -64,6 +64,7 @@ interface Props {
   /** When set, appends this string to the editor content (then resets to null) */
   contentToAppend?: string | null;
   onContentAppended?: () => void;
+  sourceUrl?: string;
 }
 
 type ViewMode = 'edit' | 'split' | 'preview';
@@ -320,7 +321,7 @@ Bienvenue dans l'éditeur \\LaTeX{} intégré.
 \\end{document}
 `;
 
-const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark = true, format = 'markdown', tabs = [], onSelectPad, focusMode = false, onToggleFocus, pendingContent, onContentLoaded, onContentChange, contentToAppend, onContentAppended }) => {
+const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark = true, format = 'markdown', tabs = [], onSelectPad, focusMode = false, onToggleFocus, pendingContent, onContentLoaded, onContentChange, contentToAppend, onContentAppended, sourceUrl }) => {
   const isLatex = format === 'latex';
   const { t, i18n } = useTranslation();
   const [content, setContent] = useState('');
@@ -1089,6 +1090,17 @@ ${renderedHtml}
               <button className="document-pad__toolbar-btn" onClick={() => setHistoryOpen(v => !v)} title={t('editor.history')}>
                 <History size={14} />
               </button>
+              {sourceUrl && (
+                <a
+                  className="document-pad__toolbar-btn document-pad__source-link"
+                  href={sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Ouvrir la source originale"
+                >
+                  <ExternalLink size={14} /> Source
+                </a>
+              )}
               <button className="document-pad__toolbar-btn" onClick={manualSnapshot} title={t('editor.snapshot')}>
                 <Bookmark size={14} />
               </button>

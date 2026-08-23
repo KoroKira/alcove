@@ -59,6 +59,12 @@ services:
       - REDIS_PORT=6379
       - SYNC_DIR=/data/pads
       - API_WORKERS=1
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
+      - OLLAMA_DEFAULT_MODEL=${OLLAMA_DEFAULT_MODEL:-llama3.2}
+      - DB_POOL_SIZE=5
+      - DB_MAX_OVERFLOW=5
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ${DATA_DIR:-./data}/pads:/data/pads
     ports:

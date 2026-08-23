@@ -100,7 +100,9 @@ const Dashboard: React.FC<Props> = ({
   const [sortKey, setSortKey] = useState<SortKey>('updated');
   const [activeView, setActiveView] = useState<'pads' | 'templates'>(initialView);
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [tagsExpanded, setTagsExpanded] = useState(false);
   const [previews, setPreviews] = useState<Record<string, string>>({});
+  const [emptyPadIds, setEmptyPadIds] = useState<Set<string>>(new Set());
   const searchRef = useRef<HTMLInputElement>(null);
   // Toggle Text ⇄ AI dans la barre de recherche — le geste Recall qui
   // bascule la même input entre plein-texte (matching titre) et sémantique
@@ -152,18 +154,15 @@ const Dashboard: React.FC<Props> = ({
     return () => document.removeEventListener('keydown', handler);
   }, [onClose]);
 
-  // Lazy-fetch doc previews. On nettoie AGRESSIVEMENT le markdown avant
-  // affichage pour que la carte ne montre pas ">[!NOTE] Source > 🔗 [url…"
-  // qui pollue le preview de tous les pads ingérés — on veut le premier
-  // paragraphe de vrai contenu, pas la callout de métadonnées.
+  // One batched request instead of one DB-backed fetch per document. The old
+  // fan-out was enough to exhaust PostgreSQL on a real Recall-sized library.
   useEffect(() => {
-    const docTabs = tabs.filter(t => t.padType === 'document' && !previews[t.id]);
-    docTabs.forEach(tab => {
-      fetch(`/api/pad/${tab.id}`)
-        .then(r => r.json())
-        .then(data => {
-          const raw = (data?.content || '') as string;
-          const cleaned = raw
+    fetch('/api/pad/previews', { credentials: 'include' })
+      .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+      .then(data => {
+        const next: Record<string, string> = {};
+        Object.entries(data.previews || {}).forEach(([id, value]) => {
+          const cleaned = String(value || '')
             // Retire les commentaires HTML (blocs alcove:video etc.)
             .replace(/<!--[\s\S]*?-->/g, '')
             // Retire les callouts blockquote entiers (>...) — souvent la
@@ -182,11 +181,13 @@ const Dashboard: React.FC<Props> = ({
             .replace(/^-{3,}$/gm, '')
             .replace(/\s+/g, ' ')
             .trim();
-          setPreviews(prev => ({ ...prev, [tab.id]: cleaned.slice(0, 160) }));
-        })
-        .catch(() => {});
-    });
-  }, [tabs]);
+          next[id] = cleaned.slice(0, 160);
+        });
+        setPreviews(next);
+        setEmptyPadIds(new Set(data.empty || []));
+      })
+      .catch(() => {});
+  }, [tabs.length]);
 
   const sorted = [...tabs].sort((a, b) => {
     if (sortKey === 'name') return a.title.localeCompare(b.title);
@@ -287,7 +288,7 @@ const Dashboard: React.FC<Props> = ({
     return (
       <button
         key={tab.id}
-        className={`dashboard__card ${selectedTabId === tab.id ? 'active' : ''} ${tab.isScratch ? 'scratch' : ''}`}
+        className={`dashboard__card ${selectedTabId === tab.id ? 'active' : ''} ${tab.isScratch ? 'scratch' : ''} ${emptyPadIds.has(tab.id) ? 'empty' : ''}`}
         style={{ '--card-tint': cardTint(tab.id) } as React.CSSProperties}
         onClick={() => handleSelect(tab.id)}
       >
@@ -329,6 +330,9 @@ const Dashboard: React.FC<Props> = ({
           {preview && (
             <div className="dashboard__card-preview">{preview}</div>
           )}
+          {emptyPadIds.has(tab.id) && (
+            <div className="dashboard__card-empty">Document vide · ouvre-le pour commencer</div>
+          )}
           {(tab.tags || []).length > 0 && (
             <div className="dashboard__card-tags">
               {(tab.tags || []).slice(0, 4).map(tag => (
@@ -345,29 +349,6 @@ const Dashboard: React.FC<Props> = ({
       </button>
     );
   };
-
-  /** Tuile "Quick actions" épinglée en tête de la première section — le
-   *  geste Recall qui remplace le "New pad" du terminal-look ancien par une
-   *  colonne d'entrées visuelles au format carte. Un clic sur n'importe
-   *  quelle action route vers la modale unifiée (qui garde la source de
-   *  vérité de tout le flow de création). */
-  const QuickActionsTile: React.FC = () => (
-    <div
-      className="dashboard__card dashboard__card--quick"
-      onClick={onUnifiedAdd}
-      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') onUnifiedAdd(); }}
-      role="button"
-      tabIndex={0}
-      aria-label={t('dashboard.add')}
-    >
-      <div className="dashboard__quick-grid">
-        <div className="dashboard__quick-item"><LinkIcon size={18} /><span>{t('dashboard.addLink')}</span></div>
-        <div className="dashboard__quick-item"><FileText size={18} /><span>{t('dashboard.newDocument')}</span></div>
-        <div className="dashboard__quick-item"><PenTool size={18} /><span>{t('dashboard.newCanvas')}</span></div>
-        <div className="dashboard__quick-item"><Plus size={18} /><span>{t('dashboard.moreTypes')}</span></div>
-      </div>
-    </div>
-  );
 
   return (
     <div className="dashboard-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
@@ -476,36 +457,41 @@ const Dashboard: React.FC<Props> = ({
                   className={`dashboard__tag-chip ${!activeTag ? 'active' : ''}`}
                   onClick={() => setActiveTag(null)}
                 >{t('sidebar.files')}</button>
-                {tagList.map(tag => (
+                {(tagsExpanded ? tagList : tagList.slice(0, 12)).map(tag => (
                   <button
                     key={tag}
                     className={`dashboard__tag-chip ${activeTag === tag ? 'active' : ''}`}
                     onClick={() => setActiveTag(t => t === tag ? null : tag)}
                   >#{tag}</button>
                 ))}
+                {tagList.length > 12 && (
+                  <button className="dashboard__tag-chip" onClick={() => setTagsExpanded(v => !v)}>
+                    {tagsExpanded ? 'Réduire' : `+${tagList.length - 12}`}
+                  </button>
+                )}
               </div>
             )}
-            {filtered.length === 0 && (
-              <div className="dashboard__empty">{t('search.noResults')}</div>
-            )}
-            {filtered.length > 0 && useDateGrouping && groupedByDate().map(([iso, group], sectionIdx) => (
-              <section key={iso} className="dashboard__section">
-                <h3 className="dashboard__section-head">
-                  <span className="dashboard__section-label">{sectionLabel(iso)}</span>
-                  <span className="dashboard__section-count">{group.length}</span>
-                </h3>
-                <div className="dashboard__grid">
-                  {sectionIdx === 0 && <QuickActionsTile />}
-                  {group.map(tab => renderCard(tab))}
+            <div className="dashboard__library">
+              {filtered.length === 0 && (
+                <div className="dashboard__empty">{t('search.noResults')}</div>
+              )}
+              {filtered.length > 0 && useDateGrouping && groupedByDate().map(([iso, group]) => (
+                <section key={iso} className="dashboard__section">
+                  <h3 className="dashboard__section-head">
+                    <span className="dashboard__section-label">{sectionLabel(iso)}</span>
+                    <span className="dashboard__section-count">{group.length}</span>
+                  </h3>
+                  <div className="dashboard__grid">
+                    {group.map(tab => renderCard(tab))}
+                  </div>
+                </section>
+              ))}
+              {filtered.length > 0 && !useDateGrouping && (
+                <div className="dashboard__grid dashboard__grid--flat">
+                  {filtered.map(tab => renderCard(tab))}
                 </div>
-              </section>
-            ))}
-            {filtered.length > 0 && !useDateGrouping && (
-              <div className="dashboard__grid">
-                <QuickActionsTile />
-                {filtered.map(tab => renderCard(tab))}
-              </div>
-            )}
+              )}
+            </div>
           </>
         )}
       </div>

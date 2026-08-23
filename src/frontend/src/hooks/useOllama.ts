@@ -10,7 +10,9 @@ export function getOllamaUrl(): string {
     const override = localStorage.getItem('alcove_ollama_url');
     if (override && override.trim()) return override.trim().replace(/\/$/, '');
   } catch { /* SSR / privacy mode — fall through */ }
-  return 'http://127.0.0.1:11434';
+  // Same-origin proxy: works from every device, avoids mixed-content/PNA and
+  // lets the homelab operator choose the inference machine server-side.
+  return '/api/ai/ollama';
 }
 
 export interface OllamaModel {

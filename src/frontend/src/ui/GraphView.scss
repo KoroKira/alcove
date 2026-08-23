@@ -2,7 +2,7 @@
   position: fixed;
   inset: 0;
   z-index: 250;
-  background: #0d0d1a;
+  background: var(--ap-bg0);
   display: flex;
   flex-direction: column;
 }
@@ -24,6 +24,8 @@
     font-size: 14px;
     font-weight: 600;
     color: var(--ap-text0);
+
+    small { color: var(--ap-text2); font-size: 10px; font-weight: 400; }
   }
 
   &__actions {
@@ -50,6 +52,24 @@
 
     &:hover { background: var(--ap-bg2); color: var(--ap-text0); }
   }
+}
+
+.graph-empty {
+  background: var(--ap-bg1);
+  border: 1px solid var(--ap-bg3);
+  border-radius: 10px;
+  color: var(--ap-text1);
+  left: 50%;
+  max-width: 470px;
+  padding: 16px 18px;
+  position: absolute;
+  text-align: center;
+  top: 82px;
+  transform: translateX(-50%);
+  z-index: 3;
+
+  &--hint { color: var(--ap-text2); font-size: 12px; line-height: 1.55; }
+  code { color: var(--ap-accent); }
 }
 
 .graph-search {

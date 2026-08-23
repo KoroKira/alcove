@@ -16,7 +16,7 @@ interface GraphNode {
   vy: number;
 }
 
-interface GraphEdge { from: string; to: string; }
+interface GraphEdge { from: string; to: string; kind?: 'wikilink' | 'semantic'; score?: number; }
 
 interface Props {
   onClose: () => void;
@@ -101,6 +101,8 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
   const dragRef   = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; label: string } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [graphStats, setGraphStats] = useState({ nodes: 0, edges: 0, indexed: 0 });
   const hoveredIdRef = useRef<string | null>(null);
   const clickedRef   = useRef(false);
 
@@ -486,8 +488,8 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
   // ── Load data ─────────────────────────────────────────────────────────────
   useEffect(() => {
     fetch('/api/pad/graph')
-      .then(r => r.json())
-      .then(({ nodes, edges }: { nodes: any[]; edges: GraphEdge[] }) => {
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(({ nodes, edges, indexed_nodes }: { nodes: any[]; edges: GraphEdge[]; indexed_nodes?: number }) => {
         const W = canvasRef.current?.width  || 800;
         const H = canvasRef.current?.height || 600;
         nodesRef.current = nodes.map(n => ({
@@ -497,6 +499,7 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
           vx: 0, vy: 0,
         }));
         edgesRef.current = edges;
+        setGraphStats({ nodes: nodes.length, edges: edges.length, indexed: indexed_nodes || 0 });
 
         // Connected-ids set for "Show Unconnected" (#21).
         const connected = new Set<string>();
@@ -523,7 +526,7 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
         setTimeout(() => { simRunRef.current = false; }, 5000);
         loop();
       })
-      .catch(() => setLoading(false));
+      .catch((error) => { setLoadError(error instanceof Error ? error.message : String(error)); setLoading(false); });
   }, [loop]);
 
   // ── Canvas resize ─────────────────────────────────────────────────────────
@@ -650,6 +653,7 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
         <div className="graph-header__title">
           <Network size={16} />
           Knowledge Graph
+          {!loading && <small>{graphStats.nodes} notes · {graphStats.edges} liens</small>}
         </div>
         <div className="graph-header__actions">
           <Legend />
@@ -813,6 +817,15 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
       {loading && (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ap-overlay0)', fontSize: 14 }}>
           Chargement du graph…
+        </div>
+      )}
+
+      {!loading && loadError && (
+        <div className="graph-empty">Impossible de charger le graphe · {loadError}</div>
+      )}
+      {!loading && !loadError && graphStats.nodes > 0 && graphStats.edges === 0 && (
+        <div className="graph-empty graph-empty--hint">
+          Les notes sont visibles, mais aucun lien n'existe encore. Réindexe la bibliothèque pour créer les proximités IA, ou ajoute des liens <code>[[Nom de note]]</code>.
         </div>
       )}
 

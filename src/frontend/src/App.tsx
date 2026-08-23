@@ -621,6 +621,7 @@ export default function App() {
               onContentChange={setAiDocContent}
               contentToAppend={aiContentToInsert}
               onContentAppended={() => setAiContentToInsert(null)}
+              sourceUrl={selectedTab?.sourceUrl}
             />
           </Suspense>
         </div>
