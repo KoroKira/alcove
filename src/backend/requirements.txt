@@ -26,6 +26,7 @@ pypdfium2==5.13.0
 Pillow==12.3.0
 yt-dlp==2026.7.4
 faster-whisper==1.2.1
+numpy==2.4.6
 # Unified document → Markdown conversion (docx, pptx, xlsx, epub, html, csv, json).
 markitdown[docx,xlsx,pptx]==0.1.7
 

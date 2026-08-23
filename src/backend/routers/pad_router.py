@@ -1,5 +1,4 @@
 import json
-import heapq
 import re
 from uuid import UUID
 from datetime import datetime, timezone
@@ -10,6 +9,7 @@ from sqlalchemy import update as sa_update, select as sa_select, text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
+import numpy as np
 
 from dependencies import UserSession, require_auth, require_pad_access, require_pad_owner
 from database.models import PadStore
@@ -28,52 +28,28 @@ def _semantic_graph_edges(
     grouped: Dict[UUID, list[list[float]]],
     seen: set[tuple[str, str]],
 ) -> list[Dict[str, Any]]:
-    """Build a sparse semantic graph without an O(pads² × 768) hot loop.
-
-    A small signed projection cheaply selects plausible neighbours; cosine is
-    then recomputed on the full centroid for the best candidates only. This
-    keeps the final score exact while making a 500-note library responsive on
-    the low-power home server.
-    """
-    projection_dim = 64
+    """Build a sparse semantic graph with vectorised exact cosine scores."""
     reps: Dict[UUID, list[float]] = {}
-    projected: Dict[UUID, tuple[list[float], float]] = {}
     for pid, vectors in grouped.items():
         vectors = vectors[:6]
         dim = min(len(v) for v in vectors)
         rep = [sum(v[i] for v in vectors) / len(vectors) for i in range(dim)]
-        norm = sum(x * x for x in rep) ** .5
-        if not norm:
-            continue
-        reps[pid] = rep
-        small = [0.0] * projection_dim
-        for i, value in enumerate(rep):
-            bucket = i % projection_dim
-            small[bucket] += value if ((i // projection_dim + bucket) & 1) == 0 else -value
-        small_norm = sum(x * x for x in small) ** .5
-        projected[pid] = (small, small_norm)
+        if any(rep):
+            reps[pid] = rep
 
-    ids = list(projected)
-    approximate: list[tuple[float, UUID, UUID]] = []
-    for i, left in enumerate(ids):
-        a, an = projected[left]
-        if not an:
-            continue
-        for right in ids[i + 1:]:
-            b, bn = projected[right]
-            if not bn:
-                continue
-            score = sum(x * y for x, y in zip(a, b)) / (an * bn)
-            approximate.append((score, left, right))
-
-    candidates = heapq.nlargest(min(5000, len(approximate)), approximate)
-    exact: list[tuple[float, UUID, UUID]] = []
-    norms = {pid: sum(x * x for x in rep) ** .5 for pid, rep in reps.items()}
-    for _, left, right in candidates:
-        a, b = reps[left], reps[right]
-        score = sum(x * y for x, y in zip(a, b)) / (norms[left] * norms[right])
-        if score >= .68:
-            exact.append((score, left, right))
+    ids = list(reps)
+    if len(ids) < 2:
+        return []
+    dim = min(len(reps[pid]) for pid in ids)
+    matrix = np.asarray([reps[pid][:dim] for pid in ids], dtype=np.float32)
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    norms[norms == 0] = 1
+    similarities = (matrix / norms) @ (matrix / norms).T
+    left_idx, right_idx = np.where(np.triu(similarities, k=1) >= .68)
+    exact = [
+        (float(similarities[left, right]), ids[left], ids[right])
+        for left, right in zip(left_idx.tolist(), right_idx.tolist())
+    ]
 
     edges: list[Dict[str, Any]] = []
     degree: Dict[str, int] = {}
