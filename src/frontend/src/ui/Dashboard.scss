@@ -744,5 +744,6 @@
     &__tag-chip { min-height: 34px; white-space: nowrap; }
   }
 
-  &__card-saved { position: absolute; left: 10px; bottom: 10px; z-index: 2; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 9px; color: var(--ap-yellow, #e5c07b); background: rgba(10,10,12,.62); backdrop-filter: blur(6px); }
 }
+
+.dashboard__card-saved { position: absolute; left: 10px; bottom: 10px; z-index: 2; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 9px; color: var(--ap-yellow, #e5c07b); background: rgba(10,10,12,.62); backdrop-filter: blur(6px); }
