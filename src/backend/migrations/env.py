@@ -18,7 +18,10 @@ from database.database import DATABASE_URL
 from database.models import Base, SCHEMA_NAME
 
 config = context.config
-config.set_main_option("sqlalchemy.url", DATABASE_URL)
+# ConfigParser treats percent signs in URL-encoded passwords as interpolation
+# markers. Escape them for Alembic's config layer; SQLAlchemy receives the
+# original single-percent URL after interpolation.
+config.set_main_option("sqlalchemy.url", DATABASE_URL.replace("%", "%%"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
