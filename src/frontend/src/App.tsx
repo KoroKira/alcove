@@ -116,6 +116,7 @@ export default function App() {
 
   const {
     tabs,
+    folders,
     selectedTabId,
     isLoading: isLoadingTabs,
     createNewPadAsync,
@@ -134,6 +135,7 @@ export default function App() {
     createDailyNote,
     updateTags,
     updateFolder,
+    createFolder,
     refetchTabs,
   } = usePadTabs(isAuthenticated);
 
@@ -508,6 +510,7 @@ export default function App() {
       />}
       {!focusMode && <PadSidebar
         tabs={tabs}
+        folders={folders}
         selectedTabId={selectedTabId ?? ''}
         isAuthenticated={isAuthenticated}
         isCreatingPad={isCreatingPad}
@@ -526,6 +529,7 @@ export default function App() {
         onUpdateTheme={updateTheme}
         onUpdateTags={updateTags}
         onUpdateFolder={updateFolder}
+        onCreateFolder={createFolder}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(v => !v)}
         onTogglePomodoro={() => setPomodoroOpen(v => !v)}
@@ -534,10 +538,7 @@ export default function App() {
         splitActive={splitOpen}
         onToggleAI={() => setAiOpen(v => !v)}
         aiActive={aiOpen}
-        onTheme={() => setThemePickerOpen(v => !v)}
         onShortcuts={() => setShortcutOpen(v => !v)}
-        currentThemeId={currentThemeId}
-        user={user}
         onQuickCapture={() => setQuickCaptureOpen(true)}
         onImportObsidian={() => setObsidianImportOpen(true)}
         onAddFromLink={() => setAddLinkOpen(true)}
@@ -774,6 +775,7 @@ export default function App() {
           initialView={dashboardInitialView}
           leftOffset={sidebarWidth}
           tabs={tabs}
+          folders={folders}
           selectedTabId={selectedTabId ?? ''}
           onSelectPad={(padId) => { selectTab(padId); setDashboardOpen(false); }}
           onUnifiedAdd={() => setUnifiedAddOpen(true)}

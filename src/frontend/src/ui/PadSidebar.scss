@@ -158,7 +158,7 @@
     align-items: center;
     gap: 1px;
     // Hidden by default, shown on hover of section header
-    opacity: 0;
+    opacity: .62;
     transition: opacity 0.12s;
   }
 
@@ -296,6 +296,14 @@
       font-weight: 700;
     }
   }
+
+  &__new-folder { display: grid; grid-template-columns: 18px minmax(0,1fr) 25px 25px; align-items: center; gap: 4px; margin: 3px 8px 7px; padding: 7px 7px 7px 9px; border: 1px solid color-mix(in srgb, var(--ap-yellow) 28%, transparent); border-radius: 9px; color: var(--ap-yellow); background: color-mix(in srgb, var(--ap-yellow) 6%, var(--ap-bg1)); }
+  &__new-folder input { min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ap-text0); font: 500 12px/1.2 inherit; }
+  &__new-folder input::placeholder { color: var(--ap-text2); }
+  &__new-folder button { width: 25px; height: 25px; padding: 0; border: 0; border-radius: 6px; display: grid; place-items: center; cursor: pointer; color: var(--ap-text2); background: transparent; }
+  &__new-folder button:hover:not(:disabled) { color: var(--ap-text0); background: rgba(255,255,255,.06); }
+  &__new-folder button:disabled { opacity: .35; cursor: default; }
+  &__new-folder > span { grid-column: 2 / -1; color: var(--ap-red); font-size: 10px; }
 
   // ── Spacer ────────────────────────────────────────────────────────────────
   // flex-grow: 0 — the file list's own `--fill` section already claims all
@@ -497,12 +505,15 @@
   background: none;
   border: none;
   cursor: pointer;
-  padding: 5px 8px 5px 12px;
+  padding: 7px 8px 7px 12px;
   color: var(--ap-text2);
   font-family: inherit;
   transition: color 0.12s, background 0.12s;
 
-  &:hover { background: rgba(255, 255, 255, 0.03); color: var(--ap-text0); }
+  border-radius: 7px;
+  margin: 1px 6px;
+  width: calc(100% - 12px);
+  &:hover { background: color-mix(in srgb, var(--ap-yellow) 7%, transparent); color: var(--ap-text0); }
 }
 
 .pad-sidebar__folder-icon { color: var(--ap-yellow); flex-shrink: 0; opacity: 0.85; }

@@ -6,7 +6,6 @@ import {
   FileText,
   PenLine,
   Pin,
-  CalendarDays,
   Layers,
   MoreHorizontal,
   Hash,
@@ -17,7 +16,6 @@ import {
   Columns3,
   GanttChart,
   Table2,
-  Palette,
   Keyboard,
   Zap,
   Upload,
@@ -31,9 +29,10 @@ import {
   Folder,
   FolderInput,
   ChevronDown,
+  FolderPlus,
+  Check,
 } from 'lucide-react';
 import { LANGUAGES, setLanguage, type LangCode } from '../i18n';
-import { getTheme } from '../themes';
 import { getDueCounts } from '../lib/reviewActivity';
 import type { Tab } from '../hooks/usePadTabs';
 import TabContextMenu from './TabContextMenu';
@@ -41,6 +40,7 @@ import './PadSidebar.scss';
 
 interface PadSidebarProps {
   tabs: Tab[];
+  folders?: string[];
   selectedTabId: string;
   isAuthenticated: boolean;
   isCreatingPad: boolean;
@@ -59,6 +59,7 @@ interface PadSidebarProps {
   onUpdateTheme: (args: { padId: string; theme: 'light' | 'dark' | null }) => void;
   onUpdateTags?: (args: { padId: string; tags: string[] }) => void;
   onUpdateFolder?: (args: { padId: string; folder: string | null }) => void;
+  onCreateFolder?: (name: string) => Promise<unknown>;
   collapsed: boolean;
   onToggleCollapse: () => void;
   onTogglePomodoro?: () => void;
@@ -67,10 +68,7 @@ interface PadSidebarProps {
   splitActive?: boolean;
   onToggleAI?: () => void;
   aiActive?: boolean;
-  onTheme?: () => void;
   onShortcuts?: () => void;
-  currentThemeId?: string;
-  user?: { id?: string; name?: string; email?: string } | null;
   onQuickCapture?: () => void;
   onImportObsidian?: () => void;
   onAddFromLink?: () => void;
@@ -100,6 +98,7 @@ const PadIcon: React.FC<{ tab: Tab }> = ({ tab }) => {
 
 const PadSidebar: React.FC<PadSidebarProps> = ({
   tabs,
+  folders = [],
   selectedTabId,
   isAuthenticated,
   isCreatingPad,
@@ -107,10 +106,6 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
   onSelectPad,
   onNewNote,
   onNewCanvas,
-  onNewKanban,
-  onNewGantt,
-  onNewDatabase,
-  onDailyNote,
   onRename,
   onDelete,
   onLeaveSharedPad,
@@ -118,6 +113,7 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
   onUpdateTheme,
   onUpdateTags,
   onUpdateFolder,
+  onCreateFolder,
   collapsed,
   onToggleCollapse,
   onTogglePomodoro,
@@ -126,20 +122,19 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
   splitActive,
   onToggleAI,
   aiActive,
-  onTheme,
   onShortcuts,
-  currentThemeId,
-  user,
   onQuickCapture,
   onImportObsidian,
   onAddFromLink,
   onSmartResearch,
   onFlashcardStudio,
   onReviewDashboard,
-  onNewLatex,
 }) => {
   const { t, i18n } = useTranslation();
-  const theme = getTheme(currentThemeId ?? 'mocha');
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [folderError, setFolderError] = useState('');
   const [query, setQuery] = useState('');
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [tagsExpanded, setTagsExpanded] = useState(false);
@@ -218,15 +213,27 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
   }, []);
 
   const folderNames = useMemo(() => {
-    const s = new Set<string>();
+    const s = new Set<string>(folders);
     sortedFiltered.forEach(tb => { if (tb.folder) s.add(tb.folder); });
     return Array.from(s).sort((a, b) => a.localeCompare(b));
-  }, [sortedFiltered]);
+  }, [sortedFiltered, folders]);
 
   const knownFolders = useMemo(
-    () => Array.from(new Set(tabs.map(tb => tb.folder).filter(Boolean) as string[])).sort(),
-    [tabs],
+    () => Array.from(new Set([...folders, ...(tabs.map(tb => tb.folder).filter(Boolean) as string[])])).sort(),
+    [tabs, folders],
   );
+
+  const submitFolder = async () => {
+    const name = newFolderName.trim();
+    if (!name || !onCreateFolder) return;
+    setCreatingFolder(true); setFolderError('');
+    try {
+      await onCreateFolder(name);
+      setNewFolderName(''); setNewFolderOpen(false);
+    } catch (e) {
+      setFolderError(e instanceof Error ? e.message : 'Impossible de créer ce dossier');
+    } finally { setCreatingFolder(false); }
+  };
 
   // Flat render sequence: folder groups (alphabetical) then ungrouped pads.
   // Each pad row carries its index into the *visible* pad sequence so Shift-
@@ -382,6 +389,7 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
           <span className="pad-sidebar__section-label">{t('sidebar.files').toUpperCase()}</span>
           {isAuthenticated && (
             <div className="pad-sidebar__section-actions">
+              {onCreateFolder && <button className="pad-sidebar__icon-btn" onClick={() => setNewFolderOpen(v => !v)} title="Nouveau dossier"><FolderPlus size={14} /></button>}
               <button
                 className="pad-sidebar__icon-btn"
                 onClick={() => onNewNote()}
@@ -398,56 +406,19 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
               >
                 <PenLine size={14} />
               </button>
-              {onNewKanban && (
-                <button
-                  className="pad-sidebar__icon-btn"
-                  onClick={onNewKanban}
-                  disabled={isCreatingPad}
-                  title="Nouveau Kanban"
-                >
-                  <Columns3 size={14} />
-                </button>
-              )}
-              {onNewGantt && (
-                <button
-                  className="pad-sidebar__icon-btn"
-                  onClick={onNewGantt}
-                  disabled={isCreatingPad}
-                  title="Nouveau Gantt"
-                >
-                  <GanttChart size={14} />
-                </button>
-              )}
-              {onNewDatabase && (
-                <button
-                  className="pad-sidebar__icon-btn"
-                  onClick={onNewDatabase}
-                  disabled={isCreatingPad}
-                  title="Nouvelle base de données (Table / Board)"
-                >
-                  <Table2 size={14} />
-                </button>
-              )}
-              {onNewLatex && (
-                <button
-                  className="pad-sidebar__icon-btn"
-                  onClick={onNewLatex}
-                  disabled={isCreatingPad}
-                  title="Nouveau document LaTeX"
-                >
-                  <Sigma size={14} />
-                </button>
-              )}
-              <button
-                className="pad-sidebar__icon-btn"
-                onClick={onDailyNote}
-                title={t('sidebar.dailyNote')}
-              >
-                <CalendarDays size={14} />
-              </button>
             </div>
           )}
         </div>
+
+        {newFolderOpen && (
+          <div className="pad-sidebar__new-folder">
+            <Folder size={13} />
+            <input autoFocus value={newFolderName} onChange={e => setNewFolderName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submitFolder(); if (e.key === 'Escape') setNewFolderOpen(false); }} placeholder="Nom du dossier" maxLength={80} />
+            <button onClick={submitFolder} disabled={!newFolderName.trim() || creatingFolder} title="Créer"><Check size={13} /></button>
+            <button onClick={() => setNewFolderOpen(false)} title="Annuler"><X size={13} /></button>
+            {folderError && <span>{folderError}</span>}
+          </div>
+        )}
 
         {/* Bulk-action bar — shown while a multi-selection is active */}
         {selectedIds.size > 0 && (
@@ -623,17 +594,8 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
         </button>
       </div>
 
-      {/* Bottom toolbar row 2 — theme / lang / shortcuts */}
+      {/* Langue et raccourcis. L'apparence vit uniquement dans AppRail. */}
       <div className="pad-sidebar__bottom-bar">
-        {/* Theme swatch button */}
-        {onTheme && (
-          <button className="pad-sidebar__bar-btn pad-sidebar__bar-btn--theme" onClick={onTheme} title={`${t('sidebar.theme')} : ${theme.name}`} aria-label={`${t('sidebar.theme')} : ${theme.name}`}>
-            <span className="pad-sidebar__theme-dot" style={{ background: theme.swatches[1] }} />
-            <span className="pad-sidebar__theme-dot" style={{ background: theme.swatches[2] }} />
-            <Palette size={12} />
-          </button>
-        )}
-
         {/* Language picker (compact flags) */}
         <div className="pad-sidebar__lang-compact">
           {(Object.entries(LANGUAGES) as [LangCode, { label: string; flag: string }][]).map(([code, { flag, label }]) => (

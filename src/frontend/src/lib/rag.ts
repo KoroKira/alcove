@@ -32,16 +32,28 @@ export function chunkText(text: string, size = CHUNK_SIZE, overlap = CHUNK_OVERL
 /** Embed a single text via the local Ollama instance. Throws on non-2xx. */
 export async function embedText(text: string, model = EMBED_MODEL_DEFAULT): Promise<number[]> {
   const url = getOllamaUrl();
-  const resp = await fetch(`${url}/api/embeddings`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, prompt: text }),
-  });
-  if (!resp.ok) throw new Error(`Ollama embed failed (${resp.status})`);
-  const j = await resp.json();
-  const vec = j.embedding;
-  if (!Array.isArray(vec)) throw new Error('Ollama embed returned no vector');
-  return vec as number[];
+  // Imported pages occasionally contain a gigantic unbroken URL/base64 token.
+  // Keep it out of nomic's context window and retry once with a shorter input
+  // when Ollama reports a transient 5xx instead of losing the whole pad.
+  const inputs = Array.from(new Set([text.slice(0, 6000), text.slice(0, 3000)]));
+  let lastStatus = 0;
+  for (const prompt of inputs) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const resp = await fetch(`${url}/api/embeddings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, prompt }),
+      });
+      lastStatus = resp.status;
+      if (resp.ok) {
+        const j = await resp.json();
+        if (Array.isArray(j.embedding)) return j.embedding as number[];
+        throw new Error('Ollama embed returned no vector');
+      }
+      if (resp.status < 500 && resp.status !== 429) break;
+    }
+  }
+  throw new Error(`Ollama embed failed (${lastStatus || 'network'})`);
 }
 
 

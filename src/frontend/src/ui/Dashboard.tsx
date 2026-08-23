@@ -13,6 +13,7 @@ interface Props {
   initialView?: 'pads' | 'templates' | 'favorites';
   leftOffset?: number;
   tabs: Tab[];
+  folders?: string[];
   selectedTabId: string;
   onSelectPad: (padId: string) => void;
   /** Ouvre la modale unifiée d'ajout (Ingérer / Créer). Remplace les
@@ -84,6 +85,7 @@ const ActivityHeatmap: React.FC = () => {
 const Dashboard: React.FC<Props> = ({
   initialView = 'pads',
   tabs,
+  folders = [],
   selectedTabId,
   onSelectPad,
   onUnifiedAdd,
@@ -110,6 +112,7 @@ const Dashboard: React.FC<Props> = ({
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('grid');
   const [tagsExpanded, setTagsExpanded] = useState(false);
   const [previews, setPreviews] = useState<Record<string, string>>({});
+  const [contentImages, setContentImages] = useState<Record<string, string>>({});
   const [emptyPadIds, setEmptyPadIds] = useState<Set<string>>(new Set());
   const searchRef = useRef<HTMLInputElement>(null);
   // Toggle Text ⇄ AI dans la barre de recherche — le geste Recall qui
@@ -198,6 +201,7 @@ const Dashboard: React.FC<Props> = ({
           next[id] = cleaned.slice(0, 160);
         });
         setPreviews(next);
+        setContentImages(data.images || {});
         setEmptyPadIds(new Set(data.empty || []));
       })
       .catch(() => {});
@@ -231,7 +235,7 @@ const Dashboard: React.FC<Props> = ({
   });
 
   const tagList = allTags(tabs);
-  const folderList = Array.from(new Set(tabs.map(t => t.folder).filter(Boolean) as string[])).sort();
+  const folderList = Array.from(new Set([...folders, ...(tabs.map(t => t.folder).filter(Boolean) as string[])])).sort();
   const resumeTabs = [...tabs]
     .filter(t => !emptyPadIds.has(t.id))
     .sort((a, b) => {
@@ -314,6 +318,7 @@ const Dashboard: React.FC<Props> = ({
     }
     const fav = sourceHost ? `https://www.google.com/s2/favicons?domain=${sourceHost}&sz=32` : '';
     const preview = tab.padType === 'document' ? previews[tab.id] : '';
+    const coverUrl = tab.thumbnailUrl || contentImages[tab.id];
     return (
       <button
         key={tab.id}
@@ -321,15 +326,12 @@ const Dashboard: React.FC<Props> = ({
         style={{ '--card-tint': cardTint(tab.id) } as React.CSSProperties}
         onClick={() => handleSelect(tab.id)}
       >
-        <div className={`dashboard__card-thumb ${tab.thumbnailUrl ? '' : 'dashboard__card-thumb--iconic'}`}>
-          {tab.thumbnailUrl ? (
-            <img
-              src={tab.thumbnailUrl}
-              alt=""
-              loading="lazy"
-              referrerPolicy="no-referrer"
-              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-            />
+        <div className={`dashboard__card-thumb ${coverUrl ? 'dashboard__card-thumb--cover' : 'dashboard__card-thumb--iconic'}`}>
+          {coverUrl ? (
+            <>
+              <span className="dashboard__card-cover-fallback">{iconForType(tab.padType)}</span>
+              <img src={coverUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+            </>
           ) : (
             iconForType(tab.padType)
           )}

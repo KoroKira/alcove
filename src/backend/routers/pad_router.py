@@ -1,4 +1,5 @@
 import json
+import re
 from uuid import UUID
 from datetime import datetime, timezone
 from typing import Dict, Any, Tuple, Optional
@@ -430,13 +431,27 @@ async def get_document_previews(
     ).where(PadStore.owner_id == user.id, PadStore.pad_type == "document")
     rows = (await session.execute(stmt)).all()
     previews: Dict[str, str] = {}
+    images: Dict[str, str] = {}
     empty: list[str] = []
     for pad_id, content in rows:
         raw = (content or "").strip()
         if not raw:
             empty.append(str(pad_id))
         previews[str(pad_id)] = raw[:1200]
-    return {"previews": previews, "empty": empty}
+        # Recall-style cover: the first real image embedded in a note becomes
+        # its library artwork when no explicit ingestion thumbnail exists.
+        # Keep data/blob URLs out of this batch response (size + lifetime).
+        candidates = []
+        md = re.search(r"!\[[^\]]*\]\(\s*<?([^)>\s]+)", raw)
+        html = re.search(r"<img\b[^>]*\bsrc=[\"']([^\"']+)", raw, re.IGNORECASE)
+        if md:
+            candidates.append(md.group(1))
+        if html:
+            candidates.append(html.group(1))
+        first = next((url for url in candidates if url.startswith(("https://", "http://", "/api/"))), None)
+        if first:
+            images[str(pad_id)] = first
+    return {"previews": previews, "images": images, "empty": empty}
 
 
 def _match_pad(pad_type: str, data: Any, display_name: str, query: str):

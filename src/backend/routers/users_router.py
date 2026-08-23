@@ -5,16 +5,23 @@ from uuid import UUID
 import posthog
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from pydantic import BaseModel
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cache import RedisClient
 from config import get_jwks_client, OIDC_CLIENT_ID, FRONTEND_URL
 from dependencies import UserSession, require_admin, require_auth
 from database.database import get_session
+from database.models.user_model import UserStore
 from domain.user import User
 from domain.pad import Pad
 
 users_router = APIRouter()
+
+
+class FolderCreate(BaseModel):
+    name: str
 
 
 @users_router.get("/me")
@@ -75,6 +82,7 @@ async def get_user_info(
     user_data = {
         **token_data,
         "pads": pads,
+        "folders": list(user_obj._store.folders or []) if user_obj and user_obj._store else [],
         "last_selected_pad": str(user_obj.last_selected_pad) if user_obj and user_obj.last_selected_pad else None
     }
     
@@ -84,6 +92,30 @@ async def get_user_info(
         posthog.identify(distinct_id=user.id, properties=telemetry)
     
     return user_data
+
+
+@users_router.post("/folders")
+async def create_folder(
+    body: FolderCreate,
+    user: UserSession = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+):
+    """Create a persistent library folder, including an empty one."""
+    name = " ".join(body.name.strip().split())[:80]
+    if not name:
+        raise HTTPException(400, "Folder name is required")
+    store = await UserStore.get_by_id(session, user.id)
+    if not store:
+        raise HTTPException(404, "User not found")
+    folders = [str(value).strip() for value in (store.folders or []) if str(value).strip()]
+    existing = next((value for value in folders if value.casefold() == name.casefold()), None)
+    if existing:
+        return {"folders": folders, "folder": existing, "created": False}
+    folders.append(name)
+    folders.sort(key=str.casefold)
+    await session.execute(sa_update(UserStore).where(UserStore.id == user.id).values(folders=folders))
+    await session.commit()
+    return {"folders": folders, "folder": name, "created": True}
 
 
 @users_router.get("/online")

@@ -32,6 +32,9 @@ class UserStore(Base, BaseModel):
     given_name = Column(String(254), nullable=True)
     family_name = Column(String(254), nullable=True)
     roles = Column(JSONB, nullable=False, default=[])
+    # First-class library folders. Pad.folder still stores membership, while
+    # this list lets empty folders survive and sync across devices.
+    folders = Column(JSONB, nullable=False, default=list)
     open_pads = Column(ARRAY(SQLUUID(as_uuid=True)), nullable=False, default=[])
     last_selected_pad = Column(SQLUUID(as_uuid=True), nullable=True)
     
@@ -183,6 +186,7 @@ class UserStore(Base, BaseModel):
             "given_name": self.given_name,
             "family_name": self.family_name,
             "roles": self.roles,
+            "folders": list(self.folders or []),
             "open_pads": [str(pid) for pid in self.open_pads] if self.open_pads else [],
             "last_selected_pad": str(self.last_selected_pad) if self.last_selected_pad else None,
             "created_at": self.created_at.isoformat(),

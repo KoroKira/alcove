@@ -34,6 +34,7 @@ export interface Tab {
 interface PadResponse {
     tabs: Tab[];
     activeTabId: string;
+    folders?: string[];
 }
 
 interface UserResponse {
@@ -45,6 +46,7 @@ interface UserResponse {
     family_name: string;
     roles: string[];
     last_selected_pad: string | null;
+    folders?: string[];
     pads: {
         id: string;
         display_name: string;
@@ -109,7 +111,8 @@ const fetchUserPads = async (): Promise<PadResponse> => {
 
     return {
         tabs,
-        activeTabId
+        activeTabId,
+        folders: userData.folders || [],
     };
 };
 
@@ -547,6 +550,20 @@ export const usePadTabs = (isAuthenticated?: boolean) => {
         onSettled: () => { queryClient.invalidateQueries({ queryKey: ['padTabs'] }); },
     });
 
+    const createFolderMutation = useMutation<{ folders: string[] }, Error, string>({
+        mutationFn: async (name) => {
+            const res = await fetch('/api/users/folders', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name }),
+            });
+            if (!res.ok) throw new Error('Impossible de créer ce dossier');
+            return res.json();
+        },
+        onSuccess: ({ folders }) => {
+            queryClient.setQueryData<PadResponse>(['padTabs'], old => old ? { ...old, folders } : old);
+        },
+    });
+
     const createDailyNote = async () => {
         const res = await fetch('/api/pad/daily');
         if (!res.ok) return;
@@ -577,6 +594,7 @@ export const usePadTabs = (isAuthenticated?: boolean) => {
 
     return {
         tabs: data?.tabs ?? [],
+        folders: data?.folders ?? [],
         selectedTabId: selectedTabId || data?.activeTabId || '',
         isLoading,
         error,
@@ -602,6 +620,7 @@ export const usePadTabs = (isAuthenticated?: boolean) => {
         updateTheme: updateThemeMutation.mutate,
         updateTags: updateTagsMutation.mutate,
         updateFolder: updateFolderMutation.mutate,
+        createFolder: createFolderMutation.mutateAsync,
         selectTab,
         refetchTabs: () => queryClient.invalidateQueries({ queryKey: ['padTabs'] }),
     };
