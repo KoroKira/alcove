@@ -1,4 +1,5 @@
 import json
+import heapq
 import re
 from uuid import UUID
 from datetime import datetime, timezone
@@ -8,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import update as sa_update, select as sa_select, text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from dependencies import UserSession, require_auth, require_pad_access, require_pad_owner
 from database.models import PadStore
@@ -20,6 +22,71 @@ from domain.user import User
 # Ollama to call for embeddings.
 
 pad_router = APIRouter()
+
+
+def _semantic_graph_edges(
+    grouped: Dict[UUID, list[list[float]]],
+    seen: set[tuple[str, str]],
+) -> list[Dict[str, Any]]:
+    """Build a sparse semantic graph without an O(pads² × 768) hot loop.
+
+    A small signed projection cheaply selects plausible neighbours; cosine is
+    then recomputed on the full centroid for the best candidates only. This
+    keeps the final score exact while making a 500-note library responsive on
+    the low-power home server.
+    """
+    projection_dim = 64
+    reps: Dict[UUID, list[float]] = {}
+    projected: Dict[UUID, tuple[list[float], float]] = {}
+    for pid, vectors in grouped.items():
+        vectors = vectors[:6]
+        dim = min(len(v) for v in vectors)
+        rep = [sum(v[i] for v in vectors) / len(vectors) for i in range(dim)]
+        norm = sum(x * x for x in rep) ** .5
+        if not norm:
+            continue
+        reps[pid] = rep
+        small = [0.0] * projection_dim
+        for i, value in enumerate(rep):
+            bucket = i % projection_dim
+            small[bucket] += value if ((i // projection_dim + bucket) & 1) == 0 else -value
+        small_norm = sum(x * x for x in small) ** .5
+        projected[pid] = (small, small_norm)
+
+    ids = list(projected)
+    approximate: list[tuple[float, UUID, UUID]] = []
+    for i, left in enumerate(ids):
+        a, an = projected[left]
+        if not an:
+            continue
+        for right in ids[i + 1:]:
+            b, bn = projected[right]
+            if not bn:
+                continue
+            score = sum(x * y for x, y in zip(a, b)) / (an * bn)
+            approximate.append((score, left, right))
+
+    candidates = heapq.nlargest(min(5000, len(approximate)), approximate)
+    exact: list[tuple[float, UUID, UUID]] = []
+    norms = {pid: sum(x * x for x in rep) ** .5 for pid, rep in reps.items()}
+    for _, left, right in candidates:
+        a, b = reps[left], reps[right]
+        score = sum(x * y for x, y in zip(a, b)) / (norms[left] * norms[right])
+        if score >= .68:
+            exact.append((score, left, right))
+
+    edges: list[Dict[str, Any]] = []
+    degree: Dict[str, int] = {}
+    for score, left, right in sorted(exact, reverse=True):
+        src, tgt = str(left), str(right)
+        if degree.get(src, 0) >= 3 or degree.get(tgt, 0) >= 3:
+            continue
+        if (src, tgt) in seen or (tgt, src) in seen:
+            continue
+        edges.append({"from": src, "to": tgt, "kind": "semantic", "score": round(score, 3)})
+        degree[src] = degree.get(src, 0) + 1
+        degree[tgt] = degree.get(tgt, 0) + 1
+    return edges
 
 # Request models
 class RenameRequest(BaseModel):
@@ -385,29 +452,7 @@ async def get_knowledge_graph(
         for row in emb_rows:
             if isinstance(row.embedding, list) and row.embedding:
                 grouped.setdefault(row.pad_id, []).append(row.embedding)
-        reps: Dict[UUID, list[float]] = {}
-        for pid, vectors in grouped.items():
-            vectors = vectors[:6]
-            dim = min(len(v) for v in vectors)
-            reps[pid] = [sum(v[i] for v in vectors) / len(vectors) for i in range(dim)]
-        candidates: list[tuple[float, UUID, UUID]] = []
-        ids = list(reps)
-        for i, left in enumerate(ids):
-            a = reps[left]; an = sum(x * x for x in a) ** .5
-            if not an: continue
-            for right in ids[i + 1:]:
-                b = reps[right]; bn = sum(x * x for x in b) ** .5
-                if not bn: continue
-                score = sum(x * y for x, y in zip(a, b)) / (an * bn)
-                if score >= .68: candidates.append((score, left, right))
-        degree: Dict[str, int] = {}
-        for score, left, right in sorted(candidates, reverse=True):
-            src, tgt = str(left), str(right)
-            if degree.get(src, 0) >= 3 or degree.get(tgt, 0) >= 3: continue
-            if (src, tgt) in seen or (tgt, src) in seen: continue
-            edges.append({"from": src, "to": tgt, "kind": "semantic", "score": round(score, 3)})
-            degree[src] = degree.get(src, 0) + 1
-            degree[tgt] = degree.get(tgt, 0) + 1
+        edges.extend(await run_in_threadpool(_semantic_graph_edges, grouped, seen))
     except Exception:
         pass
 
