@@ -5,7 +5,7 @@ import {
   Search, Link, Zap, ArrowDownToLine, Loader, ChevronDown, ChevronUp, Workflow,
   MessageSquare, Plus, Trash2, Brain, Check, HelpCircle, Users,
 } from 'lucide-react';
-import { useOllamaModels, streamLocalOllamaChat, fetchChatPreamble } from '../hooks/useOllama';
+import { useOllamaModels, streamLocalOllamaChat, fetchChatPreamble, pickChatModel } from '../hooks/useOllama';
 import {
   suggestTags, suggestLinks, generateFlashcards, generateDiagram, generateQuiz, QuizQuestion,
   extractEntities, fetchWikipediaSummary, EntityType, WikipediaSummary,
@@ -58,7 +58,7 @@ export default function AIPanel({
   const { t, i18n } = useTranslation();
   const lang = i18n.language.startsWith('fr') ? 'fr' : 'en';
   const ollamaStatus = useOllamaModels();
-  const { modelNames: models, defaultModel } = ollamaStatus;
+  const { chatModelNames: models, defaultModel } = ollamaStatus;
   const [available, setAvailable] = useState(ollamaStatus.available);
   const [starting, setStarting] = useState(ollamaStatus.starting);
   useEffect(() => { setAvailable(ollamaStatus.available); setStarting(ollamaStatus.starting); }, [ollamaStatus.available, ollamaStatus.starting]);
@@ -82,10 +82,12 @@ export default function AIPanel({
     [],
   );
 
-  // Auto-select first available model if the saved/default model is not installed
+  // Never select an embedding-only model for chat, even if a stale browser
+  // preference points to one or Ollama returns it first.
   useEffect(() => {
-    if (models.length > 0 && !models.includes(model)) saveModel(models[0]);
-  }, [models, model, saveModel]);
+    const usable = pickChatModel(models, model || defaultModel);
+    if (usable && usable !== model) saveModel(usable);
+  }, [models, model, defaultModel, saveModel]);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');

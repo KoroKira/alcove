@@ -24,12 +24,26 @@ export interface OllamaModel {
 export interface OllamaStatus {
   models: OllamaModel[];
   modelNames: string[];
+  chatModelNames: string[];
   defaultModel: string;
   available: boolean | null;
   /** Kept for API compat; the browser can no longer auto-start Ollama, so
    * this is always false now. */
   starting: boolean;
   refresh: () => void;
+}
+
+/** Embedding-only models cannot answer chat/completion requests. */
+export function isEmbeddingModel(name: string): boolean {
+  return /(^|[-_:])(embed|embedding|bge|e5|gte)([-_:]|$)|nomic-embed/i.test(name);
+}
+
+export function pickChatModel(modelNames: string[], preferred = 'llama3.2'): string | null {
+  const chatModels = modelNames.filter(name => !isEmbeddingModel(name));
+  if (!chatModels.length) return null;
+  if (chatModels.includes(preferred)) return preferred;
+  const canonical = (name: string) => name.replace(/:latest$/i, '');
+  return chatModels.find(name => canonical(name) === canonical(preferred)) ?? chatModels[0];
 }
 
 /**
@@ -44,6 +58,7 @@ export function useOllamaModels(): OllamaStatus {
   const [status, setStatus] = useState<Omit<OllamaStatus, 'refresh'>>({
     models: [],
     modelNames: [],
+    chatModelNames: [],
     defaultModel: 'llama3.2',
     available: null,
     starting: false,
@@ -83,6 +98,7 @@ export function useOllamaModels(): OllamaStatus {
       setStatus({
         models,
         modelNames: models.map(m => m.name),
+        chatModelNames: models.map(m => m.name).filter(name => !isEmbeddingModel(name)),
         defaultModel: defaultRef.current || 'llama3.2',
         available: true,
         starting: false,
@@ -172,6 +188,20 @@ export async function fetchChatPreamble(): Promise<{ system: string; defaultMode
   if (!r.ok) throw new Error(`Preamble fetch failed (${r.status})`);
   const j = await r.json();
   return { system: j.system || '', defaultModel: j.default_model || 'llama3.2' };
+}
+
+/** Resolve a usable installed chat model, repairing stale browser preferences. */
+export async function resolveAvailableChatModel(preferred?: string): Promise<string> {
+  let serverDefault = 'llama3.2';
+  try { serverDefault = (await fetchChatPreamble()).defaultModel; } catch { /* use fallback */ }
+
+  const resp = await fetch(`${getOllamaUrl()}/api/tags`);
+  if (!resp.ok) throw new Error(`Impossible de lire les modèles IA (${resp.status})`);
+  const raw = (await resp.json()).models ?? [];
+  const names = raw.map((m: { name: string }) => m.name);
+  const selected = pickChatModel(names, preferred || serverDefault);
+  if (!selected) throw new Error('Aucun modèle de génération n’est installé (seulement un modèle d’embedding).');
+  return selected;
 }
 
 

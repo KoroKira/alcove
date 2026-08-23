@@ -17,7 +17,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Plus, MessageSquare, Trash2, Pencil, Search } from 'lucide-react';
-import { useOllamaModels } from '../hooks/useOllama';
+import { useOllamaModels, pickChatModel } from '../hooks/useOllama';
 import { agenticRagChat } from '../lib/rag';
 import { Message } from '../lib/chatTypes';
 import { getActivePersonaInstructions } from '../lib/personas';
@@ -67,11 +67,18 @@ function groupByDate(convs: ConvSummary[]): [string, ConvSummary[]][] {
 export default function ChatView({ onClose }: Props) {
   const { t, i18n } = useTranslation();
   const lang = i18n.language.startsWith('fr') ? 'fr' : 'en';
-  const { modelNames: models, defaultModel } = useOllamaModels();
+  const { chatModelNames: models, defaultModel } = useOllamaModels();
   const [model, setModel] = useState<string>(() => localStorage.getItem(SAVED_MODEL_KEY) ?? defaultModel);
   useEffect(() => {
     if (!localStorage.getItem(SAVED_MODEL_KEY) && defaultModel) setModel(defaultModel);
   }, [defaultModel]);
+  useEffect(() => {
+    const usable = pickChatModel(models, model || defaultModel);
+    if (usable && usable !== model) {
+      setModel(usable);
+      localStorage.setItem(SAVED_MODEL_KEY, usable);
+    }
+  }, [models, model, defaultModel]);
 
   const [conversations, setConversations] = useState<ConvSummary[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
