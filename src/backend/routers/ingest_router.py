@@ -22,7 +22,6 @@ import tempfile
 import uuid
 from typing import Any, Optional
 
-import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
@@ -31,6 +30,8 @@ from pydantic import BaseModel
 from dependencies import UserSession, require_auth
 from routers.ai.clip import _MarkdownExtractor  # reuse the stdlib readability
 from config import SYNC_DIR
+from services.ai_admission import charge_user, inference_slot
+from services.public_http import get_public_url
 
 logger = logging.getLogger(__name__)
 
@@ -145,10 +146,11 @@ async def _fetch_reddit(url: str) -> dict:
     the source was Reddit rather than a generic page."""
     json_url = url.split("?")[0].rstrip("/") + ".json"
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
-            resp = await client.get(json_url, headers={"User-Agent": _UA}, params={"raw_json": 1})
-            resp.raise_for_status()
-            data = resp.json()
+        resp = await get_public_url(
+            json_url, headers={"User-Agent": _UA}, params={"raw_json": 1},
+        )
+        resp.raise_for_status()
+        data = resp.json()
     except HTTPException:
         raise
     except Exception as e:
@@ -206,9 +208,8 @@ async def fetch_web(url: str) -> dict:
     if gh:
         url = f"https://raw.githubusercontent.com/{gh.group(1)}/{gh.group(2)}"
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
-            resp = await client.get(url, headers={"User-Agent": _UA})
-            resp.raise_for_status()
+        resp = await get_public_url(url, headers={"User-Agent": _UA})
+        resp.raise_for_status()
     except HTTPException:
         raise
     except Exception as e:
@@ -315,9 +316,10 @@ async def ingest_pdf(
         if not src_url.startswith(("http://", "https://")):
             raise HTTPException(400, "URL invalide (http/https uniquement)")
         try:
-            async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
-                resp = await client.get(src_url, headers={"User-Agent": _UA})
-                resp.raise_for_status()
+            resp = await get_public_url(src_url, timeout=30, headers={"User-Agent": _UA})
+            resp.raise_for_status()
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(502, f"Impossible de récupérer le PDF : {e}")
         data = resp.content
@@ -574,9 +576,8 @@ async def ingest_youtube(body: IngestUrlRequest, _: UserSession = Depends(requir
         cap_url, ext = _caption_fmt_url(track)
         if cap_url:
             try:
-                async with httpx.AsyncClient(follow_redirects=True, timeout=20) as client:
-                    r = await client.get(cap_url, headers={"User-Agent": _UA})
-                    r.raise_for_status()
+                r = await get_public_url(cap_url, timeout=20, headers={"User-Agent": _UA})
+                r.raise_for_status()
                 if ext == "json3":
                     payload = r.json()
                     transcript = parse_json3_captions(payload)
@@ -740,7 +741,7 @@ class TranscribeRequest(IngestUrlRequest):
 
 
 @ingest_router.post("/youtube/transcribe")
-async def youtube_transcribe(body: TranscribeRequest, _: UserSession = Depends(require_auth)):
+async def youtube_transcribe(body: TranscribeRequest, user: UserSession = Depends(require_auth)):
     """Local Whisper transcription for a video that has no captions.
 
     Accepts `diarize: true` to additionally identify speaker turns via
@@ -758,8 +759,10 @@ async def youtube_transcribe(body: TranscribeRequest, _: UserSession = Depends(r
     if "youtube.com" not in url and "youtu.be" not in url:
         raise HTTPException(400, "URL YouTube attendue")
     try:
-        async with _whisper_lock:
-            result = await run_in_threadpool(_whisper_transcribe, url, body.diarize)
+        await charge_user(user.id)
+        async with inference_slot(user.id):
+            async with _whisper_lock:
+                result = await run_in_threadpool(_whisper_transcribe, url, body.diarize)
     except Exception as e:
         raise HTTPException(502, f"Transcription échouée : {e}")
     if not result.get("transcript"):
@@ -803,7 +806,7 @@ async def _save_upload_capped(file: UploadFile, max_bytes: int) -> tuple[str, st
 async def media_transcribe(
     file: UploadFile = File(...),
     diarize: bool = Form(False),
-    _: UserSession = Depends(require_auth),
+    user: UserSession = Depends(require_auth),
 ):
     """Local Whisper transcription for an uploaded audio/video file.
 
@@ -823,8 +826,10 @@ async def media_transcribe(
         raise HTTPException(415, f"Format non supporté : {ext or 'inconnu'}")
     tmpdir, path = await _save_upload_capped(file, _MAX_MEDIA_BYTES)
     try:
-        async with _whisper_lock:
-            result = await run_in_threadpool(_run_whisper, path, diarize)
+        await charge_user(user.id)
+        async with inference_slot(user.id):
+            async with _whisper_lock:
+                result = await run_in_threadpool(_run_whisper, path, diarize)
     except Exception as e:
         raise HTTPException(502, f"Transcription échouée : {e}")
     finally:

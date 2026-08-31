@@ -4,11 +4,11 @@ Stdlib-only HTML → Markdown extractor (no readability/lxml dependency)."""
 import re
 from typing import Optional
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from dependencies import UserSession, require_auth
+from services.public_http import get_public_url
 
 
 router = APIRouter()
@@ -136,9 +136,10 @@ async def clip_url(body: ClipRequest, _: UserSession = Depends(require_auth)):
     if gh:
         url = f"https://raw.githubusercontent.com/{gh.group(1)}/{gh.group(2)}"
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
-            resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0 (alcove clipper)"})
-            resp.raise_for_status()
+        resp = await get_public_url(url, headers={"User-Agent": "Mozilla/5.0 (alcove clipper)"})
+        resp.raise_for_status()
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Impossible de récupérer la page : {e}")
 
