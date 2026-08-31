@@ -126,3 +126,18 @@ ingress sur `alcove-server` et redémarrer sa stack inchangée. Après des écri
 sur la cible, ne jamais simplement rallumer la source : arrêter les écritures,
 sauvegarder la cible et effectuer une migration inverse contrôlée, faute de quoi
 les nouvelles données seraient perdues.
+
+## 8. Sauvegarde automatisée
+
+`scripts/backup-codicam.sh` produit atomiquement un dump custom des deux bases,
+une archive des fichiers persistants, le compose, la révision Git et les seules
+clés (sans valeurs) de l'environnement. Il valide les archives, génère leurs
+SHA-256 et conserve 14 jours par défaut. Exemple de cron quotidien à 03:17 :
+
+```cron
+17 3 * * * /home/prez2codicam/services/alcove-next/scripts/backup-codicam.sh >> /home/prez2codicam/backups/alcove-next/backup.log 2>&1
+```
+
+Une sauvegarde locale au serveur ne protège pas contre sa perte : synchroniser
+le répertoire vers un stockage chiffré hors machine, puis effectuer au moins
+mensuellement une restauration de test dans des volumes temporaires.
