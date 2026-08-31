@@ -161,11 +161,20 @@ class AuthDependency:
             session_data = new_session_data
         
         # Create user session object
-        user_session = UserSession(
-            access_token=session_data.get('access_token'),
-            token_data=session_data,
-            session_domain=current_session_domain
-        )
+        try:
+            user_session = UserSession(
+                access_token=session_data.get('access_token'),
+                token_data=session_data,
+                session_domain=current_session_domain
+            )
+        except (ValueError, TypeError):
+            # A malformed, revoked, or incorrectly-issued JWT is an auth
+            # failure, never an application error. Remove the unusable server
+            # session so subsequent requests do not repeatedly trigger JWT
+            # parsing and return a stable 401 to the client.
+            if session_id:
+                await current_session_domain.delete(session_id)
+            return self._handle_auth_error("Invalid session")
         
         # Check admin requirement if specified
         if self.require_admin and not user_session.is_admin:

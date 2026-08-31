@@ -22,6 +22,8 @@ verrouillage contre le brute force et les sessions. Dans le realm `alcove` :
 - activer la protection brute-force (échec rapide puis attente croissante) ;
 - créer le client confidentiel `alcove`, avec redirect URI exacte
   `${FRONTEND_URL}/api/auth/callback` et web origin exacte `${FRONTEND_URL}` ;
+- ajouter au client un mapper `oidc-audience-mapper` qui inclut l'audience
+  `alcove` dans l'access token (le backend vérifie explicitement `aud`) ;
 - limiter les sessions inactives et maximales (valeurs initiales conseillées :
   30 jours / 90 jours), puis copier le secret client dans `.env`.
 
