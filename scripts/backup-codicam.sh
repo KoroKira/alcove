@@ -44,8 +44,8 @@ compose exec -T keycloak-postgres pg_dump \
   --username "${KEYCLOAK_DB_USER:-keycloak}" "${KEYCLOAK_DB_NAME:-keycloak}" > "$WORK_DIR/keycloak.dump"
 
 tar -C "$DATA_ROOT" -czf "$WORK_DIR/pads.tgz" pads
-pg_restore --list "$WORK_DIR/alcove.dump" >/dev/null
-pg_restore --list "$WORK_DIR/keycloak.dump" >/dev/null
+docker run --rm -v "$WORK_DIR:/backup:ro" postgres:16 pg_restore --list /backup/alcove.dump >/dev/null
+docker run --rm -v "$WORK_DIR:/backup:ro" postgres:16 pg_restore --list /backup/keycloak.dump >/dev/null
 tar -tzf "$WORK_DIR/pads.tgz" >/dev/null
 
 git -C "$PROJECT_DIR" rev-parse HEAD > "$WORK_DIR/git-revision.txt"
