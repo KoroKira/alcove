@@ -85,7 +85,7 @@ class Session:
             logger.exception("Error deleting session")
             return False
 
-    def get_auth_url(self) -> str:
+    def get_auth_url(self, state: str) -> str:
         """
         Generate the authentication URL for OIDC login.
         
@@ -93,13 +93,15 @@ class Session:
             The authentication URL
         """
         auth_url = f"{self.oidc_config['server_url']}/realms/{self.oidc_config['realm']}/protocol/openid-connect/auth"
+        from urllib.parse import urlencode
         params = {
             'client_id': self.oidc_config['client_id'],
             'response_type': 'code',
             'redirect_uri': self.oidc_config['redirect_uri'],
-            'scope': 'openid profile email'
+            'scope': 'openid profile email',
+            'state': state,
         }
-        return f"{auth_url}?{'&'.join(f'{k}={v}' for k,v in params.items())}"
+        return f"{auth_url}?{urlencode(params)}"
 
     def get_token_url(self) -> str:
         """
@@ -139,6 +141,7 @@ class Session:
                 signing_key.key,
                 algorithms=["RS256"],
                 audience=self.oidc_config['client_id'],
+                issuer=f"{self.oidc_config['server_url']}/realms/{self.oidc_config['realm']}",
             )
             
             # Check expiration
@@ -240,4 +243,4 @@ class Session:
             return False
         except Exception:
             logger.exception("Error tracking event %s", event_type)
-            return False 
+            return False

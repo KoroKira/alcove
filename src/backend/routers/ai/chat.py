@@ -16,6 +16,8 @@ from dependencies import UserSession, require_auth
 from config import OLLAMA_DEFAULT_MODEL
 from database.database import get_session
 from database.models.conversation_model import AIConversation
+from database.models.pad_model import PadStore
+from sqlalchemy import select as sa_select
 
 from ._shared import BASE_SYSTEM_PROMPT
 
@@ -80,12 +82,19 @@ async def create_conversation(
     session: AsyncSession = Depends(get_session),
 ):
     title = body.title or _derive_title(body.messages)
+    pad_uuid = UUID(body.pad_id) if body.pad_id else None
+    if pad_uuid is not None:
+        owned = (await session.execute(
+            sa_select(PadStore.id).where(PadStore.id == pad_uuid, PadStore.owner_id == user.id)
+        )).scalar_one_or_none()
+        if owned is None:
+            raise HTTPException(status_code=404, detail="Pad introuvable")
     conv = await AIConversation.create(
         session,
         owner_id=user.id,
         title=title,
         messages=[m.model_dump() for m in body.messages],
-        pad_id=UUID(body.pad_id) if body.pad_id else None,
+        pad_id=pad_uuid,
     )
     return conv.to_dict()
 

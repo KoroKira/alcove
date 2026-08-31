@@ -23,6 +23,7 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from dependencies import UserSession, require_auth
+from services.ai_admission import charge_user, inference_slot
 from config import OLLAMA_URL, OLLAMA_DEFAULT_MODEL
 from routers.ingest_router import fetch_web
 
@@ -197,7 +198,7 @@ def _report_prompt(topic: str, intent: str, corpus: str, lang: str, length: str)
 # ── Endpoint ─────────────────────────────────────────────────────────────────
 
 @research_router.post("")
-async def research(body: ResearchRequest, _: UserSession = Depends(require_auth)):
+async def research(body: ResearchRequest, user: UserSession = Depends(require_auth)):
     """Agentic deep research: intent → sub-questions → filtered multi-source →
     bounded recursion → dense cited report."""
     model = OLLAMA_DEFAULT_MODEL
@@ -208,11 +209,14 @@ async def research(body: ResearchRequest, _: UserSession = Depends(require_auth)
     depth = max(1, min(body.depth, 3))
     per_level = max(3, min(body.max_subquestions, MAX_SUBQ))
     per_subq = max(1, min(body.sources_per_subq, MAX_SOURCES_PER_SUBQ))
+    await charge_user(user.id)
 
     async def stream():
         def evt(kind: str, **kw) -> str:
             return f"data: {json.dumps({'kind': kind, **kw})}\n\n"
 
+        slot = inference_slot(user.id)
+        await slot.__aenter__()
         try:
             async with httpx.AsyncClient(timeout=120) as client:
                 # 0. Intent + initial sub-questions.
@@ -316,5 +320,7 @@ async def research(body: ResearchRequest, _: UserSession = Depends(require_auth)
         except Exception as e:
             yield evt("error", error=str(e))
             yield "data: [DONE]\n\n"
+        finally:
+            await slot.__aexit__(None, None, None)
 
     return StreamingResponse(stream(), media_type="text/event-stream")

@@ -9,7 +9,7 @@ interface LogoutError extends Error {}
 
 const logoutUser = async (): Promise<LogoutResponse> => {
   const response = await fetch('/api/auth/logout', {
-    method: 'GET',
+    method: 'POST',
     credentials: 'include',
   });
 
@@ -41,6 +41,7 @@ export const useLogout = () => {
       // This will make useAuthStatus re-evaluate, and isAuthenticated should become false.
       // TODO
       queryClient.invalidateQueries({ queryKey: ['authStatus'] });
+      window.location.assign(data.logout_url || '/');
     },
     onError: (error) => {
       console.error('[alcove] Logout mutation failed:', error.message);

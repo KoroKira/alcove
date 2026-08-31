@@ -61,6 +61,12 @@ const AccountDialog: React.FC<AccountDialogProps> = ({
             </h2>
             <p className="account-dialog__username">{profile.username}</p>
             <p className="account-dialog__user-id">{profile.id}</p>
+            <button
+              type="button"
+              onClick={() => window.open('/api/auth/account', '_blank', 'noopener,noreferrer')}
+            >
+              Gérer le profil et le mot de passe
+            </button>
           </div>
         </div>
       )}

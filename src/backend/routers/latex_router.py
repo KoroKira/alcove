@@ -3,9 +3,10 @@ import os
 import subprocess
 import tempfile
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from dependencies import UserSession, require_auth
 
 latex_router = APIRouter(prefix="/api/latex")
 
@@ -15,8 +16,13 @@ class LatexCompileRequest(BaseModel):
 
 
 @latex_router.post("/compile")
-async def compile_latex(req: LatexCompileRequest):
+async def compile_latex(
+    req: LatexCompileRequest,
+    _: UserSession = Depends(require_auth),
+):
     """Compile a LaTeX document with pdflatex and return a base64-encoded PDF."""
+    if len(req.source) > 200_000:
+        raise HTTPException(413, "Document LaTeX trop volumineux")
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
             src = os.path.join(tmpdir, "doc.tex")
@@ -26,6 +32,7 @@ async def compile_latex(req: LatexCompileRequest):
             result = subprocess.run(
                 [
                     "pdflatex",
+                    "-no-shell-escape",
                     "-interaction=nonstopmode",
                     "-halt-on-error",
                     "-output-directory",
@@ -35,6 +42,7 @@ async def compile_latex(req: LatexCompileRequest):
                 capture_output=True,
                 text=True,
                 timeout=30,
+                cwd=tmpdir,
             )
 
             pdf_path = os.path.join(tmpdir, "doc.pdf")

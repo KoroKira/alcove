@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from dependencies import UserSession, require_auth
+from dependencies import UserSession, require_admin, require_auth
 from config import OLLAMA_URL, OLLAMA_DEFAULT_MODEL
 
 from ._shared import (
@@ -50,7 +50,7 @@ async def setup_status(_: UserSession = Depends(require_auth)):
 
 
 @router.post("/setup")
-async def setup_ollama(body: SetupRequest, _: UserSession = Depends(require_auth)):
+async def setup_ollama(body: SetupRequest, _: UserSession = Depends(require_admin)):
     """
     Stream Ollama setup progress (SSE):
       1. brew install ollama (if needed)
@@ -197,7 +197,7 @@ async def list_models(_: UserSession = Depends(require_auth)):
 
 
 @router.delete("/models")
-async def delete_model(body: DeleteModelRequest, _: UserSession = Depends(require_auth)):
+async def delete_model(body: DeleteModelRequest, _: UserSession = Depends(require_admin)):
     """Delete an installed Ollama model."""
     try:
         async with httpx.AsyncClient(timeout=30) as client:
@@ -211,7 +211,7 @@ async def delete_model(body: DeleteModelRequest, _: UserSession = Depends(requir
 
 
 @router.post("/pull")
-async def pull_model(body: PullModelRequest, _: UserSession = Depends(require_auth)):
+async def pull_model(body: PullModelRequest, _: UserSession = Depends(require_admin)):
     """Pull (download) an Ollama model. Streams progress via SSE."""
     async def stream():
         def evt(msg: str, kind: str = "log") -> str:

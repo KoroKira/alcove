@@ -38,14 +38,15 @@ ingest_router = APIRouter(prefix="/api/ingest")
 
 _UA = "Mozilla/5.0 (alcove ingest)"
 _MAX_CHARS = 200_000
+_MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
 
 
-def _persist_pdf(data: bytes) -> Optional[str]:
+def _persist_pdf(data: bytes, owner_id) -> Optional[str]:
     """Keep uploaded PDFs so an ingested note can reopen its source later."""
     if not SYNC_DIR:
         return None
     token = f"{uuid.uuid4()}.pdf"
-    folder = os.path.join(SYNC_DIR, "_files")
+    folder = os.path.join(SYNC_DIR, "_files", str(owner_id))
     os.makedirs(folder, exist_ok=True)
     with open(os.path.join(folder, token), "wb") as handle:
         handle.write(data)
@@ -53,10 +54,10 @@ def _persist_pdf(data: bytes) -> Optional[str]:
 
 
 @ingest_router.get("/pdf-file/{token}")
-async def read_pdf_file(token: str, _: UserSession = Depends(require_auth)):
+async def read_pdf_file(token: str, user: UserSession = Depends(require_auth)):
     if not re.fullmatch(r"[0-9a-f-]{36}\.pdf", token) or not SYNC_DIR:
         raise HTTPException(404, "PDF introuvable")
-    path = os.path.join(SYNC_DIR, "_files", token)
+    path = os.path.join(SYNC_DIR, "_files", str(user.id), token)
     if not os.path.isfile(path):
         raise HTTPException(404, "PDF introuvable")
     return FileResponse(path, media_type="application/pdf", filename=token)
@@ -299,14 +300,16 @@ def render_pdf_cover(data: bytes, max_width: int = 640) -> Optional[str]:
 async def ingest_pdf(
     file: Optional[UploadFile] = File(None),
     url: Optional[str] = Form(None),
-    _: UserSession = Depends(require_auth),
+    user: UserSession = Depends(require_auth),
 ):
     src_url = None
     filename = "document.pdf"
     if file is not None:
         data = await file.read()
+        if len(data) > _MAX_UPLOAD_BYTES:
+            raise HTTPException(413, "Fichier trop volumineux")
         filename = file.filename or filename
-        src_url = _persist_pdf(data)
+        src_url = _persist_pdf(data, user.id)
     elif url:
         src_url = url.strip()
         if not src_url.startswith(("http://", "https://")):
@@ -318,6 +321,8 @@ async def ingest_pdf(
         except Exception as e:
             raise HTTPException(502, f"Impossible de récupérer le PDF : {e}")
         data = resp.content
+        if len(data) > _MAX_UPLOAD_BYTES:
+            raise HTTPException(413, "PDF distant trop volumineux")
         filename = src_url.rsplit("/", 1)[-1] or filename
     else:
         raise HTTPException(400, "Fournir un fichier PDF ou une URL")
@@ -887,7 +892,7 @@ def _markitdown_convert(data: bytes, filename: str) -> tuple[str, str]:
 @ingest_router.post("/file")
 async def ingest_file(
     file: UploadFile = File(...),
-    _: UserSession = Depends(require_auth),
+    user: UserSession = Depends(require_auth),
 ):
     """Upload any supported document and get Markdown back.
 
@@ -899,6 +904,8 @@ async def ingest_file(
     filename = file.filename or "upload"
     ext = os.path.splitext(filename)[1].lower()
     data = await file.read()
+    if len(data) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "Fichier trop volumineux")
 
     if not data:
         raise HTTPException(400, "Fichier vide")
@@ -911,7 +918,7 @@ async def ingest_file(
                 422,
                 "Aucun texte extractible du PDF (probablement scanné — OCR non géré).",
             )
-        stored_url = _persist_pdf(data)
+        stored_url = _persist_pdf(data, user.id)
         return {
             "title": title or filename,
             "markdown": text[:_MAX_CHARS],

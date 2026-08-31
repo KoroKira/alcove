@@ -90,13 +90,13 @@ async def indexable_list(
 
 class ChunkPayload(BaseModel):
     index: int
-    text: str
-    embedding: List[float] = Field(..., min_length=1)
+    text: str = Field(..., max_length=16000)
+    embedding: List[float] = Field(..., min_length=1, max_length=8192)
 
 
 class IndexChunksRequest(BaseModel):
     pad_id: str
-    chunks: List[ChunkPayload]
+    chunks: List[ChunkPayload] = Field(..., max_length=512)
 
 
 @router.post("/rag/index-chunks")
@@ -211,7 +211,9 @@ async def related_pads(
         raise HTTPException(400, "invalid pad_id")
 
     target_rows = list((await session.execute(
-        sa_select(PadEmbedding.embedding).where(PadEmbedding.pad_id == pad_uuid)
+        sa_select(PadEmbedding.embedding)
+        .join(PadStore, PadStore.id == PadEmbedding.pad_id)
+        .where(PadEmbedding.pad_id == pad_uuid, PadStore.owner_id == user.id)
     )).all())
     if not target_rows:
         return {"related": [], "reason": "not-indexed"}

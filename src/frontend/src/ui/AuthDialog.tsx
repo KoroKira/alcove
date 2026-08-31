@@ -3,7 +3,6 @@ import React, { useMemo, useEffect } from "react";
 import { Dialog } from "@atyrode/excalidraw";
 
 import { capture } from "../lib/posthog";
-import { GoogleIcon, GithubIcon } from "../icons";
 import "./AuthDialog.scss";
 
 
@@ -58,14 +57,8 @@ export const AuthDialog = ({
       <p className="auth-modal__description">{description}</p>
 
       <div className="auth-modal__buttons">
-        <button onClick={() => window.open("/api/auth/login?kc_idp_hint=google&popup=1", "authPopup", "width=500,height=700,noopener,noreferrer")}>
-          <GoogleIcon className="google-icon" />
-          <span>Continue with Google</span>
-        </button>
-
-        <button onClick={() => window.open("/api/auth/login?kc_idp_hint=github&popup=1", "authPopup", "width=500,height=700,noopener,noreferrer")}>
-          <GithubIcon />
-          <span>Continue with GitHub</span>
+        <button onClick={() => window.open("/api/auth/login?popup=1", "authPopup", "width=520,height=720")}>
+          <span>Se connecter ou créer un compte</span>
         </button>
       </div>
 

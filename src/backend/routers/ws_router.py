@@ -16,6 +16,7 @@ from cache import RedisClient
 from domain.pad import Pad
 from database.database import async_session
 from workers.canvas_worker import CanvasWorker
+from config import ALLOWED_ORIGINS, PAD_DEV_MODE
 
 logger = logging.getLogger(__name__)
 
@@ -353,6 +354,10 @@ async def websocket_endpoint(
     user: Optional[UserSession] = Depends(get_ws_user)
 ):
     """WebSocket endpoint for pad collaboration."""
+    origin = websocket.headers.get("origin")
+    if (not origin or origin not in ALLOWED_ORIGINS) and not PAD_DEV_MODE:
+        await websocket.close(code=4003, reason="Origin not allowed")
+        return
     if not user:
         await websocket.close(code=4001, reason="Authentication required")
         return

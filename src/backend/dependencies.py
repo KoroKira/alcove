@@ -66,7 +66,8 @@ class UserSession:
                 access_token,
                 signing_key.key,
                 algorithms=["RS256"],
-                audience=oidc_config['client_id']
+                audience=oidc_config['client_id'],
+                issuer=f"{oidc_config['server_url']}/realms/{oidc_config['realm']}",
             )
 
         except jwt.InvalidTokenError as e:

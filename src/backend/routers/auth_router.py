@@ -1,5 +1,4 @@
 import secrets
-import jwt
 import httpx
 import logging
 from fastapi import APIRouter, Request, HTTPException, Depends
@@ -11,8 +10,7 @@ import time
 logger = logging.getLogger(__name__)
 
 from config import (FRONTEND_URL, STATIC_DIR, PAD_DEV_MODE)
-from dependencies import get_coder_api, get_session_domain
-from coder import CoderAPI
+from dependencies import get_session_domain
 from dependencies import optional_auth, UserSession
 from domain.session import Session
 from database.database import async_session
@@ -82,17 +80,21 @@ async def login(
         return response
 
     session_id = secrets.token_urlsafe(32)
+    state_nonce = secrets.token_urlsafe(32)
+    return_mode = "popup" if popup == "1" else "default"
+    await session_domain.set(session_id, {
+        "oauth_state": state_nonce,
+        "return_mode": return_mode,
+    }, 600)
 
-    auth_url = session_domain.get_auth_url()
-    state = "popup" if popup == "1" else "default"
+    auth_url = session_domain.get_auth_url(state_nonce)
 
     if kc_idp_hint:
         auth_url = f"{auth_url}&kc_idp_hint={kc_idp_hint}"
 
-    auth_url = f"{auth_url}&state={state}"
-
     response = RedirectResponse(auth_url)
-    response.set_cookie('session_id', session_id, httponly=True, samesite='lax', secure=True)
+    response.set_cookie('session_id', session_id, httponly=True, samesite='lax',
+                        secure=True, max_age=600, path='/')
 
     return response
 
@@ -100,13 +102,16 @@ async def login(
 async def callback(
     request: Request, 
     code: str, 
-    state: str = "default",
-    coder_api: CoderAPI = Depends(get_coder_api),
+    state: str,
     session_domain: Session = Depends(get_session_domain)
 ):
     session_id = request.cookies.get('session_id')
     if not session_id:
         raise HTTPException(status_code=400, detail="No session")
+    pending = await session_domain.get(session_id)
+    if not pending or not secrets.compare_digest(str(pending.get("oauth_state", "")), state):
+        raise HTTPException(status_code=400, detail="Invalid authentication state")
+    return_mode = pending.get("return_mode", "default")
     
     # Exchange code for token
     async with httpx.AsyncClient() as client:
@@ -136,7 +141,7 @@ async def callback(
         await session_domain.track_event(session_id, 'login')
         
         access_token = token_data['access_token']
-        user_info = jwt.decode(access_token, options={"verify_signature": False})
+        user_info = UserSession(access_token, token_data, session_domain).token_data
         
         # Ensure user exists in database (only during login)
         async with async_session() as db_session:
@@ -149,21 +154,17 @@ async def callback(
                 else:
                     raise e
         
-        try:
-            user_data, _ = coder_api.ensure_user_exists(
-                user_info
-            )
-            coder_api.ensure_workspace_exists(user_data['username'])
-        except Exception:
-            logger.exception("Error in user/workspace setup")
-            # Continue with login even if Coder API fails
-
-    if state == "popup":
-        return FileResponse(os.path.join(STATIC_DIR, "auth/popup-close.html"))
+    if return_mode == "popup":
+        response = FileResponse(os.path.join(STATIC_DIR, "auth/popup-close.html"))
     else:
-        return RedirectResponse('/')
+        response = RedirectResponse('/')
+    response.set_cookie(
+        'session_id', session_id, httponly=True, samesite='lax', secure=True,
+        max_age=expiry, path='/',
+    )
+    return response
     
-@auth_router.get("/logout")
+@auth_router.post("/logout")
 async def logout(request: Request, session_domain: Session = Depends(get_session_domain)):
     session_id = request.cookies.get('session_id')
     
@@ -184,21 +185,38 @@ async def logout(request: Request, session_domain: Session = Depends(get_session
     if not success:
         logger.warning("Failed to delete session")
     
-    # Create the Keycloak logout URL with redirect back to our app
-    logout_url = f"{session_domain.oidc_config['server_url']}/realms/{session_domain.oidc_config['realm']}/protocol/openid-connect/logout"
-    full_logout_url = f"{logout_url}?id_token_hint={id_token}&post_logout_redirect_uri={FRONTEND_URL}"
+    if PAD_DEV_MODE:
+        full_logout_url = FRONTEND_URL or "/"
+    else:
+        from urllib.parse import urlencode
+        logout_url = f"{session_domain.oidc_config['server_url']}/realms/{session_domain.oidc_config['realm']}/protocol/openid-connect/logout"
+        full_logout_url = f"{logout_url}?{urlencode({'id_token_hint': id_token, 'post_logout_redirect_uri': FRONTEND_URL})}"
     
     # Create a response with the logout URL and clear the session cookie
     response = JSONResponse({"status": "success", "logout_url": full_logout_url})
     response.delete_cookie(
         key="session_id",
         path="/",
-        secure=True,
+        secure=bool(FRONTEND_URL and FRONTEND_URL.startswith("https://")),
         httponly=True,
         samesite="lax"
     )
     
     return response
+
+
+@auth_router.get("/account")
+async def account_console(_: UserSession = Depends(optional_auth), session_domain: Session = Depends(get_session_domain)):
+    """Open Keycloak's self-service profile/password/session console."""
+    if _ is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    if PAD_DEV_MODE:
+        return RedirectResponse("/")
+    url = (
+        f"{session_domain.oidc_config['server_url']}/realms/"
+        f"{session_domain.oidc_config['realm']}/account/"
+    )
+    return RedirectResponse(url)
 
 @auth_router.get("/status")
 async def auth_status(

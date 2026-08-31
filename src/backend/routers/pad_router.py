@@ -746,7 +746,9 @@ async def get_backlinks(
     from database.models.pad_model import PadStore as _PadStore
     from sqlalchemy import select as _sa_select
 
-    target = await PadStore.get_by_id(session, pad_id)
+    target = (await session.execute(
+        _sa_select(PadStore).where(PadStore.id == pad_id, PadStore.owner_id == user.id)
+    )).scalar_one_or_none()
     if not target:
         raise HTTPException(status_code=404, detail="Pad not found")
     target_name = target.display_name.lower()

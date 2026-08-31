@@ -103,6 +103,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def reject_cross_origin_cookie_writes(request: Request, call_next):
+    """CSRF guard for every cookie-authenticated state-changing endpoint."""
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and request.cookies.get("session_id"):
+        origin = request.headers.get("origin")
+        if not origin or origin not in ALLOWED_ORIGINS:
+            return Response(content="Cross-origin request rejected", status_code=403)
+    return await call_next(request)
+
 if not PAD_DEV_MODE or HAS_STATIC_BUILD:
     app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
