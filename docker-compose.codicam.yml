@@ -76,7 +76,7 @@ services:
     restart: unless-stopped
     mem_limit: 2g
     cpus: 2
-    networks: [backend]
+    networks: [backend, ingress]
 
   ollama:
     image: ollama/ollama:0.11.7
@@ -146,8 +146,11 @@ services:
     restart: unless-stopped
     mem_limit: 4g
     cpus: 4
-    networks: [backend]
+    networks: [backend, ingress]
 
 networks:
   backend:
     driver: bridge
+  ingress:
+    external: true
+    name: ${INGRESS_NETWORK:-cloudflared_default}
