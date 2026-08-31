@@ -67,6 +67,14 @@ const AccountDialog: React.FC<AccountDialogProps> = ({
             >
               Gérer le profil et le mot de passe
             </button>
+            {profile.isAdmin && (
+              <button
+                type="button"
+                onClick={() => window.open('/api/auth/admin', '_blank', 'noopener,noreferrer')}
+              >
+                Gérer les comptes utilisateurs
+              </button>
+            )}
           </div>
         </div>
       )}

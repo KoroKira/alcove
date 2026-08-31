@@ -6,6 +6,7 @@ interface AppConfig {
   posthogKey: string;
   posthogHost: string;
   devMode: boolean;
+  registrationContactEmail: string;
 }
 
 const fetchAppConfig = async (): Promise<AppConfig> => {

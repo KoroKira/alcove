@@ -157,6 +157,7 @@ class AuthDependency:
             # Try to refresh the token
             success, new_session_data = await current_session_domain.refresh_token(session_id, session_data)
             if not success:
+                await current_session_domain.delete(session_id)
                 return self._handle_auth_error("Session expired")
             session_data = new_session_data
         

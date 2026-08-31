@@ -35,4 +35,5 @@ async def get_app_config():
         "posthogKey": os.getenv("VITE_PUBLIC_POSTHOG_KEY", ""),
         "posthogHost": os.getenv("VITE_PUBLIC_POSTHOG_HOST", ""),
         "devMode": os.getenv("PAD_DEV_MODE", "false") == "true",
+        "registrationContactEmail": os.getenv("REGISTRATION_CONTACT_EMAIL", ""),
     }

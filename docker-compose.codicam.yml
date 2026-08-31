@@ -99,6 +99,7 @@ services:
       STATIC_DIR: /app/frontend/dist
       ASSETS_DIR: /app/frontend/dist/assets
       FRONTEND_URL: ${FRONTEND_URL:?required}
+      REGISTRATION_CONTACT_EMAIL: ${REGISTRATION_CONTACT_EMAIL:-}
       ALLOWED_ORIGINS: ${FRONTEND_URL}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"

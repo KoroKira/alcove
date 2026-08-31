@@ -199,6 +199,19 @@
     }
   }
 
+  &__registration-contact {
+    max-width: 420px;
+    margin: 0;
+    text-align: center;
+    color: #a0a0a9;
+    font-size: 14px;
+
+    a {
+      color: #fa8933;
+      text-decoration: underline;
+    }
+  }
+
   &__footer {
     display: flex;
     justify-content: center;

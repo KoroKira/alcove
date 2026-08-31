@@ -11,11 +11,12 @@ l'application et de Keycloak sont publiés sur `127.0.0.1`; le proxy HTTPS du
 serveur est le seul ingress. PostgreSQL, Redis et Ollama ne sont jamais publiés.
 Coder n'est plus dans le chemin d'authentification.
 
-Keycloak porte l'inscription, la connexion, la politique de mot de passe, le
+Keycloak porte la connexion, la politique de mot de passe, le
 changement/rétablissement du mot de passe, la vérification d'adresse, le
 verrouillage contre le brute force et les sessions. Dans le realm `alcove` :
 
-- activer `User registration`, `Forgot password`, `Verify email` et
+- désactiver `User registration` pour fonctionner sur invitation, puis activer
+  `Forgot password`, `Verify email` et
   `Revoke refresh token` ;
 - exiger au moins 12 caractères et refuser les mots de passe compromis selon
   la politique disponible ;
@@ -24,6 +25,9 @@ verrouillage contre le brute force et les sessions. Dans le realm `alcove` :
   `${FRONTEND_URL}/api/auth/callback` et web origin exacte `${FRONTEND_URL}` ;
 - ajouter au client un mapper `oidc-audience-mapper` qui inclut l'audience
   `alcove` dans l'access token (le backend vérifie explicitement `aud`) ;
+- attribuer au compte opérateur les rôles du client `realm-management` requis
+  pour administrer les utilisateurs ; il accède ensuite à la console via le
+  bouton « Gérer les comptes utilisateurs » de son profil Alcove ;
 - limiter les sessions inactives et maximales (valeurs initiales conseillées :
   30 jours / 90 jours), puis copier le secret client dans `.env`.
 

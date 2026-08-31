@@ -3,6 +3,7 @@ import React, { useMemo, useEffect } from "react";
 import { Dialog } from "@atyrode/excalidraw";
 
 import { capture } from "../lib/posthog";
+import { useAppConfig } from "../hooks/useAppConfig";
 import "./AuthDialog.scss";
 
 
@@ -17,6 +18,7 @@ export const AuthDialog = ({
   warningText = <>This is an open-source project in beta.<br /> Back up your work!</>,
   children,
 }: AuthDialogProps) => {
+  const { config } = useAppConfig();
   const logoMessages = [
     "Hello there!",
     "Welcome to Alcove!",
@@ -58,8 +60,16 @@ export const AuthDialog = ({
 
       <div className="auth-modal__buttons">
         <button onClick={() => window.open("/api/auth/login?popup=1", "authPopup", "width=520,height=720")}>
-          <span>Se connecter ou créer un compte</span>
+          <span>Se connecter</span>
         </button>
+        {config?.registrationContactEmail && (
+          <p className="auth-modal__registration-contact">
+            Pour demander un compte, envoyez un message à{' '}
+            <a href={`mailto:${config.registrationContactEmail}`}>
+              {config.registrationContactEmail}
+            </a>.
+          </p>
+        )}
       </div>
 
       <div className="auth-modal__footer">

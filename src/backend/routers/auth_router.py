@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 from config import (FRONTEND_URL, STATIC_DIR, PAD_DEV_MODE)
 from dependencies import get_session_domain
-from dependencies import optional_auth, UserSession
+from dependencies import optional_auth, require_admin, UserSession
 from domain.session import Session
 from database.database import async_session
 from domain.user import User
@@ -218,6 +218,18 @@ async def account_console(_: UserSession = Depends(optional_auth), session_domai
     )
     return RedirectResponse(url)
 
+
+@auth_router.get("/admin")
+async def admin_console(_: UserSession = Depends(require_admin), session_domain: Session = Depends(get_session_domain)):
+    """Open the realm-scoped Keycloak administration console."""
+    if PAD_DEV_MODE:
+        return RedirectResponse("/")
+    url = (
+        f"{session_domain.oidc_config['server_url']}/admin/"
+        f"{session_domain.oidc_config['realm']}/console/"
+    )
+    return RedirectResponse(url)
+
 @auth_router.get("/status")
 async def auth_status(
     user_session: Optional[UserSession] = Depends(optional_auth)
@@ -238,7 +250,8 @@ async def auth_status(
                 "id": str(user_session.id),
                 "username": user_session.username,
                 "email": user_session.email,
-                "name": user_session.name
+                "name": user_session.name,
+                "isAdmin": user_session.is_admin,
             },
             "expires_in": expires_in
         })
