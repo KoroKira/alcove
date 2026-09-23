@@ -17,6 +17,7 @@ from database import init_db, engine
 from config import (
     STATIC_DIR, ASSETS_DIR, POSTHOG_API_KEY, POSTHOG_HOST,
     PAD_DEV_MODE, DEV_FRONTEND_URL, SYNC_DIR, FRONTEND_URL, ALLOWED_ORIGINS,
+    PAD_BIND_HOST,
 )
 from cache import RedisClient
 from dependencies import UserSession, optional_auth
@@ -32,9 +33,11 @@ from routers.research_router import research_router
 from routers.latex_router import latex_router
 from database.database import get_session
 from database.models.user_model import UserStore
+from database.models import PadStore
 from domain.pad import Pad
 from workers.canvas_worker import CanvasWorker
 from domain.user import User
+from application.authorization import authorize_read
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -51,7 +54,11 @@ if POSTHOG_API_KEY:
 async def lifespan(app: FastAPI):
     if PAD_DEV_MODE:
         mode = "serving static build" if HAS_STATIC_BUILD else "Vite proxy active"
-        logger.info("Running in dev mode (PAD_DEV_MODE=true) — auth bypassed, %s", mode)
+        logger.warning(
+            "Running in dev mode (PAD_DEV_MODE=true) — auth is bypassed, %s; bind host=%s",
+            mode,
+            PAD_BIND_HOST,
+        )
 
     if SYNC_DIR:
         os.makedirs(SYNC_DIR, exist_ok=True)
@@ -166,8 +173,11 @@ async def read_pad(
         return await serve_index_html(request, response, pad_id)
 
     try:
+        store = await PadStore.get_by_id(session, pad_id)
+        if not store or not await authorize_read(session, user, store):
+            return await serve_index_html(request, response)
         pad = await Pad.get_by_id(session, pad_id)
-        if not pad or not pad.can_access(user.id):
+        if not pad:
             return await serve_index_html(request, response)
         return await serve_index_html(request, response, pad_id)
     except Exception as e:
@@ -194,6 +204,8 @@ app.include_router(research_router)
 app.include_router(latex_router)
 from routers.mcp_router import mcp_router
 app.include_router(mcp_router)
+from api.v1.router import v1_router
+app.include_router(v1_router)
 
 
 if PAD_DEV_MODE and not HAS_STATIC_BUILD:
@@ -217,4 +229,4 @@ if PAD_DEV_MODE and not HAS_STATIC_BUILD:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host=PAD_BIND_HOST, port=8000, reload=True)

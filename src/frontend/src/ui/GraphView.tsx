@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { X, Network, Search, SlidersHorizontal } from 'lucide-react';
 import { searchRag } from '../lib/rag';
+import { apiV1 } from '../api/client';
 import './GraphView.scss';
 
 interface GraphNode {
@@ -166,10 +167,8 @@ const GraphView: React.FC<Props> = ({ onClose, onSelectPad }) => {
             const matches = await searchRag(q, 40);
             ids = matches.filter(m => m.score >= SEMANTIC_MIN_SCORE).map(m => m.pad_id);
           } else {
-            const r = await fetch(`/api/pad/search?q=${encodeURIComponent(raw)}`, { credentials: 'include' });
-            if (!r.ok) throw new Error(`search ${r.status}`);
-            const j: Array<{ pad_id: string }> = await r.json();
-            ids = j.map(m => m.pad_id);
+            const results = await apiV1.search(raw);
+            ids = results.map(m => m.pad_id);
           }
           if (groupReqIdRef.current[g.id] !== reqId) return; // superseded by a newer query
           groupMatchSetsRef.current = { ...groupMatchSetsRef.current, [g.id]: new Set(ids) };

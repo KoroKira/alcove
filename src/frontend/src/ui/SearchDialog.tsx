@@ -1,19 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import './SearchDialog.scss';
+import { apiV1, type ApiSearchResult } from '../api/client';
 
-interface SearchMatch {
-  element_id: string;
-  text: string;
-  excerpt: string;
-}
-
-interface SearchResult {
-  pad_id: string;
-  pad_name: string;
-  name_match: boolean;
-  matches: SearchMatch[];
-}
+type SearchResult = ApiSearchResult;
 
 interface SearchDialogProps {
   onClose: () => void;
@@ -44,8 +34,7 @@ const SearchDialog: React.FC<SearchDialogProps> = ({ onClose, onSelectPad }) => 
     if (q.trim().length < 2) { setResults([]); return; }
     setLoading(true);
     try {
-      const res = await fetch(`/api/pad/search?q=${encodeURIComponent(q)}`);
-      if (res.ok) setResults(await res.json());
+      setResults(await apiV1.search(q));
     } finally {
       setLoading(false);
     }

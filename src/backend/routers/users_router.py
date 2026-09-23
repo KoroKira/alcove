@@ -16,6 +16,7 @@ from database.database import get_session
 from database.models.user_model import UserStore
 from domain.user import User
 from domain.pad import Pad
+from application.authorization import authorize_read
 
 users_router = APIRouter()
 
@@ -43,7 +44,7 @@ async def get_user_info(
             pad_id = UUID(pending_pad_id)
             pad = await Pad.get_by_id(session, pad_id)
             
-            if pad and pad.can_access(user.id):
+            if pad and await authorize_read(session, user, pad):
                 # Convert all UUIDs to strings for comparison
                 open_pads_str = [str(pid) for pid in user_obj._store.open_pads]
                 if str(pad_id) not in open_pads_str:

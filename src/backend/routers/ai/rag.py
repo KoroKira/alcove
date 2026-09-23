@@ -32,6 +32,7 @@ from dependencies import UserSession, require_auth
 from database.database import get_session
 from database.models.pad_model import PadStore
 from database.models.embedding_model import PadEmbedding
+from application.pads import PadQueryService
 
 from services.rag_indexer import extract_text_from_pad, rank_rows
 
@@ -53,8 +54,8 @@ async def indexable_text(
         pid = UUID(pad_id)
     except Exception:
         raise HTTPException(400, "invalid pad_id")
-    stmt = sa_select(PadStore).where(PadStore.id == pid, PadStore.owner_id == user.id)
-    pad = (await session.execute(stmt)).scalar_one_or_none()
+    stores = await PadQueryService(session).list_accessible_stores(user.id)
+    pad = next((store for store in stores if store.id == pid), None)
     if not pad:
         raise HTTPException(404, "Pad not found")
     return {
@@ -72,8 +73,7 @@ async def indexable_list(
     """List the caller's pads with their indexable text. Used by the
     "Réindexer tout" button so the client can loop through everything without
     N+1 round-trips against /rag/indexable-text/{id}."""
-    stmt = sa_select(PadStore).where(PadStore.owner_id == user.id)
-    pads = list((await session.execute(stmt)).scalars().all())
+    pads = await PadQueryService(session).list_accessible_stores(user.id)
     return {
         "pads": [
             {
@@ -213,7 +213,10 @@ async def related_pads(
     target_rows = list((await session.execute(
         sa_select(PadEmbedding.embedding)
         .join(PadStore, PadStore.id == PadEmbedding.pad_id)
-        .where(PadEmbedding.pad_id == pad_uuid, PadStore.owner_id == user.id)
+        .where(
+            PadEmbedding.pad_id == pad_uuid,
+            PadQueryService.readable_filter(user.id),
+        )
     )).all())
     if not target_rows:
         return {"related": [], "reason": "not-indexed"}

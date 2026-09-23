@@ -1,10 +1,11 @@
 import React, { useEffect, useRef } from 'react';
 import './HtmlPreview.scss';
+import { DEFAULT_HTML_PREVIEW_API_PATHS, isAllowedHtmlApiRequest } from './htmlPreviewSecurity';
 
 // Message passing script to be injected into the iframe
 const messagePassingScript = `
 <script>
-window.callApi = function(endpoint, method, data) {
+  window.callApi = function(endpoint, method, data) {
   const requestId = 'req_' + Math.random().toString(36).substring(2, 15);
   
   window.parent.postMessage({
@@ -24,7 +25,7 @@ window.callApi = function(endpoint, method, data) {
 
 // Listen for responses from the parent
 window.addEventListener('message', function(event) {
-  if (event.data.type === 'API_RESPONSE' && 
+  if (event.source === window.parent && event.data?.type === 'API_RESPONSE' &&
       window.apiCallbacks && 
       window.apiCallbacks[event.data.requestId]) {
     if (event.data.error) {
@@ -41,24 +42,29 @@ window.addEventListener('message', function(event) {
 interface HtmlPreviewProps {
   htmlContent: string;
   className?: string;
+  allowedApiPaths?: readonly string[];
 }
 
 const HtmlPreview: React.FC<HtmlPreviewProps> = ({ 
   htmlContent, 
-  className = 'html-preview__container' 
+  className = 'html-preview__container',
+  allowedApiPaths = DEFAULT_HTML_PREVIEW_API_PATHS,
 }) => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   
   // Handle API requests from the iframe
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      if (event.data.type === 'API_REQUEST') {
-        // Make the API call using the current user's authentication
-        fetch(event.data.endpoint, {
-          method: event.data.method,
+      const iframeWindow = iframeRef.current?.contentWindow;
+      if (!iframeWindow || !isAllowedHtmlApiRequest(event.data, event.source, iframeWindow, window.location.origin, allowedApiPaths)) {
+        return;
+      }
+
+      // The bridge is intentionally read-only. A rendered pad must never be
+      // able to perform arbitrary authenticated state changes as its viewer.
+      fetch(event.data.endpoint, {
+          method: 'GET',
           credentials: 'include', // This includes the current viewer's cookies
-          body: event.data.method !== 'GET' ? JSON.stringify(event.data.data) : undefined,
-          headers: { 'Content-Type': 'application/json' }
         })
         .then(response => {
           if (!response.ok) throw new Error('API request failed');
@@ -84,14 +90,13 @@ const HtmlPreview: React.FC<HtmlPreviewProps> = ({
             }, '*');
           }
         });
-      }
     };
 
     window.addEventListener('message', handleMessage);
     return () => {
       window.removeEventListener('message', handleMessage);
     };
-  }, []);
+  }, [allowedApiPaths]);
 
   // Prepare the HTML content with the message passing script
   const prepareHtmlContent = () => {

@@ -14,9 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies import UserSession, get_session_domain, PadAccess
 from cache import RedisClient
 from domain.pad import Pad
-from database.database import async_session
+from database.database import async_session, get_session
 from workers.canvas_worker import CanvasWorker
 from config import ALLOWED_ORIGINS, PAD_DEV_MODE
+from application.authorization import authorize_write
+from application.api_tokens import ApiTokenService
+from application.principal import Principal, principal_from_session
+from database.models import PadStore
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +29,7 @@ ws_router = APIRouter()
 STREAM_EXPIRY = 3600
 PAD_USERS_EXPIRY = 3600  # Expiry time for the pad users hash
 POINTER_CHANNEL_PREFIX = "pad:pointer:updates:"  # Prefix for pointer update pub/sub channels
+MUTATING_MESSAGE_TYPES = frozenset({"scene_update", "appstate_update"})
 
 class WebSocketMessage(BaseModel):
     type: str
@@ -50,9 +55,22 @@ class WebSocketMessage(BaseModel):
             datetime: lambda dt: dt.isoformat().replace('+00:00', 'Z') if dt.tzinfo else dt.replace(tzinfo=timezone.utc).isoformat().replace('+00:00', 'Z')
         }
 
-async def get_ws_user(websocket: WebSocket) -> Optional[UserSession]:
+async def get_ws_user(
+    websocket: WebSocket,
+    session: AsyncSession = Depends(get_session),
+) -> Optional[Principal]:
     """WebSocket-specific authentication dependency"""
     try:
+        authorization = websocket.headers.get("authorization", "")
+        if authorization:
+            scheme, _, credentials = authorization.partition(" ")
+            if scheme.lower() != "bearer" or not credentials.strip():
+                return None
+            principal = await ApiTokenService(session).authenticate(credentials.strip())
+            if principal is None or not principal.has_scope("pads:read"):
+                return None
+            return principal
+
         session_id = websocket.cookies.get('session_id')
         if not session_id:
             return None
@@ -69,11 +87,12 @@ async def get_ws_user(websocket: WebSocket) -> Optional[UserSession]:
                 return None
             session_data = new_session_data
         
-        return UserSession(
+        user = UserSession(
             access_token=session_data.get('access_token'),
             token_data=session_data,
             session_domain=current_session_domain
         )
+        return principal_from_session(user)
     except Exception as e:
         logger.exception("Error in WebSocket authentication")
         return None
@@ -118,7 +137,7 @@ async def publish_pointer_update(redis_client: aioredis.Redis, pad_id: UUID, mes
     except Exception:
         logger.exception("Error publishing pointer update to Redis pub/sub for pad %s", pad_id)
 
-async def check_pad_access(pad_id: UUID, user: UserSession, session: AsyncSession) -> Tuple[bool, Optional[str]]:
+async def check_pad_access(pad_id: UUID, user: Principal, session: AsyncSession) -> Tuple[bool, Optional[str]]:
     """Check if user still has access to the pad. Returns (has_access, error_reason)."""
     try:
         pad_access = PadAccess()
@@ -132,7 +151,7 @@ async def check_pad_access(pad_id: UUID, user: UserSession, session: AsyncSessio
 async def periodic_auth_check(
     websocket: WebSocket,
     pad_id: UUID,
-    user: UserSession,
+    user: Principal,
     redis_client: aioredis.Redis,
     stream_key: str,
     connection_id: str,
@@ -141,6 +160,9 @@ async def periodic_auth_check(
     """Periodically check if the user still has access to the pad."""
     while websocket.client_state.CONNECTED:
         try:
+            if user.is_api_token and not await ApiTokenService(session).is_active(user):
+                await websocket.close(code=4001, reason="API token expired or revoked")
+                break
             # Check pad access
             has_access, error_reason = await check_pad_access(pad_id, user, session)
             
@@ -170,14 +192,31 @@ async def periodic_auth_check(
         # it via Redis pub/sub instead.
         await asyncio.sleep(30)
 
-async def _handle_received_data(raw_data: str, pad_id: UUID, user: UserSession, 
+async def _handle_received_data(raw_data: str, pad_id: UUID, user: Principal,
                                redis_client: aioredis.Redis, stream_key: str, connection_id: str,
-                               session: AsyncSession):
+                               session: AsyncSession) -> bool:
     """Processes decoded message data, wraps it in WebSocketMessage, and publishes to Redis."""
     try:
 
         client_message_dict = json.loads(raw_data)
         
+        message_type = client_message_dict.get("type")
+        if message_type in MUTATING_MESSAGE_TYPES:
+            has_write_scope = getattr(user, "has_scope", lambda _: True)("pads:write")
+            if not has_write_scope:
+                logger.warning("Rejected WebSocket mutation without pads:write for %s", user.id)
+                return False
+            # Re-read the pad before each mutation so a whitelist revocation
+            # takes effect without waiting for a reconnect. Public pads are
+            # deliberately read-only until explicit editor roles exist.
+            current_pad = await session.get(PadStore, pad_id)
+            if not current_pad or not await authorize_write(session, user, current_pad):
+                logger.warning("Rejected read-only WebSocket mutation for pad %s by user %s", pad_id, user.id)
+                return False
+        elif message_type != "pointer_update":
+            logger.warning("Rejected unsupported client WebSocket message type %r", message_type)
+            return False
+
         # Create a WebSocketMessage instance from the client's data
         processed_message = WebSocketMessage(
             type=client_message_dict.get("type", "unknown_client_message"),
@@ -192,14 +231,18 @@ async def _handle_received_data(raw_data: str, pad_id: UUID, user: UserSession,
             await publish_pointer_update(redis_client, pad_id, processed_message)
         else:
             await publish_event_to_redis(redis_client, stream_key, processed_message)
+
+        return True
         
             
     except WebSocketDisconnect:
         raise
     except json.JSONDecodeError:
         logger.warning("Invalid JSON received (conn %s)", connection_id[:5])
+        return False
     except Exception:
         logger.exception("Error processing message from conn %s", connection_id[:5])
+        return False
 
 async def consume_redis_stream(redis_client: aioredis.Redis, stream_key: str, 
                               websocket: WebSocket, connection_id: str, last_id: str = '$'):
@@ -351,7 +394,7 @@ async def remove_connection(redis_client: aioredis.Redis, pad_id: UUID, user_id:
 async def websocket_endpoint(
     websocket: WebSocket,
     pad_id: UUID,
-    user: Optional[UserSession] = Depends(get_ws_user)
+    user: Optional[Principal] = Depends(get_ws_user)
 ):
     """WebSocket endpoint for pad collaboration."""
     origin = websocket.headers.get("origin")
@@ -436,7 +479,13 @@ async def websocket_endpoint(
                 while websocket.client_state.CONNECTED:
                     try:
                         data = await websocket.receive_text()
-                        await _handle_received_data(data, pad_id, user, redis_client, stream_key, connection_id, session)
+                        accepted = await _handle_received_data(data, pad_id, user, redis_client, stream_key, connection_id, session)
+                        if not accepted and websocket.client_state.CONNECTED:
+                            await websocket.send_text(WebSocketMessage(
+                                type="error",
+                                pad_id=str(pad_id),
+                                data={"code": "read_only", "message": "This pad is read-only for the current user."}
+                            ).model_dump_json())
                     except WebSocketDisconnect as e:
                         logger.info("WS disconnected (user %s conn %s): %s", str(user.id)[:5], connection_id[:5], e.reason)
                         break

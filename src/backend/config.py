@@ -2,6 +2,7 @@ import os
 import json
 import httpx
 import jwt
+import ipaddress
 from jwt.jwks_client import PyJWKClient
 from typing import Optional
 from dotenv import load_dotenv
@@ -16,6 +17,40 @@ FRONTEND_URL = os.getenv("FRONTEND_URL")
 # When true: auto-login as local@localhost, no Keycloak required, Vite proxy active
 PAD_DEV_MODE = os.getenv("PAD_DEV_MODE", "false").lower() == "true"
 DEV_FRONTEND_URL = os.getenv("DEV_FRONTEND_URL", "http://localhost:3003")
+
+
+def _is_loopback_host(host: str) -> bool:
+    host = host.strip().lower().strip("[]")
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def select_bind_host(
+    dev_mode: bool,
+    configured_host: Optional[str] = None,
+    allow_dangerous_bind: bool = False,
+) -> str:
+    """Choose a bind host and fail closed for unauthenticated dev mode."""
+    configured = configured_host.strip() if configured_host and configured_host.strip() else None
+    host = configured or ("127.0.0.1" if dev_mode else "0.0.0.0")
+    if dev_mode and not _is_loopback_host(host) and not allow_dangerous_bind:
+        raise RuntimeError(
+            "PAD_DEV_MODE refuses non-loopback PAD_DEV_HOST; set "
+            "PAD_DEV_ALLOW_DANGEROUS_BIND=true only for an intentional, "
+            "isolated deployment"
+        )
+    return host
+
+
+PAD_BIND_HOST = select_bind_host(
+    PAD_DEV_MODE,
+    os.getenv("PAD_DEV_HOST"),
+    os.getenv("PAD_DEV_ALLOW_DANGEROUS_BIND", "false").lower() == "true",
+)
 
 # Comma-separated allowed CORS origins. In dev this defaults to the Vite
 # dev server + the FastAPI origin so the app just works; in prod, force the

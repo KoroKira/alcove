@@ -2,7 +2,7 @@ from uuid import UUID
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from redis import RedisError
-from sqlalchemy import update as sa_update
+from sqlalchemy import delete as sa_delete, select, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from config import default_pad
 import json
@@ -14,7 +14,7 @@ from redis.asyncio import Redis as AsyncRedis
 class Pad:
     """
     Domain entity representing a collaborative pad.
-    
+
     This class contains the core business logic for pad manipulation,
     manages the collaboration state, and provides methods for Redis
     synchronization and database persistence.
@@ -91,6 +91,12 @@ class Pad:
             sharing_policy=sharing_policy or "private",
             whitelist=whitelist or []
         )
+        # Keep newly-created pads represented in the durable authorization
+        # layer. Legacy fields remain populated for older clients.
+        from application.membership import MembershipService
+
+        await MembershipService(session).ensure_owner(store.id, owner_id)
+        await session.commit()
         redis = await RedisClient.get_instance()
         pad = cls.from_store(store, redis)
         
@@ -334,33 +340,38 @@ class Pad:
         await self._redis.delete(cache_key)
 
     async def set_sharing_policy(self, session: AsyncSession, policy: str) -> 'Pad':
-        """Update the sharing policy of the pad"""
-        if policy not in ["private", "whitelist", "public"]:
-            raise ValueError("Invalid sharing policy")
-            
-        print(f"Changing sharing policy for pad {self.id} from {self.sharing_policy} to {policy}")
-        self.sharing_policy = policy
-        self.updated_at = datetime.now()
-        await self._targeted_update(session, sharing_policy=policy, updated_at=self.updated_at)
+        from application.membership import MembershipService
+        from application.principal import Principal
 
+        store = await MembershipService(session).set_policy(
+            Principal(id=self.owner_id), self.id, policy
+        )
+        self.sharing_policy = store.sharing_policy
+        self.whitelist = list(store.whitelist or [])
+        await self.invalidate_cache()
         return self
 
     async def add_to_whitelist(self, session: AsyncSession, user_id: UUID) -> 'Pad':
-        """Add a user to the pad's whitelist"""
+        from application.membership import MembershipService
+        from application.principal import Principal
+
+        await MembershipService(session).add_member(
+            Principal(id=self.owner_id), self.id, user_id, "editor"
+        )
         if user_id not in self.whitelist:
             self.whitelist.append(user_id)
-            self.updated_at = datetime.now()
-            await self._targeted_update(session, whitelist=self.whitelist, updated_at=self.updated_at)
-
+        await self.invalidate_cache()
         return self
 
     async def remove_from_whitelist(self, session: AsyncSession, user_id: UUID) -> 'Pad':
-        """Remove a user from the pad's whitelist"""
-        if user_id in self.whitelist:
-            self.whitelist.remove(user_id)
-            self.updated_at = datetime.now()
-            await self._targeted_update(session, whitelist=self.whitelist, updated_at=self.updated_at)
+        from application.membership import MembershipService
+        from application.principal import Principal
 
+        await MembershipService(session).remove_member(
+            Principal(id=self.owner_id), self.id, user_id
+        )
+        self.whitelist = [uid for uid in self.whitelist if uid != user_id]
+        await self.invalidate_cache()
         return self
 
     def can_access(self, user_id: UUID) -> bool:
@@ -445,4 +456,3 @@ class Pad:
             include_whitelist=True,
             worker_id=self.worker_id,
         )
-    

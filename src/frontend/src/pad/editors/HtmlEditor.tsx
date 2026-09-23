@@ -8,19 +8,16 @@ import './HtmlEditor.scss';
 export const defaultHtml = `<!-- 
   HTML Preview with API Support
   
-  You can make authenticated API calls from your HTML using window.callApi()
+  You can make authenticated read-only API calls from your HTML using window.callApi()
   
   Examples:
   
-  // GET request
-  window.callApi('/api/endpoint')
+  // GET request to the explicitly allowed status endpoint
+  window.callApi('/api/auth/status')
     .then(data => console.log(data))
     .catch(error => console.error(error));
   
-  // POST request with data
-  window.callApi('/api/endpoint', 'POST', { key: 'value' })
-    .then(data => console.log(data))
-    .catch(error => console.error(error));
+  // State-changing methods are intentionally rejected by the preview bridge.
   
   All API calls use the current viewer's authentication token (not the creator's),
   making it safe for multiplayer environments.

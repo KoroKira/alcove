@@ -17,6 +17,7 @@ from database.models.version_model import PadVersion
 from database.database import get_session
 from domain.pad import Pad
 from domain.user import User
+from application.pads import match_pad as _match_pad, pad_content
 # schedule_reindex was removed in Phase 3C — the browser drives reindexing
 # now (manual "Réindexer tout" button) since the server no longer has an
 # Ollama to call for embeddings.
@@ -271,6 +272,7 @@ async def get_or_create_daily_pad(
     from datetime import date, timedelta
     from database.models.pad_model import PadStore as _PadStore
     from sqlalchemy import select as _sa_select
+    from application.pads import PadQueryService
 
     today = date.today()
     title = today.strftime("%Y-%m-%d")
@@ -377,11 +379,8 @@ async def get_knowledge_graph(
     # canvas scene, which we don't need to draw a node. created_at feeds the
     # graph's timeline scrubber (chantier #21) — cheap to include, no extra
     # query needed.
-    node_stmt = _sa_select(
-        PadStore.id, PadStore.display_name, PadStore.pad_type, PadStore.is_scratch,
-        PadStore.created_at, PadStore.tags,
-    ).where(PadStore.owner_id == user.id)
-    node_rows = (await session.execute(node_stmt)).all()
+    accessible_stores = await PadQueryService(session).list_accessible_stores(user.id)
+    node_rows = accessible_stores
 
     nodes = [{
         "id": str(r.id),
@@ -397,13 +396,11 @@ async def get_knowledge_graph(
 
     # Edges: only document pads carry wikilinks. Extract just the `content`
     # string out of the JSONB (data->>'content') instead of the whole blob.
-    edge_stmt = _sa_select(
-        PadStore.id, PadStore.data["content"].astext,
-    ).where(
-        PadStore.owner_id == user.id,
-        PadStore.pad_type == "document",
-    )
-    edge_rows = (await session.execute(edge_stmt)).all()
+    edge_rows = [
+        (store.id, (store.data or {}).get("content"))
+        for store in accessible_stores
+        if store.pad_type == "document" and isinstance(store.data, dict)
+    ]
 
     wikilink_re = _re.compile(r"\[\[([^\]]+)\]\]")
     edges = []
@@ -427,10 +424,12 @@ async def get_knowledge_graph(
         # A graph centroid uses at most six chunks per pad. Do that cap in SQL
         # so large PDFs don't ship hundreds of JSON vectors to Python merely
         # to discard them a line later.
-        emb_stmt = (
-            _sa_select(PadEmbedding.pad_id, PadEmbedding.embedding)
-            .join(PadStore, PadStore.id == PadEmbedding.pad_id)
-            .where(PadStore.owner_id == user.id, PadEmbedding.chunk_index < 6)
+        accessible_ids = [store.id for store in accessible_stores]
+        emb_stmt = _sa_select(
+            PadEmbedding.pad_id, PadEmbedding.embedding
+        ).where(
+            PadEmbedding.pad_id.in_(accessible_ids),
+            PadEmbedding.chunk_index < 6,
         )
         emb_rows = (await session.execute(emb_stmt)).all()
         for row in emb_rows:
@@ -454,11 +453,13 @@ async def get_document_previews(
     every open. A medium library could exhaust PostgreSQL before the graph or
     AI helpers got a connection. Keep the response intentionally small.
     """
-    stmt = sa_select(
-        PadStore.id,
-        PadStore.data["content"].astext,
-    ).where(PadStore.owner_id == user.id, PadStore.pad_type == "document")
-    rows = (await session.execute(stmt)).all()
+    from application.pads import PadQueryService
+    rows = [
+        (store.id, (store.data or {}).get("content"))
+        for store in await PadQueryService(session).list_accessible_stores(
+            user.id, pad_type="document"
+        )
+    ]
     previews: Dict[str, str] = {}
     images: Dict[str, str] = {}
     empty: list[str] = []
@@ -483,35 +484,6 @@ async def get_document_previews(
     return {"previews": previews, "images": images, "empty": empty}
 
 
-def _match_pad(pad_type: str, data: Any, display_name: str, query: str):
-    """Match one pad against a lowercase `query`.
-
-    Returns ``(name_match, matches)`` when the title or body matches, else
-    ``None``. Documents match on their `content`, canvas pads on element text —
-    the previous implementation only ever looked at canvas elements, so document
-    bodies were silently unsearchable. Pure function → unit-tested.
-    """
-    data = data if isinstance(data, dict) else {}
-    matches = []
-    if pad_type == "document":
-        content = data.get("content", "") or ""
-        idx = content.lower().find(query)
-        if idx != -1:
-            start = max(0, idx - 40)
-            excerpt = content[start:idx + 80].replace("\n", " ").strip()
-            matches.append({"element_id": "", "text": content[idx:idx + 60], "excerpt": excerpt})
-    else:
-        for elem in data.get("elements", []):
-            text = elem.get("text", "") or (elem.get("label") or {}).get("text", "")
-            if text and query in text.lower():
-                matches.append({"element_id": elem.get("id", ""), "text": text[:60], "excerpt": text[:120]})
-
-    name_match = query in (display_name or "").lower()
-    if name_match or matches:
-        return name_match, matches[:5]
-    return None
-
-
 @pad_router.get("/search")
 async def search_pads(
     q: str,
@@ -524,31 +496,8 @@ async def search_pads(
     currently-open tabs), and matches document `content` — not just canvas
     text elements — so notes are actually searchable.
     """
-    from sqlalchemy import select as _sel
-
-    if not q or len(q.strip()) < 2:
-        return []
-
-    query = q.strip().lower()
-
-    stmt = _sel(PadStore).where(PadStore.owner_id == user.id)
-    stores = (await session.execute(stmt)).scalars().all()
-
-    results = []
-    for store in stores:
-        pad_type = getattr(store, "pad_type", "canvas") or "canvas"
-        matched = _match_pad(pad_type, store.data, store.display_name, query)
-        if matched is None:
-            continue
-        name_match, matches = matched
-        results.append({
-            "pad_id": str(store.id),
-            "pad_name": store.display_name,
-            "name_match": name_match,
-            "matches": matches,
-        })
-
-    return results
+    from application.pads import PadQueryService
+    return await PadQueryService(session).search(user.id, q)
 
 
 @pad_router.get("/export/zip")
@@ -603,37 +552,7 @@ async def get_pad(
         if user_obj:
             await user_obj.set_last_selected_pad(session, pad.id)
 
-        # updated_at is echoed with every structured pad response so the
-        # client can pass it back on save for optimistic concurrency control.
-        pad_updated_at = pad.updated_at.isoformat() if pad.updated_at else None
-
-        # Document pads: return content directly. Also surface `video` when
-        # present so the frontend can offer the Regenerate button without
-        # a second round-trip.
-        if pad.pad_type == "document":
-            data = pad.data if isinstance(pad.data, dict) else {}
-            resp = {
-                "content": data.get("content", ""),
-                "format": data.get("format", "markdown"),
-                "updated_at": pad_updated_at,
-            }
-            if "video" in data:
-                resp["video"] = data["video"]
-            return resp
-
-        # Structured pads (kanban, gantt, latex, database): return raw data +
-        # updated_at. All of these save through PUT /{id}/data and need the
-        # concurrency baseline.
-        if pad.pad_type in ("kanban", "gantt", "latex", "database"):
-            raw = pad.data if isinstance(pad.data, dict) else {}
-            return {**raw, "updated_at": pad_updated_at}
-
-        pad_dict = pad.to_dict()
-        # Get only this user's appState
-        app_state = pad_dict["data"].get("appState", {}) if isinstance(pad_dict["data"], dict) else {}
-        user_app_state = app_state.get(str(user.id), {})
-        pad_dict["data"]["appState"] = user_app_state
-        return pad_dict["data"]
+        return pad_content(pad, user.id)
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -746,16 +665,14 @@ async def get_backlinks(
     from database.models.pad_model import PadStore as _PadStore
     from sqlalchemy import select as _sa_select
 
-    target = (await session.execute(
-        _sa_select(PadStore).where(PadStore.id == pad_id, PadStore.owner_id == user.id)
-    )).scalar_one_or_none()
+    from application.pads import PadQueryService
+    accessible_stores = await PadQueryService(session).list_accessible_stores(user.id)
+    target = next((store for store in accessible_stores if store.id == pad_id), None)
     if not target:
         raise HTTPException(status_code=404, detail="Pad not found")
     target_name = target.display_name.lower()
 
-    stmt = _sa_select(_PadStore).where(_PadStore.owner_id == user.id)
-    result = await session.execute(stmt)
-    stores = result.scalars().all()
+    stores = accessible_stores
 
     pattern = _re.compile(r"\[\[" + _re.escape(target_name) + r"\]\]", _re.IGNORECASE)
     backlinks = []

@@ -49,16 +49,17 @@ class PadEmbedding(Base, BaseModel):
 
     @classmethod
     async def get_all_for_owner(cls, session: AsyncSession, owner_id: UUID):
-        """Return (pad_id, chunk_text, embedding, pad_name) rows for one user only.
+        """Return embedding rows for pads readable by the caller.
 
-        Scoped at the DB level so a query never loads other users' vectors, and
-        joined to `pads` so the caller gets the display name without a second
-        round-trip.
+        The historical method name is retained for callers, but visibility is
+        now based on the same durable-membership predicate as pad listings and
+        search. This prevents RAG/KNN from becoming a secondary data leak.
         """
         from .pad_model import PadStore
+        from application.pads import PadQueryService
         stmt = (
             select(cls.pad_id, cls.chunk_text, cls.embedding, PadStore.display_name)
             .join(PadStore, PadStore.id == cls.pad_id)
-            .where(PadStore.owner_id == owner_id)
+            .where(PadQueryService.readable_filter(owner_id))
         )
         return (await session.execute(stmt)).all()

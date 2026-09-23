@@ -13,8 +13,10 @@ from cache import RedisClient
 from domain.session import Session
 from domain.user import User
 from domain.pad import Pad
+from application.authorization import PadAction, authorize
 from coder import CoderAPI
 from database.database import get_session
+from database.models import PadStore
 
 logger = logging.getLogger(__name__)
 
@@ -221,28 +223,31 @@ class PadAccess:
         user: UserSession = Depends(require_auth),
         session: AsyncSession = Depends(get_session)
     ) -> Tuple[Pad, UserSession]:
-        # Get the pad
-        pad = await Pad.get_by_id(session, pad_id)
-        if not pad:
+        # Authorize against the current SQL row before consulting Redis. The
+        # cached domain object may contain older policy fields after a sharing
+        # transition; it must never decide access.
+        store = await PadStore.get_by_id(session, pad_id)
+        if not store:
             raise HTTPException(
                 status_code=404,
                 detail="Pad not found"
             )
 
         # Check access permissions
-        if not pad.can_access(user.id):
+        action = PadAction.SHARE if self.require_owner else PadAction.READ
+        if not await authorize(session, user, store, action):
             raise HTTPException(
                 status_code=403,
-                detail="Not authorized to access this pad"
+                detail=(
+                    "Only the pad owner can perform this operation"
+                    if self.require_owner
+                    else "Not authorized to access this pad"
+                ),
             )
 
-        # Check owner requirement if specified
-        if self.require_owner and pad.owner_id != user.id:
-            raise HTTPException(
-                status_code=403,
-                detail="Only the pad owner can perform this operation"
-            )
-
+        pad = await Pad.get_by_id(session, pad_id)
+        if not pad:
+            raise HTTPException(status_code=404, detail="Pad not found")
         return pad, user
 
 # Create dependency instances for pad access

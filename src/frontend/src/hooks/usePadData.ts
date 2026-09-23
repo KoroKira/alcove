@@ -4,6 +4,7 @@ import type { ExcalidrawImperativeAPI, AppState } from "@atyrode/excalidraw/type
 import type { ExcalidrawElement } from "@atyrode/excalidraw/element/types";
 import { normalizeCanvasData, adaptSceneToTheme } from '../lib/canvas';
 import { INITIAL_APP_DATA } from '../constants';
+import { apiV1 } from '../api/client';
 
 interface PadData {
     elements?: readonly ExcalidrawElement[];
@@ -12,20 +13,8 @@ interface PadData {
 }
 
 const fetchPadById = async (padId: string): Promise<PadData> => {
-    const response = await fetch(`/api/pad/${padId}`);
-    if (!response.ok) {
-        let errorMessage = 'Failed to fetch pad data.';
-        try {
-            const errorData = await response.json();
-            if (errorData && errorData.detail) {
-                errorMessage = errorData.detail;
-            }
-        } catch (e) {
-            // Ignore if error response is not JSON or empty
-        }
-        throw new Error(errorMessage);
-    }
-    return response.json();
+    const response = await apiV1.getPadContent(padId);
+    return response.data as PadData;
 };
 
 export const usePad = (

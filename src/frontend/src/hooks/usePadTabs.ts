@@ -65,16 +65,17 @@ interface UserResponse {
 }
 
 const fetchUserPads = async (): Promise<PadResponse> => {
+    // Keep the historical endpoint here for now: it consumes the
+    // pending_pad_id cookie and opens a shared pad as a deliberate side
+    // effect. The v1 /me contract stays read-only for external clients.
     const response = await fetch('/api/users/me');
     if (!response.ok) {
         let errorMessage = 'Failed to fetch user pads.';
         try {
             const errorData = await response.json();
-            if (errorData && errorData.message) {
-                errorMessage = errorData.message;
-            }
-        } catch (e) {
-            // Ignore if error response is not JSON or empty
+            if (errorData && errorData.message) errorMessage = errorData.message;
+        } catch {
+            // Ignore non-JSON error responses.
         }
         throw new Error(errorMessage);
     }

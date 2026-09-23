@@ -161,8 +161,14 @@ class User:
 
     @classmethod
     async def get_open_pads(cls, session: AsyncSession, user_id: UUID) -> List[Dict[str, Any]]:
-        """Get just the metadata of pads owned by the user without loading full pad data"""
-        return await UserStore.get_open_pads(session, user_id)
+        """Return pads readable by the user.
+
+        The method name is retained for legacy callers, but the application
+        query now uses durable pad memberships rather than ``open_pads`` as an
+        authorization source.
+        """
+        from application.pads import PadQueryService
+        return await PadQueryService(session).list_pads(user_id)
 
     @classmethod
     async def ensure_exists(cls, session: AsyncSession, user_info: dict) -> 'User':
