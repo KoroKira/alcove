@@ -16,7 +16,9 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Loopback only: containers reach Postgres through pad-network, the host
+      # port exists for local tooling (psql, backups) and must not be public.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     restart: unless-stopped
     networks:
       - pad-network
@@ -25,7 +27,8 @@ services:
     image: redis:alpine
     container_name: redis
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      # Loopback only: see the Postgres note above.
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     restart: unless-stopped
