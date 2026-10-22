@@ -181,7 +181,7 @@ async def read_pad(
         store = await PadStore.get_by_id(session, pad_id)
         if not store or not await authorize_read(session, user, store):
             return await serve_index_html(request, response)
-        pad = await Pad.get_by_id(session, pad_id)
+        pad = await Pad.get_by_id(session, pad_id, fresh_store=store)
         if not pad:
             return await serve_index_html(request, response)
         return await serve_index_html(request, response, pad_id)

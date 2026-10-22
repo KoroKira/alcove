@@ -14,6 +14,7 @@ from config import get_jwks_client, OIDC_CLIENT_ID, FRONTEND_URL
 from dependencies import UserSession, require_admin, require_auth
 from database.database import get_session
 from database.models.user_model import UserStore
+from database.models.pad_model import PadStore
 from domain.user import User
 from domain.pad import Pad
 from application.authorization import authorize_read
@@ -42,9 +43,13 @@ async def get_user_info(
     if pending_pad_id:
         try:
             pad_id = UUID(pending_pad_id)
-            pad = await Pad.get_by_id(session, pad_id)
-            
-            if pad and await authorize_read(session, user, pad):
+            store = await PadStore.get_by_id(session, pad_id)
+            if store and await authorize_read(session, user, store):
+                pad = await Pad.get_by_id(session, pad_id, fresh_store=store)
+            else:
+                pad = None
+
+            if pad:
                 # Convert all UUIDs to strings for comparison
                 open_pads_str = [str(pid) for pid in user_obj._store.open_pads]
                 if str(pad_id) not in open_pads_str:
