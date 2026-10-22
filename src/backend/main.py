@@ -91,6 +91,11 @@ app = FastAPI(lifespan=lifespan)
 # never needs CORS at all.
 HAS_STATIC_BUILD = bool(STATIC_DIR) and os.path.isfile(os.path.join(STATIC_DIR, "index.html"))
 
+
+def mount_frontend_root_assets(app: FastAPI, static_dir: str) -> None:
+    """Expose Vite's root-level public and PWA files at their referenced URLs."""
+    app.mount("/", StaticFiles(directory=static_dir), name="frontend-root")
+
 # CORS: `allow_origins=["*"]` with `allow_credentials=True` is silently unsafe
 # — the browser strips the credentials on wildcarded responses, so it *seems*
 # to work locally while breaking real cross-origin auth. We now use an explicit
@@ -206,6 +211,13 @@ from routers.mcp_router import mcp_router
 app.include_router(mcp_router)
 from api.v1.router import v1_router
 app.include_router(v1_router)
+
+# Vite's PWA plugin emits the manifest, service-worker registration script,
+# service worker, Workbox runtime, and app icons at the dist root. The HTML
+# references those paths from `/`, while the existing mounts only expose them
+# under `/static`; serve the root build artifacts after API routes are mounted.
+if HAS_STATIC_BUILD:
+    mount_frontend_root_assets(app, STATIC_DIR)
 
 
 if PAD_DEV_MODE and not HAS_STATIC_BUILD:
