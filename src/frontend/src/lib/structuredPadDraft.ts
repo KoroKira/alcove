@@ -1,20 +1,54 @@
 /** Best-effort local recovery for structured pad edits that have not reached the server. */
 const keyFor = (padId: string) => `alcove:structured-pad-draft:${padId}`;
 
-export function readStructuredPadDraft<T>(padId: string, fallback: T): T {
+export interface StructuredPadDraft<T> {
+  data: T;
+  expectedUpdatedAt: string | null;
+  baselineKnown: boolean;
+}
+
+export const UNKNOWN_STRUCTURED_DRAFT_BASELINE = '1970-01-01T00:00:00+00:00';
+
+export function isStructuredPadDraftStale(
+  draft: StructuredPadDraft<unknown>,
+  serverUpdatedAt: string | null,
+): boolean {
+  return !draft.baselineKnown || !draft.expectedUpdatedAt || draft.expectedUpdatedAt !== serverUpdatedAt;
+}
+
+export function readStructuredPadDraftRecord<T>(padId: string): StructuredPadDraft<T> | null {
   try {
     const raw = localStorage.getItem(keyFor(padId));
-    if (!raw) return fallback;
-    const parsed = JSON.parse(raw) as { data?: T };
-    return parsed.data ?? fallback;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { data?: T; expectedUpdatedAt?: string | null };
+    if (!Object.prototype.hasOwnProperty.call(parsed, 'data')) return null;
+    const baselineKnown = Object.prototype.hasOwnProperty.call(parsed, 'expectedUpdatedAt');
+    return {
+      data: parsed.data as T,
+      expectedUpdatedAt: baselineKnown ? parsed.expectedUpdatedAt ?? null : null,
+      baselineKnown,
+    };
   } catch {
-    return fallback;
+    return null;
   }
 }
 
-export function writeStructuredPadDraft<T>(padId: string, data: T): boolean {
+export function readStructuredPadDraft<T>(padId: string, fallback: T): T {
+  return readStructuredPadDraftRecord<T>(padId)?.data ?? fallback;
+}
+
+export function writeStructuredPadDraft<T>(
+  padId: string,
+  data: T,
+  expectedUpdatedAt: string | null,
+  baselineKnown = true,
+): boolean {
   try {
-    localStorage.setItem(keyFor(padId), JSON.stringify({ data, savedAt: new Date().toISOString() }));
+    localStorage.setItem(keyFor(padId), JSON.stringify({
+      data,
+      expectedUpdatedAt: baselineKnown ? expectedUpdatedAt : undefined,
+      savedAt: new Date().toISOString(),
+    }));
     return true;
   } catch {
     return false;
@@ -35,6 +69,13 @@ export function removeStructuredPadDraft(padId: string): void {
   } catch {
     // The server copy remains available even when local storage is unavailable.
   }
+}
+
+export async function fetchStructuredPadUpdatedAt(padId: string): Promise<string | null> {
+  const response = await fetch(`/api/pad/${encodeURIComponent(padId)}`);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const pad = await response.json() as { updated_at?: unknown };
+  return typeof pad.updated_at === 'string' ? pad.updated_at : null;
 }
 
 export function clearStructuredPadDraft<T>(padId: string, savedData: T): void {
