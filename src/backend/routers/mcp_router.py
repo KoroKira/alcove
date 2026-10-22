@@ -299,7 +299,7 @@ async def _tool_read_pad(
     )
     pad = (await session.execute(stmt)).scalar_one_or_none()
     if pad is None:
-        raise ValueError(f"pad {pid} not found or not owned by user")
+        raise ValueError("pad not found or access denied")
     data = pad.data if isinstance(pad.data, dict) else {}
     content = data.get("content") or ""
     return {
