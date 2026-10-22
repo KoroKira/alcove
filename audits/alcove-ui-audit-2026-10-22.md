@@ -1,5 +1,21 @@
 # Audit exploratoire UI Alcove — 2026-10-22
 
+## Suivi après correctifs — 2026-10-22
+
+Les sections ci-dessous conservent les constats au moment de leur découverte. État vérifié après déploiement de `alcove-functional-v3-20261022` :
+
+| ID | État actuel | Vérification |
+|---|---|---|
+| ALCO-UI-001 — crash canvas | Corrigé par la normalisation de `searchMatches` et un test `null`/absent/invalide (PR #6, `b5cca64`). | Le canvas de production s’ouvre sur le bundle v3 sans erreur JS; le test de régression passe. |
+| ALCO-UI-002 — terminal loopback | Corrigé : sans `TTYD_URL`, l’API renvoie une valeur vide et le composant n’ouvre pas de terminal local (PR #6). | `/api/app/config` renvoie `ttydUrl: ""`; tests `TerminalLocal` verts. |
+| ALCO-UI-003 — parcours privés | Partiellement audité; aucun autre bug confirmé pendant ces parcours. | Recherche sémantique : 7 pads avec contenu retournés; Graphe : 9 notes, 10 liens; Assistant : réponse reçue; Révisions et Favoris s’ouvrent avec leurs états vides attendus. |
+| ALCO-UI-004 — ressources PWA en 404 | Corrigé par le service des fichiers statiques racine (PR #11, `083818b`). | En production, manifeste, `registerSW.js`, `sw.js`, Workbox, favicon et icône répondent tous `200`. |
+| ALCO-UI-005 — retries workspace désactivé | Corrigé : React Query ne retente plus le `503` permanent (PR #10, `8ee1683`). | Test de régression, build v3 sain; les logs montrent un seul appel initial puis aucun nouvel appel pendant 20 s. |
+
+L’index RAG a été initialisé localement sur les 9 pads : 7 pads contenaient du texte (7 chunks), 2 étaient vides. Le traitement et le stockage ont utilisé le service Ollama du serveur Alcove. Aucun pad n’a été créé, supprimé ou modifié.
+
+La couverture n’est pas exhaustive : les parcours d’édition/sauvegarde d’un document, ajout et import de source, restauration depuis la corbeille, raccourcis clavier et création de cartes de révision restent à tester. Les statuts des constats initiaux ci-dessous sont historiques; la table ci-dessus donne leur disposition actuelle.
+
 ## ALCO-UI-001 — Crash du canevas : `searchMatches` vaut `null`
 
 **Statut :** cause racine confirmée dans les bundles de production; reproduit sur plusieurs chargements  
@@ -91,9 +107,9 @@ L’erreur masque la navigation après connexion. Les parcours suivants n’ont 
 
 La recherche depuis la page publique avait affiché « Aucun résultat » ; ce résultat n’est pas classé comme bug, car le contenu privé n’était pas accessible à ce moment.
 
-## Résumé exécutable
+## Résumé initial au moment de l’audit
 
-Ordre suggéré : (1) corriger la normalisation `searchMatches` et ajouter une régression; (2) rendre la boundary récupérable et préserver l’accès aux autres écrans; (3) désactiver par défaut le terminal non configuré, puis ne l’activer qu’avec un chemin authentifié; (4) reprendre les parcours privés et ouvrir un constat séparé pour chaque défaut confirmé. Les propositions ci-dessus sont des correctifs à développer; aucun code applicatif n’a été modifié dans cette PR.
+Les premières propositions étaient : (1) corriger la normalisation `searchMatches`; (2) rendre la boundary récupérable; (3) désactiver le terminal non configuré; (4) reprendre les parcours privés. Les correctifs canvas/terminal sont dans la PR #6, l’arrêt des retries workspace dans la PR #10 et les fichiers PWA dans la PR #11. Le registre reste ouvert pour les parcours non vérifiés listés plus haut.
 
 ## Dépôt
 
