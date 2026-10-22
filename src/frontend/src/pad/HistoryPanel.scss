@@ -51,6 +51,13 @@
     color: var(--ap-overlay0);
   }
 
+  &__error {
+    padding: 10px 14px;
+    font-size: 12px;
+    color: var(--ap-red);
+    border-top: 1px solid var(--color-surface-mid, var(--ap-bg2));
+  }
+
   &__item {
     display: flex;
     align-items: center;

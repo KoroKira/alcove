@@ -21,27 +21,51 @@ const HistoryPanel: React.FC<Props> = ({ padId, onClose, onRestore }) => {
   const [restoring, setRestoring] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError(null);
     fetch(`/api/pad/${padId}/versions`)
-      .then(r => r.json())
-      .then(d => setVersions(d.versions || []))
-      .catch(() => setVersions([]))
-      .finally(() => setLoading(false));
+      .then(async r => {
+        if (!r.ok) throw new Error(`Impossible de charger l’historique (${r.status}).`);
+        return r.json();
+      })
+      .then(d => { if (active) setVersions(Array.isArray(d.versions) ? d.versions : []); })
+      .catch(cause => {
+        if (!active) return;
+        setVersions([]);
+        setError(cause instanceof Error ? cause.message : 'Impossible de charger l’historique.');
+      })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, [padId]);
 
   const loadPreview = async (v: Version) => {
     if (previewId === v.id) { setPreview(null); setPreviewId(null); return; }
-    const d = await fetch(`/api/pad/${padId}/versions/${v.id}`).then(r => r.json());
-    setPreview(d.data?.content || JSON.stringify(d.data, null, 2));
-    setPreviewId(v.id);
+    setError(null);
+    try {
+      const response = await fetch(`/api/pad/${padId}/versions/${v.id}`);
+      if (!response.ok) throw new Error(`Impossible de charger cette version (${response.status}).`);
+      const d = await response.json();
+      if (!d.data) throw new Error('Les données de cette version sont indisponibles.');
+      setPreview(d.data.content || JSON.stringify(d.data, null, 2));
+      setPreviewId(v.id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Impossible de charger cette version.');
+    }
   };
 
   const restore = async (versionId: string) => {
     setRestoring(versionId);
+    setError(null);
     try {
-      await fetch(`/api/pad/${padId}/versions/${versionId}/restore`, { method: 'POST' });
+      const response = await fetch(`/api/pad/${padId}/versions/${versionId}/restore`, { method: 'POST' });
+      if (!response.ok) throw new Error(`Impossible de restaurer cette version (${response.status}).`);
       onRestore();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Impossible de restaurer cette version.');
     } finally {
       setRestoring(null);
     }
@@ -67,7 +91,7 @@ const HistoryPanel: React.FC<Props> = ({ padId, onClose, onRestore }) => {
       </div>
       <div className="history-panel__list">
         {loading && <div className="history-panel__empty">Chargement…</div>}
-        {!loading && versions.length === 0 && (
+        {!loading && !error && versions.length === 0 && (
           <div className="history-panel__empty">Aucune version sauvegardée</div>
         )}
         {versions.map(v => (
@@ -89,6 +113,7 @@ const HistoryPanel: React.FC<Props> = ({ padId, onClose, onRestore }) => {
           </div>
         ))}
       </div>
+      {error && <div className="history-panel__error" role="alert">{error}</div>}
       {preview !== null && (
         <div className="history-panel__preview">
           <div className="history-panel__preview-label">Aperçu</div>
