@@ -21,11 +21,11 @@ La console confirme l’exception pendant le rendu Excalidraw. Après connexion,
 
 Les deux extraits concordent dans les ressources servies en production :
 
-- Le bundle applicatif `index-CuxsPwia.js` affecte `e.searchMatches=null` dans la normalisation du canevas. Le code source correspondant sur `main` est `src/frontend/src/lib/canvas.ts`, qui affecte `appState.searchMatches = null`.
-- Le bundle Excalidraw `excalidraw-CGF0p-zd.js` appelle directement `E.searchMatches.forEach(...)` pendant le rendu.
+- Le [code source de normalisation](https://github.com/KoroKira/alcove/blob/main/src/frontend/src/lib/canvas.ts#L87) affecte `appState.searchMatches = null`. Le bundle applicatif déployé [index-CuxsPwia.js](https://alcove.codicam.fr/assets/index-CuxsPwia.js) contient la même affectation `e.searchMatches=null` (offset 483835).
+- Le bundle Excalidraw déployé [excalidraw-CGF0p-zd.js](https://alcove.codicam.fr/assets/excalidraw-CGF0p-zd.js) appelle directement `E.searchMatches.forEach(...)` (ligne 144, offset 51972).
 - La valeur nulle provoque donc exactement le `TypeError` affiché. Le bundle Excalidraw ne vérifie pas cette valeur avant l’appel.
 
-Le code source de `ErrorBoundary.tsx` montre que « Réessayer sans recharger » efface seulement l’erreur React puis remonte le même arbre; si le canevas conserve `searchMatches: null`, le rendu retombe sur la même exception.
+Le [code de reprise d’ErrorBoundary](https://github.com/KoroKira/alcove/blob/main/src/frontend/src/ui/ErrorBoundary.tsx#L36) efface seulement l’erreur React puis remonte le même arbre; si le canevas conserve `searchMatches: null`, le rendu retombe sur la même exception.
 
 ### Reproduction
 
