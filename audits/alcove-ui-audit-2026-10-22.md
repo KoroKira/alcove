@@ -46,6 +46,16 @@ Le premier retour OAuth observé a échoué avec `Invalid authentication state`;
 
 Aucune note n’a été créée ni modifiée pendant cet audit.
 
+### ALCO-UI-002 — Terminal local configuré sur une adresse loopback sans service accessible
+
+**Statut :** configuration observée; indisponibilité probable du terminal embarqué sur le déploiement public, portée à confirmer  
+**Sévérité proposée :** P2 si le terminal local est une fonctionnalité attendue sur `alcove.codicam.fr`; sinon configuration documentée pour usage local  
+**Environnement :** configuration publique consultée le 2026-10-22
+
+La route publique `/api/app/config` renvoie `ttydUrl: "http://localhost:7681"`. Sur la machine où le navigateur Chrome de l’audit tourne, aucun processus n’écoute sur `127.0.0.1:7681` (connexion TCP locale refusée). Le composant `TerminalLocal` du dépôt utilise cette URL. Ainsi, si le terminal embarqué doit fonctionner pour les utilisateurs du déploiement public, le navigateur tente de joindre un service loopback sur le poste de chaque utilisateur au lieu d’un service accessible depuis l’application; il sera indisponible sauf si un ttyd local est installé sur ce poste.
+
+La configuration seule ne permet pas de savoir si cette adresse est intentionnelle pour le mode local. Confirmer le comportement attendu, puis soit fournir une URL ttyd joignable via la configuration de déploiement, soit masquer/documenter le terminal lorsque le service local n’est pas installé. Ne pas exposer ttyd directement sans contrôle d’accès.
+
 ### Couverture restant à faire
 
 Les parcours privés ne sont pas encore évalués, car l’erreur ALCO-UI-001 masque la navigation après connexion. À reprendre une fois le canevas accessible :
