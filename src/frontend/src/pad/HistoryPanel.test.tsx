@@ -44,4 +44,18 @@ describe('HistoryPanel', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Impossible de restaurer cette version (403).');
     await waitFor(() => expect(onRestore).not.toHaveBeenCalled());
   });
+
+  it('refreshes the document after a successful restore', async () => {
+    const onRestore = vi.fn();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(200, { versions: [version] }))
+      .mockResolvedValueOnce(response(200, { ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<HistoryPanel padId="pad-1" onClose={vi.fn()} onRestore={onRestore} />);
+    fireEvent.click(await screen.findByTitle('Restaurer cette version'));
+
+    await waitFor(() => expect(onRestore).toHaveBeenCalledOnce());
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/pad/pad-1/versions/v1/restore', { method: 'POST' });
+  });
 });
