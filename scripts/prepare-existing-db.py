@@ -29,7 +29,7 @@ async def prepare() -> None:
     async with engine.begin() as connection:
         await connection.execute(CreateSchema("pad_ws", if_not_exists=True))
         await connection.run_sync(Base.metadata.create_all)
-        for table in ("idempotency_records", "audit_events", "api_tokens", "pad_members"):
+        for table in ("idempotency_records", "audit_events", "api_tokens", "pad_members", "mcp_api_keys"):
             await connection.execute(text(f"DROP TABLE IF EXISTS pad_ws.{table} CASCADE"))
         await connection.execute(text("DELETE FROM pad_ws.pads WHERE id = '20000000-0000-0000-0000-000000000001'"))
         await connection.execute(text("DELETE FROM pad_ws.users WHERE id IN ('10000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000002')"))
