@@ -96,6 +96,11 @@
   opacity: 0.6;
 }
 
+.obs-import__empty-error {
+  color: var(--ap-red);
+  font-size: 12px;
+}
+
 .obs-import__folder-btn {
   background: rgba(var(--ap-accent2-rgb), 0.1);
   border: 1px solid rgba(var(--ap-accent2-rgb), 0.3);

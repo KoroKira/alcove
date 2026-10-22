@@ -7,7 +7,7 @@ from typing import Dict, Any, Tuple, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import update as sa_update, select as sa_select, text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 import numpy as np
 
@@ -93,6 +93,7 @@ class NewPadRequest(BaseModel):
     # callers create-and-fill in one round trip (e.g. the RAG chat's
     # "Add to notebook" button doesn't need a second PUT).
     content: Optional[str] = None
+    folder: Optional[str] = Field(default=None, max_length=80)
 
 class DocSaveRequest(BaseModel):
     content: str
@@ -230,6 +231,7 @@ async def create_new_pad(
             display_name=display_name,
         )
         pad.pad_type = pad_type
+        pad.folder = (req.folder or "").strip() or None
         if pad_type == "document":
             pad.data = {"content": req.content or "", "format": "markdown"}
         elif pad_type == "kanban":

@@ -1,12 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { X, Upload, FolderOpen, CheckCircle, AlertCircle } from 'lucide-react';
+import { importObsidianFiles, type ObsidianImportResult } from '../lib/obsidianImport';
 import './ObsidianImport.scss';
-
-interface ImportResult {
-  name: string;
-  id?: string;
-  error?: string;
-}
 
 interface Props {
   onClose: () => void;
@@ -14,50 +9,36 @@ interface Props {
 }
 
 export default function ObsidianImport({ onClose, onImported }: Props) {
-  const [results, setResults] = useState<ImportResult[]>([]);
+  const [results, setResults] = useState<ObsidianImportResult[]>([]);
   const [progress, setProgress] = useState(0);
   const [total, setTotal] = useState(0);
   const [done, setDone] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [emptyError, setEmptyError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
 
   const runImport = async (files: File[]) => {
-    const mdFiles = files.filter(f => f.name.endsWith('.md'));
-    if (!mdFiles.length) return;
+    const mdFiles = files.filter(file => {
+      if (!/\.md$/i.test(file.name)) return false;
+      const path = (file as File & { webkitRelativePath?: string }).webkitRelativePath || '';
+      return !path.split(/[\\/]/).some(part => part === '.obsidian' || part === '.trash');
+    });
+    if (!mdFiles.length) {
+      setEmptyError('Aucune note Markdown trouvée dans cette sélection.');
+      return;
+    }
 
     setTotal(mdFiles.length);
     setProgress(0);
     setDone(false);
+    setEmptyError('');
     setResults([]);
-
-    const ids: string[] = [];
-
-    for (const file of mdFiles) {
-      const name = file.name.replace(/\.md$/, '');
-      try {
-        const content = await file.text();
-        const createRes = await fetch('/api/pad/new', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pad_type: 'document', display_name: name }),
-        });
-        if (!createRes.ok) throw new Error('Création échouée');
-        const pad = await createRes.json();
-        await fetch(`/api/pad/${pad.id}/doc`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content, format: 'markdown' }),
-        });
-        ids.push(pad.id);
-        setResults(r => [...r, { name, id: pad.id }]);
-      } catch (e) {
-        setResults(r => [...r, { name, error: String(e) }]);
-      }
-      setProgress(p => p + 1);
-    }
+    const imported = await importObsidianFiles(mdFiles, setProgress);
+    setResults(imported);
 
     setDone(true);
+    const ids = imported.flatMap(result => result.id ? [result.id] : []);
     if (ids.length) onImported(ids);
   };
 
@@ -93,6 +74,8 @@ export default function ObsidianImport({ onClose, onImported }: Props) {
             <FolderOpen size={36} className="obs-import__drop-icon" />
             <div className="obs-import__drop-title">Glisse tes fichiers <code>.md</code> ici</div>
             <div className="obs-import__drop-sub">ou clique pour sélectionner des fichiers</div>
+            <div className="obs-import__drop-sub">Les notes sont importées avec leurs dossiers; les images et pièces jointes ne le sont pas encore.</div>
+            {emptyError && <div className="obs-import__empty-error" role="alert">{emptyError}</div>}
             <button
               className="obs-import__folder-btn"
               onClick={e => { e.stopPropagation(); folderRef.current?.click(); }}
