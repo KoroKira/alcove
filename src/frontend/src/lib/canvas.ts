@@ -83,8 +83,11 @@ export function normalizeCanvasData(data: any) {
   // Reset collaborators (https://github.com/excalidraw/excalidraw/issues/8637)
   appState.collaborators = new Map();
   
-  // Support new appState key default value (https://github.com/excalidraw/excalidraw/commit/a30e1b25c60a9c5c6f049daada0443df874a5266#diff-b7eb4d88c1bc5b4756a01281478e2105db6502e96c2a4b855496c508cef05397L124-R124)
-  appState.searchMatches = null;
+  // Excalidraw iterates this UI-state field while rendering. Older scenes may
+  // omit it, but `null` crashes the canvas in newer Excalidraw versions.
+  if (!Array.isArray(appState.searchMatches)) {
+    appState.searchMatches = [];
+  }
 
   return { ...data, appState };
 }
