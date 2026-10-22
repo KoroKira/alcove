@@ -4,9 +4,9 @@ only place that proves the SQLAlchemy model + FK/cascade + the service's
 queries actually work together against a real engine, not just that the
 service calls the mock the way we expect.
 
-Skipped by default (including in CI, which has no Postgres service) unless
-ALCOVE_TEST_DATABASE_URL points at a disposable database — never point it
-at anything you care about, this test creates and deletes rows.
+Skipped in the unit-test job unless ALCOVE_TEST_DATABASE_URL points at the
+disposable integration database — never point it at anything you care about,
+this test creates and deletes rows.
 
 Local one-off setup used to develop/validate this test :
     docker run --rm -d --name alcove-migration-test \
@@ -26,13 +26,16 @@ import pytest
 
 TEST_DATABASE_URL = os.getenv("ALCOVE_TEST_DATABASE_URL")
 
-pytestmark = pytest.mark.skipif(
-    not TEST_DATABASE_URL,
-    reason=(
-        "set ALCOVE_TEST_DATABASE_URL to a disposable Postgres "
-        "(with `alembic upgrade head` already applied) to run this test"
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not TEST_DATABASE_URL,
+        reason=(
+            "set ALCOVE_TEST_DATABASE_URL to a disposable Postgres "
+            "(with alembic upgrade head already applied) to run this test"
+        ),
     ),
-)
+]
 
 
 def test_create_verify_revoke_and_cascade_delete_against_real_postgres():
