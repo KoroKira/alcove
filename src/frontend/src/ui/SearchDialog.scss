@@ -43,6 +43,12 @@
     color: var(--ap-overlay0);
     font-size: 14px;
   }
+
+  &__error {
+    padding: 16px 20px;
+    color: var(--ap-red);
+    font-size: 14px;
+  }
 }
 
 .search-result {
