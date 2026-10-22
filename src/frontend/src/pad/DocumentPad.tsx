@@ -39,6 +39,13 @@ interface StoredVideoBundle {
 }
 import { saveUserTemplate } from '../constants/userTemplates';
 import { registerSlashCommands } from '../lib/slashCommands';
+import {
+  advanceLocalDocumentDraftVersion,
+  clearLocalDocumentDraft,
+  readLocalDocumentDraft,
+  writeLocalDocumentDraft,
+  type LocalDocumentDraft,
+} from '../lib/documentDraft';
 import HistoryPanel from './HistoryPanel';
 import 'katex/dist/katex.min.css';
 import './DocumentPad.scss';
@@ -327,11 +334,18 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
   const [content, setContent] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('split');
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved' | 'conflict'>('saved');
+  const [recoveryDraft, setRecoveryDraft] = useState<LocalDocumentDraft | null>(null);
+  const [draftStorageFailed, setDraftStorageFailed] = useState(false);
+  const contentRef = useRef('');
+  const padIdRef = useRef(padId);
+  padIdRef.current = padId;
   // Optimistic-concurrency baseline: the pad's updated_at when we last read
   // (or successfully wrote) it. Sent on every save; server rejects with 409
   // if a peer (e.g. the same account on another device) has moved on since.
   const lastUpdatedAt = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [backlinks, setBacklinks] = useState<Backlink[]>([]);
   const { related, notIndexed } = useRelatedPads(padId, 5);
   // Video pads: embedded player + timestamp navigation. `videoMeta` is
@@ -360,6 +374,11 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
   const vimStatusRef = useRef<HTMLDivElement>(null);
   const [vimMode, setVimMode] = useState(() => localStorage.getItem('alcove_vim_mode') === '1');
   const [editorNonce, setEditorNonce] = useState(0);
+
+  useEffect(() => { contentRef.current = content; }, [content]);
+  useEffect(() => () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+  }, [padId]);
 
   // Attach / detach monaco-vim whenever the toggle flips or the editor remounts.
   useEffect(() => {
@@ -403,16 +422,34 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
 
   // Load pad content + backlinks
   useEffect(() => {
+    let active = true;
     setLoading(true);
+    setLoadError(null);
+    setContent('');
+    contentRef.current = '';
     setBacklinks([]);
     setTranscluded({});
+    setRecoveryDraft(null);
+    setDraftStorageFailed(false);
+    lastUpdatedAt.current = null;
     Promise.all([
-      fetch(`/api/pad/${padId}`).then(r => r.json()),
+      fetch(`/api/pad/${padId}`).then(async r => {
+        if (!r.ok) throw new Error(`Chargement du document impossible (${r.status}).`);
+        return r.json();
+      }),
       isLatex ? Promise.resolve({ backlinks: [] }) : fetch(`/api/pad/${padId}/backlinks`).then(r => r.json()).catch(() => ({ backlinks: [] })),
     ])
       .then(([padData, blData]) => {
+        if (!active) return;
         const loaded = isLatex ? (padData?.data?.source || padData?.content || '') : (padData?.content || '');
         const initial = !loaded && pendingContent ? pendingContent : (loaded || (isLatex ? LATEX_DEFAULT : ''));
+        const localDraft = readLocalDocumentDraft(padId);
+        if (localDraft && localDraft.content !== initial) setRecoveryDraft(localDraft);
+        else {
+          setRecoveryDraft(null);
+          if (localDraft) clearLocalDocumentDraft(padId, localDraft.content);
+        }
+        contentRef.current = initial;
         setContent(initial);
         lastUpdatedAt.current = padData?.updated_at ?? null;
         if (!loaded && pendingContent) scheduleSave(pendingContent);
@@ -426,9 +463,17 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
         onContentChange?.(initial);
         onContentLoaded?.();
       })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [padId]);
+      .catch(error => {
+        if (!active) return;
+        console.error(error);
+        const localDraft = readLocalDocumentDraft(padId);
+        if (localDraft) setRecoveryDraft(localDraft);
+        setLoadError(error instanceof Error ? error.message : 'Chargement du document impossible.');
+        onContentLoaded?.();
+      })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [padId, loadAttempt]);
 
   // Daily note: fill in the "## Hier" AI summary left pending by the backend.
   // The marker embeds yesterday's pad id; we stream a summary from Ollama and
@@ -497,9 +542,11 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
 
   // Debounced auto-save
   const scheduleSave = useCallback((text: string) => {
+    setDraftStorageFailed(!writeLocalDocumentDraft(padId, text, lastUpdatedAt.current));
     setSaveStatus('unsaved');
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
+      saveTimer.current = null;
       setSaveStatus('saving');
       try {
         const url = isLatex ? `/api/pad/${padId}/data` : `/api/pad/${padId}/doc`;
@@ -515,27 +562,51 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
           // Another session (same account on another device) wrote after we
           // loaded. We keep the local text so nothing is silently dropped;
           // the status badge switches to 'conflict' so the user knows.
-          setSaveStatus('conflict');
+          if (padIdRef.current === padId) setSaveStatus('conflict');
           return;
         }
         if (res.ok) {
           const j = await res.json().catch(() => null);
-          if (j?.updated_at) lastUpdatedAt.current = j.updated_at;
-          setSaveStatus('saved');
+          if (j?.updated_at) {
+            if (padIdRef.current === padId) lastUpdatedAt.current = j.updated_at;
+            advanceLocalDocumentDraftVersion(padId, text, j.updated_at);
+          }
+          clearLocalDocumentDraft(padId, text);
+          if (padIdRef.current === padId) {
+            if (contentRef.current === text) setSaveStatus('saved');
+            else setSaveStatus('unsaved');
+          }
         } else {
-          setSaveStatus('unsaved');
+          if (padIdRef.current === padId) setSaveStatus('unsaved');
         }
       } catch {
-        setSaveStatus('unsaved');
+        if (padIdRef.current === padId) setSaveStatus('unsaved');
       }
     }, SAVE_DEBOUNCE_MS);
   }, [padId, isLatex]);
 
   const handleChange = (value: string | undefined) => {
     const text = value ?? '';
+    contentRef.current = text;
     setContent(text);
     scheduleSave(text);
     onContentChange?.(text);
+  };
+
+  const recoverLocalDraft = () => {
+    if (!recoveryDraft) return;
+    setLoadError(null);
+    lastUpdatedAt.current = recoveryDraft.expectedUpdatedAt;
+    contentRef.current = recoveryDraft.content;
+    setContent(recoveryDraft.content);
+    setRecoveryDraft(null);
+    onContentChange?.(recoveryDraft.content);
+    scheduleSave(recoveryDraft.content);
+  };
+
+  const discardLocalDraft = () => {
+    clearLocalDocumentDraft(padId);
+    setRecoveryDraft(null);
   };
 
   /** Re-run /api/ai/video-report using the persisted bundle, then splice the
@@ -1007,13 +1078,51 @@ ${renderedHtml}
     : saveStatus === 'unsaved' ? t('editor.unsaved')
     : saveStatus === 'conflict' ? '⚠️ Modifié ailleurs — recharge la page'
     : t('editor.saved');
+  const saveStatusControl = (
+    <>
+      <span className={`document-pad__status document-pad__status--${saveStatus}`}>{statusLabel}</span>
+      {saveStatus === 'unsaved' && (
+        <button className="document-pad__retry-save" onClick={() => scheduleSave(contentRef.current)}>
+          Réessayer
+        </button>
+      )}
+    </>
+  );
 
   if (loading) {
     return <div className="document-pad document-pad--loading">{t('editor.loading')}</div>;
   }
 
+  if (loadError) {
+    return (
+      <div className="document-pad document-pad--loading document-pad__load-error" role="alert">
+        <p>{loadError}. Le contenu du document n’a pas été remplacé.</p>
+        {recoveryDraft && (
+          <button className="document-pad__retry-save" onClick={recoverLocalDraft}>Restaurer le brouillon local</button>
+        )}
+        <button className="document-pad__retry-save" onClick={() => setLoadAttempt(attempt => attempt + 1)}>
+          Réessayer le chargement
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div ref={containerRef} className={`document-pad document-pad--${theme}${focusMode ? ' document-pad--focus' : ''}`}>
+      {recoveryDraft && (
+        <div className="document-pad__recovery" role="status">
+          <span>Un brouillon local non sauvegardé a été retrouvé. La version serveur reste intacte.</span>
+          <div className="document-pad__recovery-actions">
+            <button onClick={recoverLocalDraft}>Restaurer le brouillon</button>
+            <button onClick={discardLocalDraft}>Ignorer</button>
+          </div>
+        </div>
+      )}
+      {draftStorageFailed && saveStatus !== 'saved' && (
+        <div className="document-pad__recovery-error" role="alert">
+          Le navigateur n’a pas pu conserver de copie locale. Garde cette page ouverte et réessaie.
+        </div>
+      )}
       {!focusMode && (
       <div className="document-pad__toolbar">
         <div className="document-pad__view-btns">
@@ -1043,7 +1152,7 @@ ${renderedHtml}
                   {latexStatus === 'compiling' ? 'Compilation…' : latexStatus === 'ok' ? '✓ PDF prêt' : '✗ Erreur'}
                 </span>
               )}
-              <span className={`document-pad__status document-pad__status--${saveStatus}`}>{statusLabel}</span>
+              {saveStatusControl}
               <button className="document-pad__toolbar-btn" onClick={onToggleFocus} title={t('editor.focus')}>
                 <Maximize2 size={14} />
               </button>
@@ -1124,9 +1233,7 @@ ${renderedHtml}
               >
                 <Save size={14} />
               </button>
-              <span className={`document-pad__status document-pad__status--${saveStatus}`}>
-                {statusLabel}
-              </span>
+              {saveStatusControl}
               <button className="document-pad__toolbar-btn" onClick={onToggleFocus} title={t('editor.focus')}>
                 <Maximize2 size={14} />
               </button>
@@ -1145,7 +1252,13 @@ ${renderedHtml}
       {historyOpen && (
         <HistoryPanel padId={padId} onClose={() => setHistoryOpen(false)} onRestore={() => {
           setHistoryOpen(false);
-          fetch(`/api/pad/${padId}`).then(r => r.json()).then(d => setContent(d.content || ''));
+          clearLocalDocumentDraft(padId);
+          setRecoveryDraft(null);
+          fetch(`/api/pad/${padId}`).then(r => r.json()).then(d => {
+            const next = d.content || '';
+            contentRef.current = next;
+            setContent(next);
+          });
         }} />
       )}
 
