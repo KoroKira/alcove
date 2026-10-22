@@ -114,6 +114,11 @@ export const useWorkspace = () => {
   } = useQuery<WorkspaceState, Error>({
     queryKey: WORKSPACE_QUERY_KEY,
     queryFn: fetchWorkspaceState,
+    // A missing optional integration is a permanent configuration state for
+    // this deployment. Retrying its 503 only delays the disabled UI and adds
+    // three avoidable requests on every page load.
+    retry: (failureCount, error) =>
+      !isWorkspaceIntegrationDisabled(error) && failureCount < 3,
     // Do not repeatedly hit the API when this optional integration is not set
     // up. Other workspace errors can recover, so keep polling those.
     refetchInterval: (query) =>
