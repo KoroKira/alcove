@@ -114,7 +114,7 @@ flowchart LR
 
 - **Templates** — **⌘N** propose réunion, projet, rétro, spec…
 - **IA locale** — résumé, tags, liens suggérés, RAG, quiz, flashcards auto (via Ollama)
-- **Import Obsidian** — récupère un vault existant (\`.md\` + images)
+- **Import Obsidian** — importe les notes Markdown et leurs dossiers (images et pièces jointes non incluses)
 - **Thèmes** — 6 thèmes + un builder pour créer le tien
 
 > [!IMPORTANT]
