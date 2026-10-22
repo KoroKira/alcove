@@ -112,7 +112,11 @@ async def index_chunks(
         pid = UUID(body.pad_id)
     except Exception:
         raise HTTPException(400, "invalid pad_id")
-    stmt = sa_select(PadStore.id).where(PadStore.id == pid, PadStore.owner_id == user.id)
+    stmt = sa_select(PadStore.id).where(
+        PadStore.id == pid,
+        PadStore.owner_id == user.id,
+        PadStore.deleted_at.is_(None),
+    )
     if (await session.execute(stmt)).scalar_one_or_none() is None:
         raise HTTPException(404, "Pad not found")
 

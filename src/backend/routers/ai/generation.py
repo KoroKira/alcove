@@ -101,7 +101,11 @@ async def _owned_document_pads(session: AsyncSession, user_id, pad_ids: List[str
         except Exception:
             continue
         row = (await session.execute(
-            sa_select(PadStore).where(PadStore.id == pid, PadStore.owner_id == user_id)
+            sa_select(PadStore).where(
+                PadStore.id == pid,
+                PadStore.owner_id == user_id,
+                PadStore.deleted_at.is_(None),
+            )
         )).scalar_one_or_none()
         if not row or row.pad_type != "document":
             continue

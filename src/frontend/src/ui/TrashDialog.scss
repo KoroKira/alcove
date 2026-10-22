@@ -1,0 +1,189 @@
+.trash-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  box-sizing: border-box;
+  background: rgba(8, 10, 16, 0.48);
+  backdrop-filter: blur(3px);
+}
+
+.trash-dialog {
+  width: min(560px, 100%);
+  max-height: min(680px, calc(100dvh - 32px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--ap-text0);
+  background: var(--ap-bg0);
+  border: 1px solid color-mix(in srgb, var(--ap-text0) 12%, transparent);
+  border-radius: var(--ap-radius-lg, 14px);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.3);
+
+  &__header,
+  &__footer {
+    padding: 15px 18px;
+    flex-shrink: 0;
+  }
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid color-mix(in srgb, var(--ap-text0) 9%, transparent);
+  }
+
+  &__heading {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    color: var(--ap-text1);
+  }
+
+  h2 {
+    margin: 0;
+    color: var(--ap-text0);
+    font-size: 15px;
+    font-weight: 650;
+  }
+
+  &__close,
+  &__restore {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 1px solid color-mix(in srgb, var(--ap-text0) 14%, transparent);
+    border-radius: var(--ap-radius-sm, 8px);
+    color: var(--ap-text1);
+    background: var(--ap-bg1);
+    cursor: pointer;
+    transition: color 0.12s, background 0.12s, border-color 0.12s;
+  }
+
+  &__close {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+  }
+
+  &__restore {
+    min-height: 34px;
+    padding: 0 10px;
+    color: var(--ap-accent);
+    border-color: color-mix(in srgb, var(--ap-accent) 25%, transparent);
+    white-space: nowrap;
+
+    &:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--ap-accent) 11%, var(--ap-bg1));
+      border-color: color-mix(in srgb, var(--ap-accent) 45%, transparent);
+    }
+  }
+
+  &__close:hover,
+  &__restore:focus-visible,
+  &__close:focus-visible {
+    color: var(--ap-text0);
+    outline: 2px solid color-mix(in srgb, var(--ap-accent) 65%, transparent);
+    outline-offset: 2px;
+  }
+
+  &__restore:disabled {
+    opacity: 0.6;
+    cursor: wait;
+  }
+
+  &__body {
+    min-height: 120px;
+    padding: 8px 18px;
+    overflow: auto;
+  }
+
+  &__status {
+    margin: 0;
+    padding: 24px 8px;
+    color: var(--ap-text2);
+    text-align: center;
+    font-size: 13px;
+  }
+
+  &__error {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 8px 0;
+    padding: 10px 12px;
+    color: var(--ap-red);
+    background: color-mix(in srgb, var(--ap-red) 9%, var(--ap-bg1));
+    border-radius: var(--ap-radius-sm, 8px);
+    font-size: 13px;
+
+    button {
+      flex-shrink: 0;
+      padding: 5px 8px;
+      color: var(--ap-text0);
+      background: var(--ap-bg1);
+      border: 1px solid color-mix(in srgb, var(--ap-text0) 15%, transparent);
+      border-radius: 6px;
+      cursor: pointer;
+    }
+  }
+
+  &__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 11px 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--ap-text0) 7%, transparent);
+
+    &:last-child { border-bottom: 0; }
+  }
+
+  &__item-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+
+    strong {
+      overflow: hidden;
+      color: var(--ap-text0);
+      font-size: 13px;
+      font-weight: 550;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    span {
+      color: var(--ap-text2);
+      font-size: 11px;
+    }
+  }
+
+  &__footer {
+    color: var(--ap-text2);
+    border-top: 1px solid color-mix(in srgb, var(--ap-text0) 9%, transparent);
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 520px) {
+  .trash-dialog {
+    max-height: calc(100dvh - 24px);
+
+    &__backdrop { padding: 12px; }
+    &__header, &__footer { padding-inline: 14px; }
+    &__body { padding-inline: 14px; }
+    &__restore span { display: none; }
+  }
+}

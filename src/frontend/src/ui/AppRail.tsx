@@ -1,8 +1,8 @@
 import React from 'react';
-import { Home, Search, MessageCircle, Network, GraduationCap, Bookmark, Plus, PanelLeft, Palette, Command, Link as LinkIcon } from 'lucide-react';
+import { Home, Search, MessageCircle, Network, GraduationCap, Bookmark, Plus, PanelLeft, Palette, Command, Link as LinkIcon, Trash2 } from 'lucide-react';
 import './AppRail.scss';
 
-type Destination = 'home' | 'search' | 'chat' | 'graph' | 'review' | 'favorites' | null;
+type Destination = 'home' | 'search' | 'chat' | 'graph' | 'review' | 'favorites' | 'trash' | null;
 
 interface Props {
   active: Destination;
@@ -10,10 +10,11 @@ interface Props {
   reviewCount?: number;
   onHome: () => void; onSearch: () => void; onChat: () => void;
   onGraph: () => void; onReview: () => void; onFavorites: () => void;
+  onTrash?: () => void;
   onAdd: () => void; onToggleSidebar: () => void; onCommands: () => void; onTheme: () => void;
 }
 
-const AppRail: React.FC<Props> = ({ active, sidebarCollapsed, reviewCount = 0, onHome, onSearch, onChat, onGraph, onReview, onFavorites, onAdd, onToggleSidebar, onCommands, onTheme }) => {
+const AppRail: React.FC<Props> = ({ active, sidebarCollapsed, reviewCount = 0, onHome, onSearch, onChat, onGraph, onReview, onFavorites, onTrash, onAdd, onToggleSidebar, onCommands, onTheme }) => {
   const item = (id: Exclude<Destination, null>, label: string, icon: React.ReactNode, onClick: () => void, badge?: number) => (
     <button className={`app-rail__item${active === id ? ' app-rail__item--active' : ''}`} onClick={onClick} title={label} aria-label={label} aria-current={active === id ? 'page' : undefined}>
       {icon}{badge ? <span className="app-rail__badge">{badge > 99 ? '99+' : badge}</span> : null}<span className="app-rail__tip">{label}</span>
@@ -30,6 +31,7 @@ const AppRail: React.FC<Props> = ({ active, sidebarCollapsed, reviewCount = 0, o
         {item('graph', 'Graphe', <Network size={19} />, onGraph)}
         {item('review', 'Révisions', <GraduationCap size={19} />, onReview, reviewCount)}
         {item('favorites', 'À lire / favoris', <Bookmark size={19} />, onFavorites)}
+        {onTrash && item('trash', 'Corbeille', <Trash2 size={19} />, onTrash)}
       </div>
       <div className="app-rail__spacer" />
       <button className={`app-rail__item${sidebarCollapsed ? '' : ' app-rail__item--active'}`} onClick={onToggleSidebar} title="Afficher les fichiers" aria-label="Afficher les fichiers"><PanelLeft size={19} /><span className="app-rail__tip">Fichiers</span></button>

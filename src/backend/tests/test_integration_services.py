@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi import WebSocketDisconnect
 from fastapi.testclient import TestClient
 from redis import asyncio as aioredis
@@ -18,7 +18,7 @@ from sqlalchemy.pool import NullPool
 
 from application.api_tokens import ApiTokenService
 from application.authorization import PadAction, authorize
-from application.errors import ConflictError, PermissionDeniedError
+from application.errors import ConflictError, PermissionDeniedError, ResourceNotFoundError
 from application.membership import MembershipService
 from application.pad_writes import PadWriteService
 from application.principal import Principal
@@ -28,6 +28,7 @@ from cache import RedisClient
 from domain.pad import Pad
 from routers import ws_router
 from api.v1.router import v1_router
+from routers.pad_router import list_trashed_pads, restore_pad
 
 
 @pytest.mark.integration
@@ -107,6 +108,63 @@ async def test_pad_members_permission_matrix(integration_session, integration_re
         assert accepted is allowed
         assert await integration_redis.xlen(stream) == (1 if allowed else 0)
         await integration_redis.delete(stream)
+
+
+@pytest.mark.integration
+async def test_pad_trash_hides_from_reads_and_restores_without_content_loss(integration_session, monkeypatch):
+    owner_id = uuid4()
+    owner = UserStore(
+        id=owner_id,
+        username=f"trash-owner-{owner_id}",
+        email=f"{owner_id}@example.test",
+    )
+    original_content = {"content": "keep this exact content", "format": "markdown"}
+    pad = PadStore(
+        id=uuid4(),
+        owner_id=owner_id,
+        display_name="recoverable document",
+        data=original_content,
+        sharing_policy="private",
+        whitelist=[],
+        pad_type="document",
+    )
+    integration_session.add_all([owner, pad])
+    await integration_session.commit()
+
+    service = PadQueryService(integration_session)
+    assert any(item["pad_id"] == str(pad.id) for item in await service.search(owner_id, "exact content"))
+    active = await PadStore.get_by_id(integration_session, pad.id)
+    assert active is not None
+    assert await active.delete(integration_session)
+
+    assert await PadStore.get_by_id(integration_session, pad.id) is None
+    assert all(item["id"] != str(pad.id) for item in await service.list_pads(owner_id))
+    assert not any(item["pad_id"] == str(pad.id) for item in await service.search(owner_id, "exact content"))
+    with pytest.raises(ResourceNotFoundError):
+        await service.get_pad(pad.id, owner_id)
+
+    trashed = (await integration_session.execute(
+        select(PadStore).where(PadStore.id == pad.id, PadStore.deleted_at.is_not(None))
+    )).scalar_one()
+    assert trashed.data == original_content
+    trash_payload = await list_trashed_pads(SimpleNamespace(id=owner_id), integration_session)
+    assert len(trash_payload["pads"]) == 1
+    assert trash_payload["pads"][0]["id"] == str(pad.id)
+    assert "data" not in trash_payload["pads"][0]
+
+    with pytest.raises(HTTPException) as denied:
+        await restore_pad(pad.id, SimpleNamespace(id=uuid4()), integration_session)
+    assert denied.value.status_code == 404
+
+    redis = SimpleNamespace(delete=AsyncMock())
+    monkeypatch.setattr(RedisClient, "get_instance", AsyncMock(return_value=redis))
+    await restore_pad(pad.id, SimpleNamespace(id=owner_id), integration_session)
+    redis.delete.assert_awaited_once_with(f"pad:{pad.id}")
+
+    restored = await PadStore.get_by_id(integration_session, pad.id)
+    assert restored is not None
+    assert restored.data == original_content
+    assert any(item["id"] == str(pad.id) for item in await service.list_pads(owner_id))
 
 
 @pytest.mark.integration

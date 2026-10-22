@@ -302,7 +302,7 @@ class Pad:
         return self
 
     async def delete(self, session: AsyncSession) -> bool:
-        """Delete the pad from both database and cache"""
+        """Move the pad to trash and evict its live cache/worker state."""
         await self.release_worker()
         
         success = await self._store.delete(session)
@@ -312,7 +312,7 @@ class Pad:
             print(f"Failed to delete pad {self.id} from database")
             return False
 
-        print(f"Deleted pad {self.id} from database and cache")
+        print(f"Moved pad {self.id} to trash and evicted its cache")
         return success
 
     async def cache(self) -> None:

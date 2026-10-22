@@ -207,7 +207,7 @@ async def _tool_search_pads(
     like = f"%{query}%"
     stmt = (
         sa_select(PadStore.id, PadStore.display_name, PadStore.tags, PadStore.updated_at)
-        .where(PadStore.owner_id == user_id)
+        .where(PadStore.owner_id == user_id, PadStore.deleted_at.is_(None))
         .where(PadStore.display_name.ilike(like))
         .order_by(PadStore.updated_at.desc())
         .limit(top_k)
@@ -234,7 +234,11 @@ async def _tool_read_pad(
         pid = UUID(args.get("pad_id") or "")
     except Exception:
         raise ValueError("invalid pad_id")
-    stmt = sa_select(PadStore).where(PadStore.id == pid, PadStore.owner_id == user_id)
+    stmt = sa_select(PadStore).where(
+        PadStore.id == pid,
+        PadStore.owner_id == user_id,
+        PadStore.deleted_at.is_(None),
+    )
     pad = (await session.execute(stmt)).scalar_one_or_none()
     if pad is None:
         raise ValueError(f"pad {pid} not found or not owned by user")
@@ -261,7 +265,7 @@ async def _tool_list_recent(
             PadStore.id, PadStore.display_name, PadStore.pad_type,
             PadStore.tags, PadStore.updated_at, PadStore.source_url,
         )
-        .where(PadStore.owner_id == user_id)
+        .where(PadStore.owner_id == user_id, PadStore.deleted_at.is_(None))
         .order_by(PadStore.updated_at.desc())
         .limit(limit)
     )
