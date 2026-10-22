@@ -1,51 +1,52 @@
 # Audit exploratoire UI Alcove — 2026-10-22
 
-## ALCO-UI-001 — Erreur intermittente au rendu initial du canevas
+## ALCO-UI-001 — Crash du canevas : `searchMatches` vaut `null`
 
-**Statut :** reproduit sur deux chargements distincts; persiste sur le dernier  
-**Sévérité proposée :** P2  
+**Statut :** cause racine confirmée dans les bundles de production; reproduit sur plusieurs chargements  
+**Sévérité proposée :** P1 — le canevas et, dans cette session, toute la navigation deviennent inutilisables  
 **Environnement :** Chrome sur macOS, déploiement `https://alcove.codicam.fr/`
 
-### Observation
+### Symptôme observé
 
-Au premier chargement, l’écran a affiché « Une erreur a interrompu l’affichage » avec :
+L’écran affiche « Une erreur a interrompu l’affichage » avec :
 
 ```
 TypeError: Cannot read properties of null (reading 'forEach')
 assets/excalidraw-CGF0p-zd.js:144
 ```
 
-La console confirme l’exception pendant le rendu Excalidraw. Lors de cette première observation, « Réessayer sans recharger » a rétabli l’éditeur. Un onglet neuf et un rechargement ultérieur n’avaient pas reproduit le problème.
+La console confirme l’exception pendant le rendu Excalidraw. Après connexion, le rechargement a reproduit l’erreur et masqué la navigation. Le bouton « Réessayer sans recharger » n’a pas récupéré cette session; l’écran est encore bloqué à la dernière vérification.
 
-Après connexion réussie à Alcove, le rechargement de l’application a reproduit la même exception et masqué toute la navigation. Le bouton « Réessayer sans recharger » était visible et activé, mais deux clics (DOM et position visible) n’ont pas fait disparaître l’erreur. La console a de nouveau signalé l’exception de rendu.
+### Cause racine confirmée
 
-### Étapes observées
+Les deux extraits concordent dans les ressources servies en production :
 
-1. Ouvrir `https://alcove.codicam.fr/` dans Chrome.
-2. Observer l’erreur de rendu initial.
-3. Lors du premier passage, cliquer sur « Réessayer sans recharger » : l’éditeur réapparaît.
-4. Se connecter à Alcove, puis recharger l’application.
-5. Constater la même erreur `forEach` dans Excalidraw.
-6. Cliquer deux fois sur « Réessayer sans recharger » : l’écran d’erreur reste affiché.
+- Le bundle applicatif `index-CuxsPwia.js` affecte `e.searchMatches=null` dans la normalisation du canevas. Le code source correspondant sur `main` est `src/frontend/src/lib/canvas.ts`, qui affecte `appState.searchMatches = null`.
+- Le bundle Excalidraw `excalidraw-CGF0p-zd.js` appelle directement `E.searchMatches.forEach(...)` pendant le rendu.
+- La valeur nulle provoque donc exactement le `TypeError` affiché. Le bundle Excalidraw ne vérifie pas cette valeur avant l’appel.
 
-Aucune note n’a été créée ni modifiée pendant cet audit.
+Le code source de `ErrorBoundary.tsx` montre que « Réessayer sans recharger » efface seulement l’erreur React puis remonte le même arbre; si le canevas conserve `searchMatches: null`, le rendu retombe sur la même exception.
 
-### Résultat attendu
+### Reproduction
 
-Les données initiales/restaurées du canevas sont validées ou normalisées avant leur passage à Excalidraw. Une collection absente ne doit pas faire tomber l’éditeur; la reprise doit restaurer une session utilisable.
+1. Ouvrir `https://alcove.codicam.fr/` dans Chrome avec le canevas affiché.
+2. Constater `Cannot read properties of null (reading 'forEach')` dans le panneau d’erreur.
+3. Recharger après connexion : la même exception revient.
+4. Cliquer sur « Réessayer sans recharger » : sur la dernière reproduction, l’écran reste bloqué.
 
-### À investiguer
+Lors d’une première occurrence, le bouton de reprise avait rétabli l’éditeur une fois. Les chargements suivants ont reproduit le défaut et la reprise n’a plus suffi.
 
-- Identifier la valeur passée à `.forEach` et sa source (état initial, données persistées ou réponse API).
-- Ajouter une validation/normalisation au point de frontière entre l’état du pad et Excalidraw.
-- Vérifier pourquoi la reprise échoue sur le chargement authentifié.
-- Ajouter un test couvrant la valeur `null` et vérifier que l’écran de récupération ne nécessite pas une relance manuelle.
+### Correctif à réaliser
 
-## Parcours authentifié
+Dans la normalisation, fournir une collection vide au lieu de `null` pour `searchMatches` (ou omettre la propriété si Excalidraw lui applique correctement son défaut). Ajouter une régression vérifiant les valeurs absentes/nulles puis contrôler un chargement de canevas réel dans la version déployée.
+
+### Parcours authentifié
 
 Le premier retour OAuth observé a échoué avec `Invalid authentication state`; une nouvelle tentative isolée s’est terminée par « Authentication Complete ». Après rechargement, l’application a ouvert l’éditeur, puis le défaut ALCO-UI-001 a bloqué l’écran. Ce premier retour OAuth est donc noté comme transitoire/non reproduit, pas comme défaut confirmé.
 
-## Couverture restant à faire
+Aucune note n’a été créée ni modifiée pendant cet audit.
+
+### Couverture restant à faire
 
 Les parcours privés ne sont pas encore évalués, car l’erreur ALCO-UI-001 masque la navigation après connexion. À reprendre une fois le canevas accessible :
 
