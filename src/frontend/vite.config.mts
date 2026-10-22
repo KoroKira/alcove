@@ -68,8 +68,12 @@ export default defineConfig(({ mode }) => {
         registerType: 'autoUpdate',
         devOptions: { enabled: false },
         workbox: {
-          globPatterns: ['**/*.{css,html,ico,png,svg,woff2}'],
-          maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+          // Precache the JS chunks as well as the app shell: index.html
+          // module-preloads the vendor chunks on the first visit, so omitting
+          // them makes a PWA reload fail when the network is unavailable.
+          globPatterns: ['**/*.{css,html,ico,js,png,svg,woff2}'],
+          // Mermaid is currently the largest vendor chunk (about 5.5 MiB).
+          maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
           navigateFallback: null,
           runtimeCaching: [
             {
