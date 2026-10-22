@@ -20,6 +20,14 @@ export class WorkspaceIntegrationDisabledError extends Error {
 const isWorkspaceIntegrationDisabled = (error: unknown): error is WorkspaceIntegrationDisabledError =>
   error instanceof WorkspaceIntegrationDisabledError;
 
+const detailMessage = (detail: unknown): string | undefined => {
+  if (typeof detail === 'string') return detail;
+  if (detail && typeof detail === 'object' && 'message' in detail && typeof detail.message === 'string') {
+    return detail.message;
+  }
+  return undefined;
+};
+
 const WORKSPACE_QUERY_KEY = ['workspaceState'];
 
 // API function to fetch workspace state (https://pkg.go.dev/github.com/coder/coder/codersdk#WorkspaceStatus)
@@ -31,9 +39,7 @@ const fetchWorkspaceState = async (): Promise<WorkspaceState> => {
       let errorMessage = `Failed to fetch workspace state. Status: ${response.status}`;
       try {
         const errorData = await response.json();
-        if (errorData && errorData.detail) {
-          errorMessage = errorData.detail;
-        }
+        errorMessage = detailMessage(errorData?.detail) ?? errorMessage;
       } catch (e) {
         // Ignore if error response cannot be parsed
       }
