@@ -46,6 +46,13 @@
     color: var(--color-on-surface-low, var(--ap-text2));
   }
 
+  &__load-error {
+    gap: 10px;
+    padding: 24px;
+    text-align: center;
+    p { max-width: 520px; line-height: 1.5; }
+  }
+
   &--focus {
     .document-pad__preview {
       max-width: 720px;
@@ -286,6 +293,53 @@
     &--unsaved { color: var(--ap-yellow); opacity: 0.8; }
     &--saving { color: var(--ap-accent2); opacity: 0.8; }
     &--saved { color: var(--ap-green); opacity: 0.7; }
+  }
+
+  &__retry-save {
+    background: none;
+    border: 1px solid var(--color-surface-mid, var(--ap-bg2));
+    border-radius: var(--ap-radius-xs);
+    color: var(--ap-text0);
+    cursor: pointer;
+    font: inherit;
+    font-size: 11px;
+    padding: 3px 7px;
+    &:hover { background: var(--color-surface-mid, var(--ap-bg2)); }
+    &:focus-visible { outline: 2px solid var(--ap-accent); outline-offset: 2px; }
+  }
+
+  &__recovery,
+  &__recovery-error {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px;
+    background: var(--color-surface, var(--ap-bg1));
+    border-bottom: 1px solid var(--color-surface-mid, var(--ap-bg2));
+    color: var(--color-on-surface, var(--ap-text0));
+    font-size: 12px;
+    word-break: break-word;
+  }
+
+  &__recovery-error { color: var(--ap-yellow); }
+
+  &__recovery-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 6px;
+
+    button {
+      background: var(--color-surface-mid, var(--ap-bg2));
+      border: 1px solid var(--color-surface-high, var(--ap-bg3));
+      border-radius: var(--ap-radius-xs);
+      color: var(--color-on-surface, var(--ap-text0));
+      cursor: pointer;
+      font: inherit;
+      padding: 4px 8px;
+      &:focus-visible { outline: 2px solid var(--ap-accent); outline-offset: 2px; }
+    }
   }
 
   &__body {
