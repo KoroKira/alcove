@@ -29,6 +29,14 @@ export function hasStructuredPadDraft(padId: string): boolean {
   }
 }
 
+export function removeStructuredPadDraft(padId: string): void {
+  try {
+    localStorage.removeItem(keyFor(padId));
+  } catch {
+    // The server copy remains available even when local storage is unavailable.
+  }
+}
+
 export function clearStructuredPadDraft<T>(padId: string, savedData: T): void {
   try {
     const raw = localStorage.getItem(keyFor(padId));
