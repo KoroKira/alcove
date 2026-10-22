@@ -3,7 +3,7 @@
  *
  * The server never touches Ollama anymore; the browser does:
  *   • chunk text (same algorithm as the retired Python `chunk_text`)
- *   • embed each chunk via localhost Ollama /api/embeddings
+ *   • embed each chunk via the same-origin Ollama /api/embed proxy
  *   • POST the chunks + embeddings to /api/ai/rag/index-chunks
  *
  * For search: embed the query locally, POST to /api/ai/rag/knn, get back the
@@ -37,16 +37,17 @@ export async function embedText(text: string, model = EMBED_MODEL_DEFAULT): Prom
   // when Ollama reports a transient 5xx instead of losing the whole pad.
   const inputs = Array.from(new Set([text.slice(0, 6000), text.slice(0, 3000)]));
   let lastStatus = 0;
-  for (const prompt of inputs) {
+  for (const input of inputs) {
     for (let attempt = 0; attempt < 2; attempt++) {
-      const resp = await fetch(`${url}/api/embeddings`, {
+      const resp = await fetch(`${url}/api/embed`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, prompt }),
+        body: JSON.stringify({ model, input }),
       });
       lastStatus = resp.status;
       if (resp.ok) {
         const j = await resp.json();
+        if (Array.isArray(j.embeddings?.[0])) return j.embeddings[0] as number[];
         if (Array.isArray(j.embedding)) return j.embedding as number[];
         throw new Error('Ollama embed returned no vector');
       }

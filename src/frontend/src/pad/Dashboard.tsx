@@ -4,7 +4,7 @@ import type { AppState } from '@atyrode/excalidraw/types';
 import StateIndicator from './StateIndicator';
 import ControlButton from './buttons/ControlButton';
 import { ActionButtonGrid } from './buttons';
-import { useWorkspace } from '../hooks/useWorkspace';
+import { useWorkspace, WorkspaceIntegrationDisabledError } from '../hooks/useWorkspace';
 import './Dashboard.scss';
 
 // Direct import from types
@@ -40,6 +40,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
       return 'Loading workspace status...';
     }
     if (stateError) {
+      if (stateError instanceof WorkspaceIntegrationDisabledError) {
+        return 'La gestion des workspaces n’est pas configurée sur cette instance.';
+      }
       return 'Error loading workspace status. Please try again.';
     }
     if (!workspaceState) {
@@ -173,7 +176,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               element={element}
               excalidrawAPI={excalidrawAPI}
             />
-          ) : (
+          ) : stateError instanceof WorkspaceIntegrationDisabledError ? null : (
             <div className="dashboard__welcome-message">
               <h1 className="dashboard__welcome-message__title">
                 {getWelcomeMessage()}

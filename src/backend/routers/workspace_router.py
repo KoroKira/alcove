@@ -1,14 +1,11 @@
 import os
-import json
-import time
 
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
-from dependencies import UserSession, require_auth, get_coder_api
+from dependencies import UserSession, require_auth, get_optional_coder_api
 from coder import CoderAPI
-from config import STATIC_DIR
 
 workspace_router = APIRouter()
 
@@ -23,11 +20,20 @@ class WorkspaceState(BaseModel):
 @workspace_router.get("/state", response_model=WorkspaceState)
 async def get_workspace_state(
     user: UserSession = Depends(require_auth),
-    coder_api: CoderAPI = Depends(get_coder_api)
+    coder_api: CoderAPI | None = Depends(get_optional_coder_api),
 ):
     """
     Get the current state of the user's workspace
     """
+
+    if coder_api is None:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "workspace_integration_disabled",
+                "message": "Workspace management is not configured on this Alcove instance.",
+            },
+        )
 
     coder_user: dict = coder_api.get_user_by_email(user.email)
     if not coder_user:
@@ -62,7 +68,7 @@ async def get_workspace_state(
 @workspace_router.post("/start")
 async def start_workspace(
     user: UserSession = Depends(require_auth),
-    coder_api: CoderAPI = Depends(get_coder_api)
+    coder_api: CoderAPI | None = Depends(get_optional_coder_api),
 ):
     """
     Start a workspace for the authenticated user
@@ -81,7 +87,7 @@ async def start_workspace(
 @workspace_router.post("/stop")
 async def stop_workspace(
     user: UserSession = Depends(require_auth),
-    coder_api: CoderAPI = Depends(get_coder_api)
+    coder_api: CoderAPI | None = Depends(get_optional_coder_api),
 ):
     """
     Stop a workspace for the authenticated user

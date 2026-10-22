@@ -10,6 +10,16 @@ export interface WorkspaceState {
   agent: string;
 }
 
+export class WorkspaceIntegrationDisabledError extends Error {
+  constructor() {
+    super('Workspace management is not configured on this Alcove instance.');
+    this.name = 'WorkspaceIntegrationDisabledError';
+  }
+}
+
+const isWorkspaceIntegrationDisabled = (error: unknown): error is WorkspaceIntegrationDisabledError =>
+  error instanceof WorkspaceIntegrationDisabledError;
+
 const WORKSPACE_QUERY_KEY = ['workspaceState'];
 
 // API function to fetch workspace state (https://pkg.go.dev/github.com/coder/coder/codersdk#WorkspaceStatus)
@@ -26,6 +36,9 @@ const fetchWorkspaceState = async (): Promise<WorkspaceState> => {
         }
       } catch (e) {
         // Ignore if error response cannot be parsed
+      }
+      if (response.status === 503 && errorMessage.includes('not configured')) {
+        throw new WorkspaceIntegrationDisabledError();
       }
       throw new Error(errorMessage);
     }
@@ -95,7 +108,10 @@ export const useWorkspace = () => {
   } = useQuery<WorkspaceState, Error>({
     queryKey: WORKSPACE_QUERY_KEY,
     queryFn: fetchWorkspaceState,
-    refetchInterval: 5000, // Poll every 5 seconds
+    // Do not repeatedly hit the API when this optional integration is not set
+    // up. Other workspace errors can recover, so keep polling those.
+    refetchInterval: (query) =>
+      isWorkspaceIntegrationDisabled(query.state.error) ? false : 5000,
   });
 
   const startMutation = useMutation<any, Error, void>({

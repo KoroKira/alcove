@@ -3,7 +3,7 @@ import json
 import pytest
 from fastapi import HTTPException
 
-from routers.ai.ollama_proxy import _validated_payload
+from routers.ai.ollama_proxy import _normalize_embedding_payload, _validated_payload
 
 
 def test_chat_context_size_is_bounded(monkeypatch):
@@ -28,8 +28,22 @@ def test_chat_message_count_is_bounded(monkeypatch):
 def test_embedding_text_size_is_bounded(monkeypatch):
     monkeypatch.setattr("routers.ai.ollama_proxy.AI_MAX_EMBED_CHARS", 3)
     with pytest.raises(HTTPException) as exc:
-        _validated_payload(b'{"prompt":"four"}', "/api/embeddings")
+        _validated_payload(b'{"input":"four"}', "/api/embed")
     assert exc.value.status_code == 413
+
+
+def test_embedding_array_items_are_bounded(monkeypatch):
+    monkeypatch.setattr("routers.ai.ollama_proxy.AI_MAX_EMBED_CHARS", 3)
+    with pytest.raises(HTTPException) as exc:
+        _validated_payload(b'{"input":["ok","four"]}', "/api/embed")
+    assert exc.value.status_code == 413
+
+
+def test_legacy_embedding_payload_uses_current_ollama_input_field():
+    assert _normalize_embedding_payload({"model": "nomic-embed-text", "prompt": "hello"}) == {
+        "model": "nomic-embed-text",
+        "input": "hello",
+    }
 
 
 def test_valid_chat_payload_is_accepted():

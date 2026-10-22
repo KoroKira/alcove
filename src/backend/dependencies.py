@@ -207,6 +207,16 @@ def get_coder_api():
     """
     return CoderAPI()
 
+
+def get_optional_coder_api():
+    """Return the optional Coder integration when it is configured."""
+    # Coder is not required by the rest of Alcove. Check its two required
+    # settings before constructing the client so an incomplete configuration
+    # cannot turn dashboard polling into a server error.
+    if not os.getenv("CODER_API_KEY") or not os.getenv("CODER_URL"):
+        return None
+    return CoderAPI()
+
 class PadAccess:
     """
     Dependency for handling pad access control.
