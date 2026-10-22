@@ -255,7 +255,7 @@ class PadAccess:
                 ),
             )
 
-        pad = await Pad.get_by_id(session, pad_id)
+        pad = await Pad.get_by_id(session, pad_id, fresh_store=store)
         if not pad:
             raise HTTPException(status_code=404, detail="Pad not found")
         return pad, user

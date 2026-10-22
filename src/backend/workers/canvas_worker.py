@@ -453,6 +453,10 @@ class CanvasWorker:
                     logger.warning("Pad %s not found, skipping save", pad_id)
                     return False
 
+                if pad.pad_type != "canvas":
+                    logger.warning("Pad %s is %s, skipping canvas worker save", pad_id, pad.pad_type)
+                    return False
+
                 await pad.save(session)
                 await self._sync_to_local(pad)
                 await self._maybe_snapshot(session, pad)

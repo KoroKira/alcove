@@ -133,7 +133,7 @@ class PadQueryService:
             raise ResourceNotFoundError("Pad not found")
         if not await authorize_read(self.session, user_id, store):
             raise PermissionDeniedError("Not authorized to access this pad")
-        pad = await Pad.get_by_id(self.session, pad_id)
+        pad = await Pad.get_by_id(self.session, pad_id, fresh_store=store)
         if not pad:
             raise ResourceNotFoundError("Pad not found")
         return pad

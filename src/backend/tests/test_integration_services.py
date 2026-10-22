@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi import WebSocketDisconnect
 from fastapi.testclient import TestClient
 from redis import asyncio as aioredis
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -25,6 +25,7 @@ from application.principal import Principal
 from application.pads import PadQueryService
 from database.models import AuditEventStore, PadMemberStore, PadStore, UserStore
 from cache import RedisClient
+from domain.pad import Pad
 from routers import ws_router
 from api.v1.router import v1_router
 
@@ -289,6 +290,70 @@ async def test_membership_is_authoritative_for_shared_listing_search_and_content
         await query.get_pad_content(private_pad.id, outsider_id)
     with pytest.raises(PermissionDeniedError):
         await query.get_pad_content(stale_pad.id, outsider_id)
+
+
+@pytest.mark.integration
+async def test_document_reads_refresh_stale_cache_without_starting_canvas_worker(
+    integration_session, integration_redis, monkeypatch
+):
+    owner_id = uuid4()
+    pad_id = uuid4()
+    old_updated_at = datetime.now(timezone.utc) - timedelta(minutes=2)
+    new_updated_at = old_updated_at + timedelta(seconds=1)
+    owner = UserStore(
+        id=owner_id,
+        username=f"cache-owner-{owner_id}",
+        email=f"{owner_id}@example.test",
+    )
+    row = PadStore(
+        id=pad_id,
+        owner_id=owner_id,
+        display_name="document cache regression",
+        data={"content": "original", "format": "markdown"},
+        sharing_policy="private",
+        whitelist=[],
+        pad_type="document",
+        updated_at=old_updated_at,
+    )
+    integration_session.add_all([owner, row])
+    await integration_session.commit()
+    await integration_session.refresh(row)
+
+    # Pad.create used to start a canvas worker before callers set the final
+    # pad type. Creation is now passive until an actual canvas read/connection.
+    ensure_worker = AsyncMock(return_value=True)
+    monkeypatch.setattr(Pad, "ensure_worker", ensure_worker)
+    monkeypatch.setattr(RedisClient, "get_instance", AsyncMock(return_value=integration_redis))
+
+    created = await Pad.create(
+        integration_session,
+        owner_id=owner_id,
+        display_name="deferred worker creation regression",
+    )
+    ensure_worker.assert_not_awaited()
+    await integration_redis.delete(f"pad:{created.id}")
+    ensure_worker.reset_mock()
+
+    cached = Pad.from_store(row, integration_redis)
+    await cached.cache()
+    await integration_session.execute(
+        update(PadStore)
+        .where(PadStore.id == pad_id)
+        .values(
+            data={"content": "fresh database value", "format": "markdown"},
+            updated_at=new_updated_at,
+        )
+    )
+    await integration_session.commit()
+    integration_session.expire_all()
+
+    fresh = await Pad.get_by_id(integration_session, pad_id)
+    assert fresh is not None
+    assert fresh.data["content"] == "fresh database value"
+    assert fresh.updated_at == new_updated_at
+    ensure_worker.assert_not_awaited()
+
+    await integration_redis.delete(f"pad:{pad_id}")
 
 
 @pytest.mark.integration

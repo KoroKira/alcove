@@ -428,8 +428,9 @@ async def websocket_endpoint(
             # Ensure the canvas worker is processing this pad's stream.
             # This is critical after server restarts: stale worker_id in Redis cache
             # tricks ensure_worker() into returning True, so we must start directly.
-            canvas_worker = await CanvasWorker.get_instance()
-            await canvas_worker.start_processing_pad(pad_id)
+            if getattr(pad, "pad_type", "canvas") == "canvas":
+                canvas_worker = await CanvasWorker.get_instance()
+                await canvas_worker.start_processing_pad(pad_id)
 
             await add_connection(redis_client, pad_id, str(user.id), user.username, connection_id)
 

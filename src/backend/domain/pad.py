@@ -100,7 +100,6 @@ class Pad:
         redis = await RedisClient.get_instance()
         pad = cls.from_store(store, redis)
         
-        await pad.ensure_worker()
         await pad.cache()
             
         return pad
@@ -170,24 +169,35 @@ class Pad:
             return None
 
     @classmethod
-    async def get_by_id(cls, session: AsyncSession, pad_id: UUID) -> Optional['Pad']:
-        """Get a pad by ID, first trying Redis cache then falling back to database"""
+    async def get_by_id(
+        cls,
+        session: AsyncSession,
+        pad_id: UUID,
+        *,
+        fresh_store: Optional[PadStore] = None,
+    ) -> Optional['Pad']:
+        """Get a pad by ID, refreshing Redis whenever its DB version is stale."""
+        store = fresh_store if fresh_store is not None else await PadStore.get_by_id(session, pad_id)
+        if not store:
+            return None
+
         redis = await RedisClient.get_instance()
-        
-        # Try to get from cache first
+
+        # Redis can outlive writes made by another app process or an older
+        # code path. Compare its timestamp with the database row before using
+        # cached content; otherwise a later CAS write rejects a fresh editor
+        # with a misleading "modified elsewhere" conflict.
         pad = await cls.from_redis(redis, pad_id)
-        if pad:
-            await pad.ensure_worker()
-            return pad
-            
-        # Fall back to database
-        store = await PadStore.get_by_id(session, pad_id)
-        if store:
+        if not pad or pad.updated_at != store.updated_at:
             pad = cls.from_store(store, redis)
-            await pad.ensure_worker()
             await pad.cache()
-            return pad
-        return None
+
+        # Only canvases use the collaborative canvas worker. Its periodic
+        # persistence loop must never rewrite document/kanban/etc. timestamps
+        # or data.
+        if pad.pad_type == "canvas":
+            await pad.ensure_worker()
+        return pad
 
     @classmethod
     def from_store(cls, store: PadStore, redis: AsyncRedis) -> 'Pad':
