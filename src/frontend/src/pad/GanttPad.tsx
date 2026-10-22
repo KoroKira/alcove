@@ -4,7 +4,7 @@ import { FieldValueRow, AttachmentList } from './FieldEditor';
 import type { FieldDef, FieldValue, FieldType, Attachment, Priority } from './fieldTypes';
 import { uid, PRIORITY_LABELS, PRIORITY_COLORS, FIELD_TYPE_LABELS } from './fieldTypes';
 import { snapshotDomPad } from '../lib/thumbnailSnapshot';
-import { clearStructuredPadDraft, hasStructuredPadDraft, readStructuredPadDraft, writeStructuredPadDraft } from '../lib/structuredPadDraft';
+import { clearStructuredPadDraft, hasStructuredPadDraft, readStructuredPadDraft, removeStructuredPadDraft, writeStructuredPadDraft } from '../lib/structuredPadDraft';
 import './GanttPad.scss';
 
 /* ─── Types ─── */
@@ -489,6 +489,12 @@ export default function GanttPad({ padId, data, onDataChange }: Props) {
     }, SAVE_DEBOUNCE);
   }, [padId, onDataChange]);
 
+  const discardDraftAndLoadServer = () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    removeStructuredPadDraft(padId);
+    window.location.reload();
+  };
+
   const update = (t: GanttTask[], sc = schema, tpls = templates) => { setTasks(t); save(t, sc, tpls); };
   const updateSchema = (sc: FieldDef[]) => { setSchema(sc); save(tasks, sc, templates); };
   const updateTemplates = (tpls: GanttTaskTemplate[]) => { setTemplates(tpls); save(tasks, schema, tpls); };
@@ -536,8 +542,8 @@ export default function GanttPad({ padId, data, onDataChange }: Props) {
   return (
     <div className="gantt" ref={boardRef}>
       {conflict && (
-        <div style={{ background: '#f5a623', color: '#000', padding: '8px 12px', fontSize: 13, textAlign: 'center' }}>
-          ⚠️ Ce planning a été modifié sur un autre appareil. Recharge la page pour repartir de la version serveur.
+        <div role="alert" style={{ background: '#f5a623', color: '#000', padding: '8px 12px', fontSize: 13, textAlign: 'center' }}>
+          ⚠️ Ce planning a été modifié sur un autre appareil. <button onClick={discardDraftAndLoadServer}>Abandonner le brouillon et charger la version serveur</button>
         </div>
       )}
       {draftRestored && <div role="status" style={{ padding: '8px 12px', fontSize: 13, textAlign: 'center' }}>Brouillon local récupéré. <button onClick={() => save(tasks, schema, templates)}>Enregistrer maintenant</button></div>}

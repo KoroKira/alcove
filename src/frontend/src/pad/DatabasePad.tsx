@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Plus, Trash2, Table2, Columns3, X } from 'lucide-react';
 import { snapshotDomPad } from '../lib/thumbnailSnapshot';
-import { clearStructuredPadDraft, hasStructuredPadDraft, readStructuredPadDraft, writeStructuredPadDraft } from '../lib/structuredPadDraft';
+import { clearStructuredPadDraft, hasStructuredPadDraft, readStructuredPadDraft, removeStructuredPadDraft, writeStructuredPadDraft } from '../lib/structuredPadDraft';
 import './DatabasePad.scss';
 
 export interface DbColumn { id: string; name: string; }
@@ -69,6 +69,12 @@ export default function DatabasePad({ padId, data, onDataChange }: Props) {
     }, 400);
   }, [padId, onDataChange]);
 
+  const discardDraftAndLoadServer = () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    removeStructuredPadDraft(padId);
+    window.location.reload();
+  };
+
   /* ── mutations ── */
   const setCell = (rowId: string, colId: string, value: string) =>
     commit({ ...local, rows: local.rows.map(r => r.id === rowId ? { ...r, cells: { ...r.cells, [colId]: value } } : r) });
@@ -119,8 +125,8 @@ export default function DatabasePad({ padId, data, onDataChange }: Props) {
   return (
     <div className="dbpad" ref={boardRef}>
       {conflict && (
-        <div style={{ background: '#f5a623', color: '#000', padding: '8px 12px', fontSize: 13, textAlign: 'center' }}>
-          ⚠️ Cette base a été modifiée sur un autre appareil. Recharge la page pour repartir de la version serveur.
+        <div role="alert" style={{ background: '#f5a623', color: '#000', padding: '8px 12px', fontSize: 13, textAlign: 'center' }}>
+          ⚠️ Cette base a été modifiée sur un autre appareil. <button onClick={discardDraftAndLoadServer}>Abandonner le brouillon et charger la version serveur</button>
         </div>
       )}
       {draftRestored && <div role="status" style={{ padding: '8px 12px', fontSize: 13, textAlign: 'center' }}>Brouillon local récupéré. <button onClick={() => commit(local)}>Enregistrer maintenant</button></div>}

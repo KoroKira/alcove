@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { clearStructuredPadDraft, readStructuredPadDraft, writeStructuredPadDraft } from './structuredPadDraft';
+import { clearStructuredPadDraft, readStructuredPadDraft, removeStructuredPadDraft, writeStructuredPadDraft } from './structuredPadDraft';
 
 describe('structured pad drafts', () => {
   afterEach(() => localStorage.clear());
@@ -20,5 +20,11 @@ describe('structured pad drafts', () => {
     expect(readStructuredPadDraft('pad-1', null)).toEqual(newerDraft);
     clearStructuredPadDraft('pad-1', newerDraft);
     expect(readStructuredPadDraft('pad-1', null)).toBeNull();
+  });
+
+  it('removes a conflicting draft when the user chooses the server copy', () => {
+    writeStructuredPadDraft('pad-1', { value: 'local edit' });
+    removeStructuredPadDraft('pad-1');
+    expect(readStructuredPadDraft('pad-1', { value: 'server' })).toEqual({ value: 'server' });
   });
 });
