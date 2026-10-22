@@ -32,13 +32,23 @@ Le [code de reprise d’ErrorBoundary](https://github.com/KoroKira/alcove/blob/m
 1. Ouvrir `https://alcove.codicam.fr/` dans Chrome avec le canevas affiché.
 2. Constater `Cannot read properties of null (reading 'forEach')` dans le panneau d’erreur.
 3. Recharger après connexion : la même exception revient.
-4. Cliquer sur « Réessayer sans recharger » : sur la dernière reproduction, l’écran reste bloqué.
+4. Cliquer sur « Réessayer sans recharger » : l’interface peut réapparaître brièvement, puis le crash revient; un essai ultérieur est resté bloqué.
 
-Lors d’une première occurrence, le bouton de reprise avait rétabli l’éditeur une fois. Les chargements suivants ont reproduit le défaut et la reprise n’a plus suffi.
+### Proposition de correctif
 
-### Correctif à réaliser
+1. Dans `normalizeCanvasData`, remplacer l’affectation par une valeur conforme à Excalidraw, idéalement `searchMatches: []`, ou omettre la propriété si son défaut est bien une liste vide. Éviter de modifier directement la donnée persistée si cette propriété est un état UI transitoire.
+2. Ajouter un test de normalisation couvrant une propriété absente et `null`, ainsi qu’un test de rendu d’un canevas chargé depuis une scène réelle. Vérifier qu’aucune valeur `searchMatches` nulle n’arrive à Excalidraw.
+3. Déployer d’abord en préproduction, puis vérifier le chargement à froid et après rechargement d’une scène existante. Confirmer sauvegarde, ouverture et navigation.
 
-Dans la normalisation, fournir une collection vide au lieu de `null` pour `searchMatches` (ou omettre la propriété si Excalidraw lui applique correctement son défaut). Ajouter une régression vérifiant les valeurs absentes/nulles puis contrôler un chargement de canevas réel dans la version déployée.
+### Durcissement de la reprise
+
+L’ErrorBoundary global recouvre toute l’application; son bouton de reprise réaffiche l’arbre fautif sans réinitialiser l’état invalide. À traiter après ALCO-UI-001 ou dans le même correctif :
+
+- isoler le canevas dans une boundary locale pour garder la navigation accessible quand le canvas échoue ;
+- faire réinitialiser l’état fautif par une clé/session de récupération, ou remplacer le bouton par une action qui recharge réellement les données sûres ;
+- ne pas présenter comme garanti que « Tes données ne sont pas perdues » sans vérifier l’état de sauvegarde côté serveur.
+
+**Critères d’acceptation :** avec une scène contenant un état nul/ancien, l’application rend le canevas ou affiche une erreur locale récupérable; l’accueil et la navigation restent accessibles; le bouton de reprise ne boucle pas sur la même exception; aucune scène existante n’est perdue.
 
 ### Parcours authentifié
 
@@ -46,19 +56,29 @@ Le premier retour OAuth observé a échoué avec `Invalid authentication state`;
 
 Aucune note n’a été créée ni modifiée pendant cet audit.
 
-### ALCO-UI-002 — Terminal local configuré sur une adresse loopback sans service accessible
+## ALCO-UI-002 — Terminal configuré sur loopback et sonde d’accès trompeuse
 
-**Statut :** configuration observée; indisponibilité probable du terminal embarqué sur le déploiement public, portée à confirmer  
-**Sévérité proposée :** P2 si le terminal local est une fonctionnalité attendue sur `alcove.codicam.fr`; sinon configuration documentée pour usage local  
-**Environnement :** configuration publique consultée le 2026-10-22
+**Statut :** anomalie de configuration et comportement frontend confirmés; impact utilisateur dépend du mode de déploiement  
+**Sévérité proposée :** P2 si le terminal est présenté aux utilisateurs du site public  
+**Environnement :** configuration publique consultée le 2026-10-22; Chrome sur la machine d’audit
 
-La route publique `/api/app/config` renvoie `ttydUrl: "http://localhost:7681"`. Sur la machine où le navigateur Chrome de l’audit tourne, aucun processus n’écoute sur `127.0.0.1:7681` (connexion TCP locale refusée). Le composant `TerminalLocal` du dépôt utilise cette URL. Ainsi, si le terminal embarqué doit fonctionner pour les utilisateurs du déploiement public, le navigateur tente de joindre un service loopback sur le poste de chaque utilisateur au lieu d’un service accessible depuis l’application; il sera indisponible sauf si un ttyd local est installé sur ce poste.
+La route publique `/api/app/config` renvoie `ttydUrl: "http://localhost:7681"`. La machine de l’audit n’a aucun service à l’écoute sur `127.0.0.1:7681`. Le code backend a aussi cette valeur comme défaut. Dans le frontend, `TerminalLocal` utilise la même valeur par défaut, lance `fetch(ttydUrl, { mode: 'no-cors' })`, puis affiche une iframe. Une réponse opaque en mode `no-cors` ne permet pas de vérifier la santé ni l’accès réel au terminal; de plus, `localhost` désigne le poste de chaque utilisateur du navigateur, pas le serveur Alcove.
 
-La configuration seule ne permet pas de savoir si cette adresse est intentionnelle pour le mode local. Confirmer le comportement attendu, puis soit fournir une URL ttyd joignable via la configuration de déploiement, soit masquer/documenter le terminal lorsque le service local n’est pas installé. Ne pas exposer ttyd directement sans contrôle d’accès.
+### Proposition de correctif
 
-### Couverture restant à faire
+- Pour un déploiement public, ne pas substituer une URL loopback silencieusement : renvoyer une configuration vide/non activée quand aucun terminal n’est configuré, et afficher « terminal indisponible/non configuré » sans iframe.
+- Si le terminal doit être disponible en public, le servir via une URL d’origine contrôlée, derrière authentification et autorisation par utilisateur. Restreindre les origines, limiter les permissions iframe et éviter d’exposer un ttyd shell sans authentification.
+- Remplacer la sonde `no-cors` par un endpoint de santé explicite accessible depuis l’application, avec délai d’attente et messages d’erreur corrects. Ne déclarer « prêt » qu’après confirmation du service.
+- Ajouter tests frontend couvrant config absente, service indisponible, réponse de santé valide et échec; contrôler la CSP et les en-têtes iframe sur le domaine déployé.
 
-Les parcours privés ne sont pas encore évalués, car l’erreur ALCO-UI-001 masque la navigation après connexion. À reprendre une fois le canevas accessible :
+**Critères d’acceptation :** sans `TTYD_URL`, aucun accès réseau à `localhost` n’est tenté et l’UI indique clairement que le terminal est désactivé; avec une URL configurée, seuls les utilisateurs autorisés peuvent ouvrir le terminal et une indisponibilité est affichée sans faux état « prêt ».
+
+## ALCO-UI-003 — Parcours privés non audités à cause du crash bloquant
+
+**Statut :** couverture incomplète, pas un bug fonctionnel confirmé  
+**Priorité :** reprendre après correction ALCO-UI-001
+
+L’erreur masque la navigation après connexion. Les parcours suivants n’ont donc pas été testés et ne doivent pas être interprétés comme validés :
 
 - recherche et ouverture d’une note existante ;
 - création puis relecture d’une note de test, sans données personnelles ;
@@ -71,6 +91,10 @@ Les parcours privés ne sont pas encore évalués, car l’erreur ALCO-UI-001 ma
 
 La recherche depuis la page publique avait affiché « Aucun résultat » ; ce résultat n’est pas classé comme bug, car le contenu privé n’était pas accessible à ce moment.
 
+## Résumé exécutable
+
+Ordre suggéré : (1) corriger la normalisation `searchMatches` et ajouter une régression; (2) rendre la boundary récupérable et préserver l’accès aux autres écrans; (3) désactiver par défaut le terminal non configuré, puis ne l’activer qu’avec un chemin authentifié; (4) reprendre les parcours privés et ouvrir un constat séparé pour chaque défaut confirmé. Les propositions ci-dessus sont des correctifs à développer; aucun code applicatif n’a été modifié dans cette PR.
+
 ## Dépôt
 
-La création d’issues GitHub est désactivée sur ce dépôt (API répond `410 Issues has been disabled`). Ce relevé est donc publié dans une branche dédiée et proposé dans une PR brouillon, sans modification de `main`.
+La création d’issues GitHub est désactivée sur ce dépôt (API répond `410 Issues has been disabled`). Ce relevé est publié dans une branche dédiée et proposé dans une PR brouillon, sans modification de `main`.
