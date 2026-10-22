@@ -1,9 +1,10 @@
-import React, { useState, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { Plus, Trash2, Flag, Bookmark, X, ChevronDown } from 'lucide-react';
 import { FieldValueRow, AttachmentList } from './FieldEditor';
 import type { FieldDef, FieldValue, FieldType, Attachment, Priority } from './fieldTypes';
 import { uid, PRIORITY_LABELS, PRIORITY_COLORS, FIELD_TYPE_LABELS } from './fieldTypes';
 import { snapshotDomPad } from '../lib/thumbnailSnapshot';
+import { clearStructuredPadDraft, hasStructuredPadDraft, readStructuredPadDraft, writeStructuredPadDraft } from '../lib/structuredPadDraft';
 import './GanttPad.scss';
 
 /* ─── Types ─── */
@@ -433,21 +434,39 @@ function TaskPanel({ task, schema, allTasks, templates, onUpdate, onDelete, onSa
 /* ─── Main GanttPad ─── */
 
 export default function GanttPad({ padId, data, onDataChange }: Props) {
-  const [tasks, setTasks] = useState<GanttTask[]>(data.tasks ?? []);
-  const [schema, setSchema] = useState<FieldDef[]>(data.fieldSchema ?? []);
-  const [templates, setTemplates] = useState<GanttTaskTemplate[]>(data.taskTemplates ?? []);
+  const [initialData] = useState(() => readStructuredPadDraft(padId, data));
+  const [tasks, setTasks] = useState<GanttTask[]>(initialData.tasks ?? []);
+  const [schema, setSchema] = useState<FieldDef[]>(initialData.fieldSchema ?? []);
+  const [templates, setTemplates] = useState<GanttTaskTemplate[]>(initialData.taskTemplates ?? []);
   const [viewOffset, setViewOffset] = useState(-7);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showTplMenu, setShowTplMenu] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastUpdatedAt = useRef<string | null>(data.updated_at ?? null);
   const [conflict, setConflict] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [draftRestored, setDraftRestored] = useState(() => hasStructuredPadDraft(padId));
+  const [draftAvailable, setDraftAvailable] = useState(true);
   const boardRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    const restored = readStructuredPadDraft(padId, data);
+    setTasks(restored.tasks ?? []);
+    setSchema(restored.fieldSchema ?? []);
+    setTemplates(restored.taskTemplates ?? []);
+    lastUpdatedAt.current = data.updated_at ?? null;
+    setConflict(false);
+    setSaveError(null);
+    setDraftRestored(hasStructuredPadDraft(padId));
+  }, [padId]);
 
   const save = useCallback((t: GanttTask[], sc: FieldDef[], tpls: GanttTaskTemplate[]) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
+    const d: GanttData = { tasks: t, fieldSchema: sc, taskTemplates: tpls };
+    setDraftAvailable(writeStructuredPadDraft(padId, d));
+    setSaveError(null);
     saveTimer.current = setTimeout(async () => {
-      const d: GanttData = { tasks: t, fieldSchema: sc, taskTemplates: tpls };
       onDataChange(d);
       try {
         const res = await fetch(`/api/pad/${padId}/data`, {
@@ -456,13 +475,17 @@ export default function GanttPad({ padId, data, onDataChange }: Props) {
           body: JSON.stringify({ data: d, expected_updated_at: lastUpdatedAt.current }),
         });
         if (res.status === 409) { setConflict(true); return; }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         if (res.ok) {
           const j = await res.json().catch(() => null);
           if (j?.updated_at) lastUpdatedAt.current = j.updated_at;
           setConflict(false);
+          setSaveError(null);
+          clearStructuredPadDraft(padId, d);
+          setDraftRestored(false);
           if (boardRef.current) void snapshotDomPad(padId, boardRef.current);
         }
-      } catch (e) { console.error(e); }
+      } catch (e) { setSaveError(e instanceof Error ? e.message : 'Erreur réseau'); }
     }, SAVE_DEBOUNCE);
   }, [padId, onDataChange]);
 
@@ -517,6 +540,8 @@ export default function GanttPad({ padId, data, onDataChange }: Props) {
           ⚠️ Ce planning a été modifié sur un autre appareil. Recharge la page pour repartir de la version serveur.
         </div>
       )}
+      {draftRestored && <div role="status" style={{ padding: '8px 12px', fontSize: 13, textAlign: 'center' }}>Brouillon local récupéré. <button onClick={() => save(tasks, schema, templates)}>Enregistrer maintenant</button></div>}
+      {saveError && <div role="alert" style={{ padding: '8px 12px', fontSize: 13, textAlign: 'center' }}>⚠️ Échec de sauvegarde ({saveError}). {draftAvailable ? 'Brouillon conservé sur cet appareil.' : 'Échec de la copie locale : garde cette page ouverte et réessaie.'} <button onClick={() => save(tasks, schema, templates)}>Réessayer</button></div>}
       {/* Toolbar */}
       <div className="gantt__toolbar">
         <div className="gantt__toolbar-left">

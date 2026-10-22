@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Plus, Trash2, Table2, Columns3, X } from 'lucide-react';
 import { snapshotDomPad } from '../lib/thumbnailSnapshot';
+import { clearStructuredPadDraft, hasStructuredPadDraft, readStructuredPadDraft, writeStructuredPadDraft } from '../lib/structuredPadDraft';
 import './DatabasePad.scss';
 
 export interface DbColumn { id: string; name: string; }
@@ -17,23 +18,32 @@ const uid = (p: string) => `${p}-${Math.random().toString(36).slice(2, 8)}`;
 
 export default function DatabasePad({ padId, data, onDataChange }: Props) {
   const [view, setView] = useState<'table' | 'board'>('table');
-  const [local, setLocal] = useState<DatabaseData>(data);
+  const [local, setLocal] = useState<DatabaseData>(() => readStructuredPadDraft(padId, data));
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastUpdatedAt = useRef<string | null>(data.updated_at ?? null);
   const [conflict, setConflict] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [draftRestored, setDraftRestored] = useState(() => hasStructuredPadDraft(padId));
+  const [draftAvailable, setDraftAvailable] = useState(true);
   const boardRef = useRef<HTMLDivElement | null>(null);
 
   // Reset local state when switching to a different database pad.
   useEffect(() => {
-    setLocal(data);
+    const restored = readStructuredPadDraft(padId, data);
+    setLocal(restored);
     lastUpdatedAt.current = data.updated_at ?? null;
     setConflict(false);
+    setSaveError(null);
+    setDraftRestored(hasStructuredPadDraft(padId));
+    if (saveTimer.current) clearTimeout(saveTimer.current);
     /* eslint-disable-next-line */
   }, [padId]);
 
   const commit = useCallback((next: DatabaseData) => {
     setLocal(next);
     onDataChange(next);
+    setDraftAvailable(writeStructuredPadDraft(padId, next));
+    setSaveError(null);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
       // Strip updated_at from the payload — it's the concurrency baseline,
@@ -45,13 +55,17 @@ export default function DatabasePad({ padId, data, onDataChange }: Props) {
           body: JSON.stringify({ data: payload, expected_updated_at: lastUpdatedAt.current }),
         });
         if (res.status === 409) { setConflict(true); return; }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         if (res.ok) {
           const j = await res.json().catch(() => null);
           if (j?.updated_at) lastUpdatedAt.current = j.updated_at;
           setConflict(false);
+          setSaveError(null);
+          clearStructuredPadDraft(padId, next);
+          setDraftRestored(false);
           if (boardRef.current) void snapshotDomPad(padId, boardRef.current);
         }
-      } catch { /* ignore */ }
+      } catch (error) { setSaveError(error instanceof Error ? error.message : 'Erreur réseau'); }
     }, 400);
   }, [padId, onDataChange]);
 
@@ -109,6 +123,8 @@ export default function DatabasePad({ padId, data, onDataChange }: Props) {
           ⚠️ Cette base a été modifiée sur un autre appareil. Recharge la page pour repartir de la version serveur.
         </div>
       )}
+      {draftRestored && <div role="status" style={{ padding: '8px 12px', fontSize: 13, textAlign: 'center' }}>Brouillon local récupéré. <button onClick={() => commit(local)}>Enregistrer maintenant</button></div>}
+      {saveError && <div role="alert" style={{ padding: '8px 12px', fontSize: 13, textAlign: 'center' }}>⚠️ Échec de sauvegarde ({saveError}). {draftAvailable ? 'Brouillon conservé sur cet appareil.' : 'Échec de la copie locale : garde cette page ouverte et réessaie.'} <button onClick={() => commit(local)}>Réessayer</button></div>}
       <div className="dbpad__toolbar">
         <div className="dbpad__views">
           <button className={`dbpad__view-btn${view === 'table' ? ' active' : ''}`} onClick={() => setView('table')}>
