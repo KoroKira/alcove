@@ -2,7 +2,7 @@
 
 ## Suivi après correctifs — 2026-10-22
 
-Les sections ci-dessous conservent les constats au moment de leur découverte. État vérifié après déploiement de `alcove-functional-v3-20261022` :
+Les sections ci-dessous conservent les constats au moment de leur découverte. État vérifié après déploiement de `alcove-functional-v4-doc-autosave-20261022` (`alcove-local:functional-fix-v4-doc-autosave-20261022`). La release a été construite depuis la source de production existante afin de conserver ses protections `ai_guard` et ses clés MCP dédiées.
 
 | ID | État actuel | Vérification |
 |---|---|---|
@@ -11,12 +11,12 @@ Les sections ci-dessous conservent les constats au moment de leur découverte. �
 | ALCO-UI-003 — parcours privés | Partiellement audité; aucun autre bug confirmé pendant ces parcours. | Recherche sémantique : 7 pads avec contenu retournés; Graphe : 9 notes, 10 liens; Assistant : réponse reçue; Révisions et Favoris s’ouvrent avec leurs états vides attendus. |
 | ALCO-UI-004 — ressources PWA en 404 | Corrigé par le service des fichiers statiques racine (PR #11, `083818b`). | En production, manifeste, `registerSW.js`, `sw.js`, Workbox, favicon et icône répondent tous `200`. |
 | ALCO-UI-005 — retries workspace désactivé | Corrigé : React Query ne retente plus le `503` permanent (PR #10, `8ee1683`). | Test de régression, build v3 sain; les logs montrent un seul appel initial puis aucun nouvel appel pendant 20 s. |
-| ALCO-UI-006 — conflits d’autosauvegarde document | Cause confirmée; correctif ciblé et test d’intégration ajoutés dans la branche de travail. | Le worker de canevas sauvegardait aussi les pads document toutes les 30 s, avançant `updated_at`; la prochaine sauvegarde CAS du document recevait alors `409`. Le test de production a reproduit le conflit deux fois. CI et déploiement restent à effectuer. |
+| ALCO-UI-006 — conflits d’autosauvegarde document | Corrigé par PR #12 (`3482cda`) et déployé dans la release v4. | CI complète verte (`backend-tests`, `database-integration`, `secret-scan`, `build-and-push`). En production, le document de test a accepté une sauvegarde (`PUT /api/pad/{id}/doc` → `200`), puis la remise à vide (`200`); la base confirme 0 caractère et aucun conflit `409`. `/` et `/api/app/config` renvoient `200`, conteneur sain. |
 | ALCO-UI-007 — ancien bundle après déploiement | Récupération vérifiée; cause d’exploitation probable, sans correctif de code confirmé. | Un onglet ouvert chargeait l’ancien `index-BX7sbqV4.js`, puis un chunk supprimé (`DocumentPad-AOAq4UvP.js`, 404). Recharger a chargé le bundle courant et rétabli l’interface. |
 
-L’index RAG a été initialisé localement sur les 9 pads : 7 pads contenaient du texte (7 chunks), 2 étaient vides. Le traitement et le stockage ont utilisé le service Ollama du serveur Alcove. Aucun pad n’a été créé ni supprimé. Le pad `New document`, vide avant le test de sauvegarde, a temporairement reçu un marqueur; après le conflit et le rechargement, son contenu est revenu vide et son état est `Enregistré`.
+L’index RAG a été initialisé localement sur les 9 pads : 7 pads contenaient du texte (7 chunks), 2 étaient vides. Le traitement et le stockage ont utilisé le service Ollama du serveur Alcove. Aucun pad n’a été créé ni supprimé. Le pad existant `New document`, vide avant le test, a temporairement reçu un marqueur, puis a été remis à vide par l’éditeur. La sauvegarde de l’ajout et celle du nettoyage ont toutes deux répondu `200`; une lecture ciblée de la base confirme que le document reste vide (`content` de longueur 0).
 
-La couverture n’est pas exhaustive : les parcours d’édition/sauvegarde d’un document, ajout et import de source, restauration depuis la corbeille, raccourcis clavier et création de cartes de révision restent à tester. Les statuts des constats initiaux ci-dessous sont historiques; la table ci-dessus donne leur disposition actuelle.
+La couverture n’est pas exhaustive : ajout et import de source, restauration depuis la corbeille, parcours complets des raccourcis clavier et création de cartes de révision restent à tester. Les statuts des constats initiaux ci-dessous sont historiques; la table ci-dessus donne leur disposition actuelle.
 
 ## ALCO-UI-001 — Crash du canevas : `searchMatches` vaut `null`
 
