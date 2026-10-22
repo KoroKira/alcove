@@ -13,6 +13,8 @@ COPY src/frontend/ ./
 # so Vite can bundle on low-RAM hosts (server deployments). It'll spill to swap
 # if physical RAM is tight, which is slow but finishes.
 ENV NODE_OPTIONS=--max-old-space-size=2048
+ARG ALCOVE_BUILD_ID=local
+ENV ALCOVE_BUILD_ID=$ALCOVE_BUILD_ID
 RUN yarn build
 
 # Backend stage

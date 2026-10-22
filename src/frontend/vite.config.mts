@@ -65,9 +65,13 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       VitePWA({
+        filename: `sw-${(process.env.ALCOVE_BUILD_ID || 'local').replace(/[^a-zA-Z0-9_-]/g, '')}.js`,
+        injectRegister: 'inline',
         registerType: 'autoUpdate',
         devOptions: { enabled: false },
         workbox: {
+          skipWaiting: true,
+          clientsClaim: true,
           // Precache the JS chunks as well as the app shell: index.html
           // module-preloads the vendor chunks on the first visit, so omitting
           // them makes a PWA reload fail when the network is unavailable.
