@@ -22,8 +22,11 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
 function mountFetchDefaults() {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : input.toString();
-    if (url.includes('/api/ai/models')) {
-      return jsonResponse({ models: [{ name: 'llama3.2', size: 0, modified: '' }], default: 'llama3.2', available: true, starting: false });
+    if (url.includes('/api/ai/chat/preamble')) {
+      return jsonResponse({ system: '', default_model: 'llama3.2' });
+    }
+    if (url.includes('/api/ai/ollama/api/tags')) {
+      return jsonResponse({ models: [{ name: 'llama3.2', size: 0, modified_at: '' }] });
     }
     if (url.includes('/api/ai/conversations')) {
       return jsonResponse({ conversations: [] });
@@ -81,8 +84,10 @@ describe('AIPanel', () => {
 
   it('shows the setup wizard hook when Ollama is offline and not starting', async () => {
     // Override fetch to report unavailable.
-    globalThis.fetch = vi.fn(async () =>
-      jsonResponse({ models: [], default: 'llama3.2', available: false, starting: false }),
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).includes('/api/ai/ollama/api/tags')
+        ? jsonResponse({ models: [] }, { status: 503 })
+        : jsonResponse({ system: '', default_model: 'llama3.2' }),
     ) as unknown as typeof fetch;
 
     render(<AIPanel onClose={vi.fn()} />);

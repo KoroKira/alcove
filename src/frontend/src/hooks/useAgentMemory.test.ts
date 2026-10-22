@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { useAgentMemory } from './useAgentMemory';
+import { memoryExtract } from '../lib/aiPrompts';
+
+vi.mock('../lib/aiPrompts', () => ({
+  memoryExtract: vi.fn(),
+}));
 
 // Minimal fetch mock helper — every test defines the responses it needs.
 function mockFetch(responses: Array<Response | Promise<Response>>) {
@@ -75,15 +80,15 @@ describe('useAgentMemory', () => {
   });
 
   it('extract returns a proposal when should_save is true', async () => {
+    vi.mocked(memoryExtract).mockResolvedValue({
+      should_save: true,
+      target: 'preferences',
+      section: null,
+      content: 'L’utilisateur aime les résumés courts',
+      reason: 'préférence explicite',
+    });
     mockFetch([
       jsonResponse({ slots: [] }),
-      jsonResponse({
-        should_save: true,
-        target: 'preferences',
-        section: null,
-        content: 'user aime les résumés courts',
-        reason: 'preference explicite',
-      }),
     ]);
 
     const { result } = renderHook(() => useAgentMemory());
@@ -99,9 +104,9 @@ describe('useAgentMemory', () => {
   });
 
   it('extract returns null when the model declines', async () => {
+    vi.mocked(memoryExtract).mockResolvedValue(null);
     mockFetch([
       jsonResponse({ slots: [] }),
-      jsonResponse({ should_save: false }),
     ]);
 
     const { result } = renderHook(() => useAgentMemory());
