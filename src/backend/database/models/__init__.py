@@ -14,6 +14,7 @@ from .pad_member_model import PadMemberStore
 from .api_token_model import ApiTokenStore
 from .audit_event_model import AuditEventStore
 from .idempotency_model import IdempotencyRecordStore
+from .mcp_api_key_model import McpApiKey
 
 __all__ = [
     'Base',
@@ -27,5 +28,6 @@ __all__ = [
     'ApiTokenStore',
     'AuditEventStore',
     'IdempotencyRecordStore',
+    'McpApiKey',
     'SCHEMA_NAME',
 ]

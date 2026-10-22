@@ -14,9 +14,7 @@ lifecycle : initialize, tools/list, tools/call, notifications/initialized.
 Auth :
   · PAD_DEV_MODE : use the fixed DEV_USER_ID. No token needed. Perfect
     for "point Claude Desktop at localhost:8000/mcp/" one-shot setup.
-  · Prod : Bearer token in Authorization header. TODO — needs an API
-    keys table (out of scope for chantier #9 MVP ; comes with #12 when
-    the extension needs the same auth surface).
+  · Prod : scoped Bearer API keys, verified against the MCP API-key table.
 """
 from __future__ import annotations
 
@@ -34,12 +32,13 @@ from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import PAD_DEV_MODE
-from database.database import get_session
+from database.database import async_session, get_session
 from database.models import PadStore
 from database.models.embedding_model import PadEmbedding
 from database.pad_serialization import serialize_pad
 from routers.ai.rag import rank_rows
 from routers.auth_router import DEV_USER_ID
+from services.mcp_api_key_service import McpPrincipal, verify_api_key_principal
 
 logger = logging.getLogger(__name__)
 
@@ -124,28 +123,86 @@ _TOOLS: List[Dict[str, Any]] = [
         },
     },
 ]
+_READ_TOOLS = frozenset({"search_pads", "read_pad", "list_recent"})
+for _tool in _TOOLS:
+    _tool["inputSchema"]["additionalProperties"] = False
+    _tool["annotations"] = {
+        "readOnlyHint": _tool["name"] in _READ_TOOLS,
+        "destructiveHint": False,
+        "idempotentHint": _tool["name"] in _READ_TOOLS,
+    }
+
+
+def _valid_tool_arguments(name: str, args: Any) -> bool:
+    """Validate MCP JSON arguments server-side; tool schemas are not a guard."""
+    if not isinstance(args, dict):
+        return False
+    schema = next((tool["inputSchema"] for tool in _TOOLS if tool["name"] == name), None)
+    if schema is None or not set(args) <= set(schema["properties"]):
+        return False
+    if any(key not in args for key in schema.get("required", [])):
+        return False
+
+    if name == "search_pads":
+        return (
+            isinstance(args.get("query"), str)
+            and len(args["query"]) <= 1000
+            and ("top_k" not in args or (type(args["top_k"]) is int and 1 <= args["top_k"] <= 20))
+        )
+    if name == "read_pad":
+        return isinstance(args.get("pad_id"), str) and len(args["pad_id"]) <= 64
+    if name == "list_recent":
+        return "limit" not in args or (type(args["limit"]) is int and 1 <= args["limit"] <= 100)
+    if name == "write_note":
+        tags = args.get("tags", [])
+        return (
+            isinstance(args.get("title"), str)
+            and 1 <= len(args["title"].strip()) <= 100
+            and isinstance(args.get("content"), str)
+            and len(args["content"].encode("utf-8")) <= 256_000
+            and isinstance(tags, list)
+            and len(tags) <= 20
+            and all(isinstance(tag, str) and len(tag.strip()) <= 50 for tag in tags)
+        )
+    return False
 
 
 # ── Auth resolution ────────────────────────────────────────────────────────
 async def _resolve_user_id(request: Request) -> UUID:
-    """Return the owning user's UUID for this MCP call.
+    """Compatibility identity API; dispatch uses the scoped principal."""
+    return (await _resolve_principal(request)).owner_id
 
-    Dev mode : always DEV_USER_ID. No credential needed — the local
-    Alcove is a single-user session by design.
-    Prod mode : Bearer token in Authorization header (TODO — needs the
-    API keys table from chantier #12). For now, dev-mode only.
-    """
+
+async def _resolve_principal(request: Request) -> McpPrincipal:
+    """Resolve the authenticated user and immutable MCP scope bound."""
     if PAD_DEV_MODE:
-        return UUID(DEV_USER_ID)
-    # Placeholder — reject explicitly rather than silently accepting a
-    # missing token so a prod deployment doesn't leak the KB.
-    raise HTTPException(
-        status_code=401,
-        detail={
-            "code": "auth_required",
-            "message": "MCP en production requiert un token API — pas encore implémenté.",
-        },
-    )
+        return McpPrincipal(UUID(DEV_USER_ID), frozenset({"read", "write"}))
+
+    auth_header = request.headers.get("authorization") or ""
+    scheme, _, token = auth_header.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "auth_required",
+                "message": "MCP en production requiert un Bearer token API.",
+            },
+        )
+
+    async with async_session() as session:
+        principal = await verify_api_key_principal(session, token)
+
+    if principal is None:
+        # Keep missing, malformed, expired, revoked, and unknown keys
+        # indistinguishable. Never log the bearer token.
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "auth_invalid",
+                "message": "Token API MCP invalide, expiré ou révoqué.",
+            },
+        )
+    return principal
 
 
 # ── Ollama embedding for semantic search ───────────────────────────────────
@@ -205,9 +262,10 @@ async def _tool_search_pads(
 
     # Fallback : simple ILIKE on display_name + data.content.
     like = f"%{query}%"
+    from application.pads import PadQueryService
     stmt = (
         sa_select(PadStore.id, PadStore.display_name, PadStore.tags, PadStore.updated_at)
-        .where(PadStore.owner_id == user_id, PadStore.deleted_at.is_(None))
+        .where(PadQueryService.readable_filter(user_id))
         .where(PadStore.display_name.ilike(like))
         .order_by(PadStore.updated_at.desc())
         .limit(top_k)
@@ -234,10 +292,10 @@ async def _tool_read_pad(
         pid = UUID(args.get("pad_id") or "")
     except Exception:
         raise ValueError("invalid pad_id")
+    from application.pads import PadQueryService
     stmt = sa_select(PadStore).where(
         PadStore.id == pid,
-        PadStore.owner_id == user_id,
-        PadStore.deleted_at.is_(None),
+        PadQueryService.readable_filter(user_id),
     )
     pad = (await session.execute(stmt)).scalar_one_or_none()
     if pad is None:
@@ -260,12 +318,13 @@ async def _tool_list_recent(
 ) -> Dict[str, Any]:
     limit = int(args.get("limit") or 20)
     limit = max(1, min(100, limit))
+    from application.pads import PadQueryService
     stmt = (
         sa_select(
             PadStore.id, PadStore.display_name, PadStore.pad_type,
             PadStore.tags, PadStore.updated_at, PadStore.source_url,
         )
-        .where(PadStore.owner_id == user_id, PadStore.deleted_at.is_(None))
+        .where(PadQueryService.readable_filter(user_id))
         .order_by(PadStore.updated_at.desc())
         .limit(limit)
     )
@@ -409,7 +468,14 @@ async def mcp_endpoint(request: Request) -> JSONResponse:
             return JSONResponse({}, status_code=202)
 
         if method == "tools/list":
-            return JSONResponse(_rpc_response(req.id, {"tools": _TOOLS}))
+            tools = _TOOLS
+            if request.headers.get("authorization"):
+                principal = await _resolve_principal(request)
+                tools = [
+                    tool for tool in _TOOLS
+                    if ("read" if tool["name"] in _READ_TOOLS else "write") in principal.scopes
+                ]
+            return JSONResponse(_rpc_response(req.id, {"tools": tools}))
 
         if method == "tools/call":
             name = params.get("name")
@@ -417,7 +483,13 @@ async def mcp_endpoint(request: Request) -> JSONResponse:
             handler = _TOOL_HANDLERS.get(name)
             if not handler:
                 return JSONResponse(_rpc_error(req.id, -32601, f"Unknown tool: {name}"), status_code=200)
-            user_id = await _resolve_user_id(request)
+            principal = await _resolve_principal(request)
+            required_scope = "read" if name in _READ_TOOLS else "write"
+            if required_scope not in principal.scopes:
+                return JSONResponse(_rpc_error(req.id, -32003, "MCP token scope denied"), status_code=200)
+            if not _valid_tool_arguments(name, arguments):
+                return JSONResponse(_rpc_error(req.id, -32602, "Invalid tool arguments"), status_code=200)
+            user_id = principal.owner_id
             # Own session — get_session is a FastAPI Depends, and we're
             # dispatching manually here, so we bypass the dep system.
             async for session in get_session():
@@ -466,5 +538,5 @@ async def mcp_info() -> Dict[str, Any]:
         "tools": [{"name": t["name"], "description": t["description"]} for t in _TOOLS],
         "endpoint": "POST /mcp/",
         "transport": "http",
-        "auth": "PAD_DEV_MODE : anonymous (dev user). Prod : Bearer token (TODO).",
+        "auth": "PAD_DEV_MODE : anonymous (dev user). Prod : scoped Bearer API key.",
     }
