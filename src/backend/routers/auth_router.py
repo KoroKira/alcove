@@ -36,7 +36,11 @@ async def _ensure_scratch_pad(user_id_str: str) -> None:
     try:
         owner_id = UUID(user_id_str)
         async with async_session() as db_session:
-            stmt = sa_select(_PadStore).where(_PadStore.owner_id == owner_id, _PadStore.is_scratch == True)
+            stmt = sa_select(_PadStore).where(
+                _PadStore.owner_id == owner_id,
+                _PadStore.is_scratch == True,
+                _PadStore.deleted_at.is_(None),
+            )
             result = await db_session.execute(stmt)
             if result.scalars().first() is None:
                 pad = await Pad.create(db_session, owner_id=owner_id, display_name="Scratch")

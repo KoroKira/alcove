@@ -108,7 +108,10 @@ class PadQueryService:
             PadStore.sharing_policy == "whitelist",
             PadStore.whitelist.any(user_id),
         )
-        return or_(public, PadStore.owner_id == user_id, member, legacy_whitelist)
+        return and_(
+            PadStore.deleted_at.is_(None),
+            or_(public, PadStore.owner_id == user_id, member, legacy_whitelist),
+        )
 
     async def list_accessible_stores(
         self,
@@ -127,7 +130,7 @@ class PadQueryService:
         # Redis is a content/cache optimization and must not decide whether a
         # policy transition or membership revocation is effective.
         store = (await self.session.execute(
-            select(PadStore).where(PadStore.id == pad_id)
+            select(PadStore).where(PadStore.id == pad_id, PadStore.deleted_at.is_(None))
         )).scalar_one_or_none()
         if not store:
             raise ResourceNotFoundError("Pad not found")

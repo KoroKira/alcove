@@ -37,7 +37,7 @@ class MembershipService:
 
     async def _get_pad(self, pad_id: UUID) -> PadStore:
         pad = (await self.session.execute(
-            select(PadStore).where(PadStore.id == pad_id)
+            select(PadStore).where(PadStore.id == pad_id, PadStore.deleted_at.is_(None))
         )).scalar_one_or_none()
         if not pad:
             raise ResourceNotFoundError("Pad not found")

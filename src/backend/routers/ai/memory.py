@@ -75,6 +75,7 @@ async def _get_memory_pad(
         PadStore.owner_id == owner_id,
         PadStore.folder == AGENT_FOLDER,
         PadStore.display_name == slug,
+        PadStore.deleted_at.is_(None),
     )
     pad = (await session.execute(stmt)).scalar_one_or_none()
     if pad is None and create:
@@ -173,14 +174,15 @@ async def _cleanup_seed_only_agent_pads(session: AsyncSession, owner_id: UUID) -
     stmt = sa_select(PadStore).where(
         PadStore.owner_id == owner_id,
         PadStore.folder == AGENT_FOLDER,
+        PadStore.deleted_at.is_(None),
     )
     pads = list((await session.execute(stmt)).scalars().all())
     removed = 0
     for pad in pads:
         data = pad.data if isinstance(pad.data, dict) else {}
         if _is_seed_only(data.get("content", "")):
-            await session.delete(pad)
-            removed += 1
+            if await pad.delete(session):
+                removed += 1
     if removed:
         await session.commit()
     return removed

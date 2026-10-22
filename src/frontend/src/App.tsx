@@ -35,6 +35,7 @@ import CommandPalette from './ui/CommandPalette';
 import GraphView from './ui/GraphView';
 import AppRail from './ui/AppRail';
 import PadSidebar from './ui/PadSidebar';
+import TrashDialog from './ui/TrashDialog';
 import PomodoroTimer from './ui/PomodoroTimer';
 import DocumentTemplateDialog from './ui/DocumentTemplateDialog';
 // Lazy — statically imports DocumentPad, so keeping it eager would defeat the split.
@@ -141,6 +142,7 @@ export default function App() {
 
   const [excalidrawAPI, excalidrawRefCallback] = useCallbackRefState<ExcalidrawImperativeAPI>();
   const [searchOpen, setSearchOpen] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
   // Landing view — Alcove ouvre par défaut sur le dashboard "bibliothèque" (grille
   // masonry de tous les pads). L'utilisateur peut basculer via localStorage
   // 'alcove-landing' = 'canvas' pour retomber sur l'ancien comportement (canvas
@@ -489,13 +491,14 @@ export default function App() {
     setChatViewOpen(false);
     setReviewDashboardOpen(false);
     setSearchOpen(false);
+    setTrashOpen(false);
   };
 
   return (
     <>
       {/* Navigation globale persistante + sidebar contextuelle des fichiers. */}
       {!focusMode && <AppRail
-        active={dashboardOpen ? (dashboardInitialView === 'favorites' ? 'favorites' : 'home') : graphOpen ? 'graph' : chatViewOpen ? 'chat' : reviewDashboardOpen ? 'review' : searchOpen ? 'search' : null}
+        active={dashboardOpen ? (dashboardInitialView === 'favorites' ? 'favorites' : 'home') : trashOpen ? 'trash' : graphOpen ? 'graph' : chatViewOpen ? 'chat' : reviewDashboardOpen ? 'review' : searchOpen ? 'search' : null}
         sidebarCollapsed={sidebarCollapsed}
         onHome={() => { closeGlobalViews(); setDashboardInitialView('pads'); setDashboardOpen(true); }}
         onSearch={() => { closeGlobalViews(); setSearchOpen(true); }}
@@ -503,6 +506,7 @@ export default function App() {
         onGraph={() => { closeGlobalViews(); setGraphOpen(true); }}
         onReview={() => { closeGlobalViews(); setReviewDashboardOpen(true); }}
         onFavorites={() => { closeGlobalViews(); setDashboardInitialView('favorites'); setDashboardOpen(true); }}
+        onTrash={isAuthenticated ? () => { closeGlobalViews(); setTrashOpen(true); } : undefined}
         onAdd={() => setUnifiedAddOpen(true)}
         onToggleSidebar={() => setSidebarCollapsed(v => !v)}
         onCommands={() => setCommandPaletteOpen(true)}
@@ -768,6 +772,10 @@ export default function App() {
           onClose={() => setSearchOpen(false)}
           onSelectPad={(padId) => { selectTab(padId); setSearchOpen(false); }}
         />
+      )}
+
+      {trashOpen && isAuthenticated && (
+        <TrashDialog onClose={() => setTrashOpen(false)} />
       )}
 
       {dashboardOpen && isAuthenticated && (

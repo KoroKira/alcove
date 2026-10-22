@@ -18,6 +18,7 @@ from database.database import get_session
 from domain.pad import Pad
 from domain.user import User
 from application.pads import match_pad as _match_pad, pad_content
+from application.pads import pad_summary
 # schedule_reindex was removed in Phase 3C — the browser drives reindexing
 # now (manual "Réindexer tout" button) since the server no longer has an
 # Ollama to call for embeddings.
@@ -193,7 +194,11 @@ async def get_or_create_scratch_pad(
     from database.models.pad_model import PadStore
     from uuid import UUID as _UUID
     owner_id = _UUID(user.token_data.get('sub'))
-    stmt = sa_select(PadStore).where(PadStore.owner_id == owner_id, PadStore.is_scratch == True)
+    stmt = sa_select(PadStore).where(
+        PadStore.owner_id == owner_id,
+        PadStore.is_scratch == True,
+        PadStore.deleted_at.is_(None),
+    )
     result = await session.execute(stmt)
     store = result.scalars().first()
     if store:
@@ -343,7 +348,9 @@ async def get_activity(
 
     since = date.today() - timedelta(days=182)
 
-    pad_ids_stmt = _sel(PadStore.id).where(PadStore.owner_id == user.id)
+    pad_ids_stmt = _sel(PadStore.id).where(
+        PadStore.owner_id == user.id, PadStore.deleted_at.is_(None)
+    )
     pad_ids = (await session.execute(pad_ids_stmt)).scalars().all()
     counts: Dict[str, int] = {}
 
@@ -357,7 +364,9 @@ async def get_activity(
             counts[day.isoformat()] = n
 
         upd_stmt = _sel(cast(PadStore.updated_at, Date).label("day"), _f.count()).where(
-            PadStore.owner_id == user.id, cast(PadStore.updated_at, Date) >= since
+            PadStore.owner_id == user.id,
+            PadStore.deleted_at.is_(None),
+            cast(PadStore.updated_at, Date) >= since
         ).group_by("day")
         for day, n in (await session.execute(upd_stmt)).all():
             key = day.isoformat()
@@ -500,6 +509,31 @@ async def search_pads(
     return await PadQueryService(session).search(user.id, q)
 
 
+@pad_router.get("/trash")
+async def list_trashed_pads(
+    user: UserSession = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> Dict[str, Any]:
+    """List only the authenticated owner's trashed pads, without their contents."""
+    stmt = (
+        sa_select(PadStore)
+        .where(PadStore.owner_id == user.id, PadStore.deleted_at.is_not(None))
+        .order_by(PadStore.deleted_at.desc())
+    )
+    stores = (await session.execute(stmt)).scalars().all()
+    return {
+        "pads": [
+            {
+                "id": str(store.id),
+                "display_name": store.display_name,
+                "pad_type": store.pad_type,
+                "deleted_at": store.deleted_at.isoformat() if store.deleted_at else None,
+            }
+            for store in stores
+        ]
+    }
+
+
 @pad_router.get("/export/zip")
 async def export_all_zip(
     user: UserSession = Depends(require_auth),
@@ -515,7 +549,10 @@ async def export_all_zip(
     if not real_user:
         raise HTTPException(status_code=401)
 
-    stmt = _sel(PadStore).where(PadStore.owner_id == real_user.id)
+    stmt = _sel(PadStore).where(
+        PadStore.owner_id == real_user.id,
+        PadStore.deleted_at.is_(None),
+    )
     pads = (await session.execute(stmt)).scalars().all()
 
     buf = io.BytesIO()
@@ -576,6 +613,35 @@ async def rename_pad(
             detail=f"Failed to rename pad: {str(e)}"
         )
 
+
+@pad_router.post("/{pad_id}/restore")
+async def restore_pad(
+    pad_id: UUID,
+    user: UserSession = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> Dict[str, Any]:
+    """Restore a trashed pad for its owner; no content or history is rewritten."""
+    store = (await session.execute(
+        sa_select(PadStore).where(
+            PadStore.id == pad_id,
+            PadStore.owner_id == user.id,
+            PadStore.deleted_at.is_not(None),
+        )
+    )).scalar_one_or_none()
+    if not store or not await store.restore_from_trash(session):
+        raise HTTPException(status_code=404, detail="Pad not found in trash")
+
+    try:
+        from cache import RedisClient
+        redis = await RedisClient.get_instance()
+        await redis.delete(f"pad:{pad_id}")
+    except Exception:
+        # A stale cache entry is rejected on the next active read by timestamp
+        # and the database row remains authoritative.
+        pass
+
+    return pad_summary(store)
+
 @pad_router.delete("/{pad_id}")
 async def delete_pad(
     pad_access: Tuple[Pad, UserSession] = Depends(require_pad_owner),
@@ -591,8 +657,10 @@ async def delete_pad(
                 detail="Failed to delete pad"
             )
         
-        return {"success": True, "message": "Pad deleted successfully"}
+        return {"success": True, "message": "Pad moved to trash"}
     except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
         raise HTTPException(
             status_code=500,
             detail=f"Failed to delete pad: {str(e)}"

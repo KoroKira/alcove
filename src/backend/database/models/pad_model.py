@@ -3,7 +3,7 @@ from typing import Dict, Any, Optional, List, TYPE_CHECKING
 from uuid import UUID
 from datetime import datetime
 
-from sqlalchemy import Column, String, Text, Boolean, ForeignKey, Index, UUID as SQLUUID, select, delete, ARRAY
+from sqlalchemy import Column, String, Text, Boolean, ForeignKey, Index, UUID as SQLUUID, select, update, func, ARRAY, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship, Mapped
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +21,7 @@ class PadStore(Base, BaseModel):
     __table_args__ = (
         Index("ix_pads_owner_id", "owner_id"),
         Index("ix_pads_display_name", "display_name"),
+        Index("ix_pads_owner_deleted_at", "owner_id", "deleted_at"),
         {"schema": SCHEMA_NAME}
     )
 
@@ -51,6 +52,8 @@ class PadStore(Base, BaseModel):
     # rend chaque carte instantanément identifiable comme YouTube, article,
     # PDF, etc. Aussi utilisé pour la déduplication future des ingest.
     source_url = Column(Text, nullable=True, default=None)
+    # Soft deletion preserves pad contents and history until the owner restores it.
+    deleted_at = Column(DateTime(timezone=True), nullable=True, default=None)
 
     # Relationships
     owner: Mapped["UserStore"] = relationship("UserStore", back_populates="pads")
@@ -83,8 +86,8 @@ class PadStore(Base, BaseModel):
 
     @classmethod
     async def get_by_id(cls, session: AsyncSession, pad_id: UUID) -> Optional['PadStore']:
-        """Get a pad by ID"""
-        stmt = select(cls).where(cls.id == pad_id)
+        """Get an active pad by ID; trashed pads are accessible only through trash routes."""
+        stmt = select(cls).where(cls.id == pad_id, cls.deleted_at.is_(None))
         result = await session.execute(stmt)
         return result.scalars().first()
 
@@ -111,10 +114,29 @@ class PadStore(Base, BaseModel):
             raise
 
     async def delete(self, session: AsyncSession) -> bool:
-        """Delete the pad"""
-        stmt = delete(self.__class__).where(self.__class__.id == self.id)
+        """Move the pad to trash without deleting its contents or related history."""
+        stmt = (
+            update(self.__class__)
+            .where(self.__class__.id == self.id, self.__class__.deleted_at.is_(None))
+            .values(deleted_at=func.now())
+        )
         result = await session.execute(stmt)
         await session.commit()
+        if result.rowcount:
+            self.deleted_at = datetime.now().astimezone()
+        return result.rowcount > 0
+
+    async def restore_from_trash(self, session: AsyncSession) -> bool:
+        """Restore this pad without changing its content or version history."""
+        stmt = (
+            update(self.__class__)
+            .where(self.__class__.id == self.id, self.__class__.deleted_at.is_not(None))
+            .values(deleted_at=None)
+        )
+        result = await session.execute(stmt)
+        await session.commit()
+        if result.rowcount:
+            await session.refresh(self)
         return result.rowcount > 0
 
     def to_dict(self) -> Dict[str, Any]:

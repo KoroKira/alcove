@@ -85,7 +85,11 @@ async def create_conversation(
     pad_uuid = UUID(body.pad_id) if body.pad_id else None
     if pad_uuid is not None:
         owned = (await session.execute(
-            sa_select(PadStore.id).where(PadStore.id == pad_uuid, PadStore.owner_id == user.id)
+            sa_select(PadStore.id).where(
+                PadStore.id == pad_uuid,
+                PadStore.owner_id == user.id,
+                PadStore.deleted_at.is_(None),
+            )
         )).scalar_one_or_none()
         if owned is None:
             raise HTTPException(status_code=404, detail="Pad introuvable")
