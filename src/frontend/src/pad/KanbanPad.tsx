@@ -7,6 +7,7 @@ import { FieldValueRow, AttachmentList } from './FieldEditor';
 import type { FieldDef, FieldValue, FieldType, Attachment, Priority } from './fieldTypes';
 import { uid, PRIORITY_LABELS, PRIORITY_COLORS, FIELD_TYPE_LABELS } from './fieldTypes';
 import { snapshotDomPad } from '../lib/thumbnailSnapshot';
+import { clearStructuredPadDraft, hasStructuredPadDraft, readStructuredPadDraft, writeStructuredPadDraft } from '../lib/structuredPadDraft';
 import './KanbanPad.scss';
 
 /* ─── Data types ─── */
@@ -462,9 +463,10 @@ function Column({
 /* ─── Main KanbanPad ─── */
 
 export default function KanbanPad({ padId, data, onDataChange }: Props) {
-  const [columns, setColumns] = useState<KanbanColumn[]>(data.columns ?? []);
-  const [schema, setSchema] = useState<FieldDef[]>(data.fieldSchema ?? []);
-  const [templates, setTemplates] = useState<KanbanCardTemplate[]>(data.cardTemplates ?? []);
+  const [initialData] = useState(() => readStructuredPadDraft(padId, data));
+  const [columns, setColumns] = useState<KanbanColumn[]>(initialData.columns ?? []);
+  const [schema, setSchema] = useState<FieldDef[]>(initialData.fieldSchema ?? []);
+  const [templates, setTemplates] = useState<KanbanCardTemplate[]>(initialData.cardTemplates ?? []);
   const [openCard, setOpenCard] = useState<KanbanCard | null>(null);
   const [openCardColId, setOpenCardColId] = useState<string | null>(null);
   const [dragCard, setDragCard] = useState<{ cardId: string; fromColId: string } | null>(null);
@@ -472,12 +474,29 @@ export default function KanbanPad({ padId, data, onDataChange }: Props) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastUpdatedAt = useRef<string | null>(data.updated_at ?? null);
   const [conflict, setConflict] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [draftRestored, setDraftRestored] = useState(() => hasStructuredPadDraft(padId));
+  const [draftAvailable, setDraftAvailable] = useState(true);
   const boardRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    const restored = readStructuredPadDraft(padId, data);
+    setColumns(restored.columns ?? []);
+    setSchema(restored.fieldSchema ?? []);
+    setTemplates(restored.cardTemplates ?? []);
+    lastUpdatedAt.current = data.updated_at ?? null;
+    setConflict(false);
+    setSaveError(null);
+    setDraftRestored(hasStructuredPadDraft(padId));
+  }, [padId]);
 
   const save = useCallback((cols: KanbanColumn[], sc: FieldDef[], tpls: KanbanCardTemplate[]) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
+    const d: KanbanData = { columns: cols, fieldSchema: sc, cardTemplates: tpls };
+    setDraftAvailable(writeStructuredPadDraft(padId, d));
+    setSaveError(null);
     saveTimer.current = setTimeout(async () => {
-      const d: KanbanData = { columns: cols, fieldSchema: sc, cardTemplates: tpls };
       onDataChange(d);
       try {
         const res = await fetch(`/api/pad/${padId}/data`, {
@@ -489,16 +508,20 @@ export default function KanbanPad({ padId, data, onDataChange }: Props) {
           setConflict(true);
           return;
         }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         if (res.ok) {
           const j = await res.json().catch(() => null);
           if (j?.updated_at) lastUpdatedAt.current = j.updated_at;
           setConflict(false);
+          setSaveError(null);
+          clearStructuredPadDraft(padId, d);
+          setDraftRestored(false);
           // Best-effort Dashboard card thumbnail — throttled internally, so
           // firing on every save is fine.
           if (boardRef.current) void snapshotDomPad(padId, boardRef.current);
         }
       } catch (e) {
-        console.error(e);
+        setSaveError(e instanceof Error ? e.message : 'Erreur réseau');
       }
     }, SAVE_DEBOUNCE);
   }, [padId, onDataChange]);
@@ -570,6 +593,8 @@ export default function KanbanPad({ padId, data, onDataChange }: Props) {
           ⚠️ Ce tableau a été modifié sur un autre appareil. Recharge la page pour repartir de la version serveur.
         </div>
       )}
+      {draftRestored && <div role="status" style={{ padding: '8px 12px', fontSize: 13, textAlign: 'center' }}>Brouillon local récupéré. <button onClick={() => save(columns, schema, templates)}>Enregistrer maintenant</button></div>}
+      {saveError && <div role="alert" style={{ padding: '8px 12px', fontSize: 13, textAlign: 'center' }}>⚠️ Échec de sauvegarde ({saveError}). {draftAvailable ? 'Brouillon conservé sur cet appareil.' : 'Échec de la copie locale : garde cette page ouverte et réessaie.'} <button onClick={() => save(columns, schema, templates)}>Réessayer</button></div>}
       <div className="kanban__main">
         {/* Board */}
         <div className="kanban__board">
