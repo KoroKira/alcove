@@ -12,6 +12,7 @@ import { useCallbackRefState } from "./hooks/useCallbackRefState";
 import { useAppConfig } from "./hooks/useAppConfig";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { usePad } from "./hooks/usePadData";
+import { useStructuredPadData } from "./hooks/useStructuredPadData";
 import { snapshotCanvasPad } from "./lib/thumbnailSnapshot";
 
 // Components
@@ -109,6 +110,15 @@ function PadLoading() {
   );
 }
 
+function PadLoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div role="alert" style={{ display: 'grid', placeContent: 'center', gap: 10, height: '100%', textAlign: 'center' }}>
+      <span>Impossible de charger ce pad ({message}).</span>
+      <button onClick={onRetry}>Réessayer</button>
+    </div>
+  );
+}
+
 export default function App() {
   const { t, i18n } = useTranslation();
   const excalidrawLang = i18n.language.startsWith('fr') ? 'fr-FR' : 'en-EN';
@@ -169,9 +179,6 @@ export default function App() {
   const [aiContentToInsert, setAiContentToInsert] = useState<string | null>(null);
   const [pendingDocContent, setPendingDocContent] = useState<string | null>(null);
   const [presentationMode, setPresentationMode] = useState(false);
-  const [kanbanData, setKanbanData] = useState<KanbanData | null>(null);
-  const [ganttData, setGanttData] = useState<GanttData | null>(null);
-  const [databaseData, setDatabaseData] = useState<DatabaseData | null>(null);
   const [quickCaptureOpen, setQuickCaptureOpen] = useState(false);
   const [obsidianImportOpen, setObsidianImportOpen] = useState(false);
   const [bookmarksImportOpen, setBookmarksImportOpen] = useState(false);
@@ -216,6 +223,15 @@ export default function App() {
   const isLatexMode = selectedTab?.padType === 'latex';
   const isDatabaseMode = selectedTab?.padType === 'database';
   const isStructuredMode = isDocumentMode || isKanbanMode || isGanttMode || isLatexMode || isDatabaseMode;
+  const {
+    data: kanbanData, setData: setKanbanData, error: kanbanLoadError, retry: retryKanbanLoad,
+  } = useStructuredPadData<KanbanData>(selectedTabId, isKanbanMode);
+  const {
+    data: ganttData, setData: setGanttData, error: ganttLoadError, retry: retryGanttLoad,
+  } = useStructuredPadData<GanttData>(selectedTabId, isGanttMode);
+  const {
+    data: databaseData, setData: setDatabaseData, error: databaseLoadError, retry: retryDatabaseLoad,
+  } = useStructuredPadData<DatabaseData>(selectedTabId, isDatabaseMode);
   const firstDocTab = tabs.find(t => t.padType === 'document');
   const splitPanelDocId = splitDocId || firstDocTab?.id || null;
 
@@ -285,30 +301,6 @@ export default function App() {
     excalidrawAPI,
     canvasColors(selectedTab?.theme),
   );
-
-  // Load kanban/gantt data when switching to a structured pad
-  useEffect(() => {
-    if (!selectedTabId) return;
-    if (isKanbanMode) {
-      setKanbanData(null);
-      fetch(`/api/pad/${selectedTabId}`)
-        .then(r => r.json())
-        .then(d => setKanbanData(d as KanbanData))
-        .catch(console.error);
-    } else if (isGanttMode) {
-      setGanttData(null);
-      fetch(`/api/pad/${selectedTabId}`)
-        .then(r => r.json())
-        .then(d => setGanttData(d as GanttData))
-        .catch(console.error);
-    } else if (isDatabaseMode) {
-      setDatabaseData(null);
-      fetch(`/api/pad/${selectedTabId}`)
-        .then(r => r.json())
-        .then(d => setDatabaseData(d as DatabaseData))
-        .catch(console.error);
-    }
-  }, [selectedTabId, isKanbanMode, isGanttMode, isDatabaseMode]);
 
   // Auto-collapse sidebar in canvas mode so Excalidraw panels have full viewport
   useEffect(() => {
@@ -657,7 +649,7 @@ export default function App() {
         <div className="app-doc-wrap" style={{ left: sidebarWidth }}>
           {kanbanData
             ? <Suspense fallback={<PadLoading />}><KanbanPad padId={selectedTabId} data={kanbanData} onDataChange={setKanbanData} /></Suspense>
-            : <PadLoading />
+            : kanbanLoadError ? <PadLoadError message={kanbanLoadError} onRetry={retryKanbanLoad} /> : <PadLoading />
           }
         </div>
       )}
@@ -667,7 +659,7 @@ export default function App() {
         <div className="app-doc-wrap" style={{ left: sidebarWidth }}>
           {ganttData
             ? <Suspense fallback={<PadLoading />}><GanttPad padId={selectedTabId} data={ganttData} onDataChange={setGanttData} /></Suspense>
-            : <PadLoading />
+            : ganttLoadError ? <PadLoadError message={ganttLoadError} onRetry={retryGanttLoad} /> : <PadLoading />
           }
         </div>
       )}
@@ -677,7 +669,7 @@ export default function App() {
         <div className="app-doc-wrap" style={{ left: sidebarWidth }}>
           {databaseData
             ? <Suspense fallback={<PadLoading />}><DatabasePad padId={selectedTabId} data={databaseData} onDataChange={setDatabaseData} /></Suspense>
-            : <PadLoading />
+            : databaseLoadError ? <PadLoadError message={databaseLoadError} onRetry={retryDatabaseLoad} /> : <PadLoading />
           }
         </div>
       )}
