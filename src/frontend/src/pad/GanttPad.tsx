@@ -4,7 +4,7 @@ import { FieldValueRow, AttachmentList } from './FieldEditor';
 import type { FieldDef, FieldValue, FieldType, Attachment, Priority } from './fieldTypes';
 import { uid, PRIORITY_LABELS, PRIORITY_COLORS, FIELD_TYPE_LABELS } from './fieldTypes';
 import { snapshotDomPad } from '../lib/thumbnailSnapshot';
-import { clearStructuredPadDraft, hasStructuredPadDraft, readStructuredPadDraft, removeStructuredPadDraft, writeStructuredPadDraft } from '../lib/structuredPadDraft';
+import { clearStructuredPadDraft, fetchStructuredPadUpdatedAt, hasStructuredPadDraft, isStructuredPadDraftStale, readStructuredPadDraftRecord, removeStructuredPadDraft, UNKNOWN_STRUCTURED_DRAFT_BASELINE, writeStructuredPadDraft } from '../lib/structuredPadDraft';
 import './GanttPad.scss';
 
 /* ─── Types ─── */
@@ -434,7 +434,8 @@ function TaskPanel({ task, schema, allTasks, templates, onUpdate, onDelete, onSa
 /* ─── Main GanttPad ─── */
 
 export default function GanttPad({ padId, data, onDataChange }: Props) {
-  const [initialData] = useState(() => readStructuredPadDraft(padId, data));
+  const [initialDraft] = useState(() => readStructuredPadDraftRecord<GanttData>(padId));
+  const initialData = initialDraft?.data ?? data;
   const [tasks, setTasks] = useState<GanttTask[]>(initialData.tasks ?? []);
   const [schema, setSchema] = useState<FieldDef[]>(initialData.fieldSchema ?? []);
   const [templates, setTemplates] = useState<GanttTaskTemplate[]>(initialData.taskTemplates ?? []);
@@ -442,29 +443,37 @@ export default function GanttPad({ padId, data, onDataChange }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showTplMenu, setShowTplMenu] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastUpdatedAt = useRef<string | null>(data.updated_at ?? null);
-  const [conflict, setConflict] = useState(false);
+  const baselineUnknown = Boolean(initialDraft && (!initialDraft.baselineKnown || !initialDraft.expectedUpdatedAt));
+  const initialConflict = Boolean(initialDraft && isStructuredPadDraftStale(initialDraft, data.updated_at ?? null));
+  const baselineUnknownRef = useRef(baselineUnknown);
+  const lastUpdatedAt = useRef<string | null>(initialDraft ? (initialDraft.baselineKnown ? initialDraft.expectedUpdatedAt : UNKNOWN_STRUCTURED_DRAFT_BASELINE) : (data.updated_at ?? null));
+  const [conflict, setConflict] = useState(initialConflict);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [draftRestored, setDraftRestored] = useState(() => hasStructuredPadDraft(padId));
+  const [draftBaselineUnknown, setDraftBaselineUnknown] = useState(baselineUnknown);
   const [draftAvailable, setDraftAvailable] = useState(true);
   const boardRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    const restored = readStructuredPadDraft(padId, data);
+    const draft = readStructuredPadDraftRecord<GanttData>(padId);
+    const restored = draft?.data ?? data;
     setTasks(restored.tasks ?? []);
     setSchema(restored.fieldSchema ?? []);
     setTemplates(restored.taskTemplates ?? []);
-    lastUpdatedAt.current = data.updated_at ?? null;
-    setConflict(false);
+    const isBaselineUnknown = Boolean(draft && (!draft.baselineKnown || !draft.expectedUpdatedAt));
+    baselineUnknownRef.current = isBaselineUnknown;
+    lastUpdatedAt.current = draft ? (draft.baselineKnown ? draft.expectedUpdatedAt : UNKNOWN_STRUCTURED_DRAFT_BASELINE) : (data.updated_at ?? null);
+    setConflict(Boolean(draft && isStructuredPadDraftStale(draft, data.updated_at ?? null)));
     setSaveError(null);
     setDraftRestored(hasStructuredPadDraft(padId));
+    setDraftBaselineUnknown(isBaselineUnknown);
   }, [padId]);
 
   const save = useCallback((t: GanttTask[], sc: FieldDef[], tpls: GanttTaskTemplate[]) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     const d: GanttData = { tasks: t, fieldSchema: sc, taskTemplates: tpls };
-    setDraftAvailable(writeStructuredPadDraft(padId, d));
+    setDraftAvailable(writeStructuredPadDraft(padId, d, lastUpdatedAt.current, !baselineUnknownRef.current));
     setSaveError(null);
     saveTimer.current = setTimeout(async () => {
       onDataChange(d);
@@ -483,6 +492,8 @@ export default function GanttPad({ padId, data, onDataChange }: Props) {
           setSaveError(null);
           clearStructuredPadDraft(padId, d);
           setDraftRestored(false);
+          baselineUnknownRef.current = false;
+          setDraftBaselineUnknown(false);
           if (boardRef.current) void snapshotDomPad(padId, boardRef.current);
         }
       } catch (e) { setSaveError(e instanceof Error ? e.message : 'Erreur réseau'); }
@@ -493,6 +504,20 @@ export default function GanttPad({ padId, data, onDataChange }: Props) {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     removeStructuredPadDraft(padId);
     window.location.reload();
+  };
+
+  const overwriteServerWithDraft = async () => {
+    try {
+      const updatedAt = await fetchStructuredPadUpdatedAt(padId);
+      if (!updatedAt) throw new Error('Version serveur indisponible');
+      lastUpdatedAt.current = updatedAt;
+      baselineUnknownRef.current = false;
+      setDraftBaselineUnknown(false);
+      setConflict(false);
+      save(tasks, schema, templates);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Impossible de vérifier la version serveur');
+    }
   };
 
   const update = (t: GanttTask[], sc = schema, tpls = templates) => { setTasks(t); save(t, sc, tpls); };
@@ -543,10 +568,12 @@ export default function GanttPad({ padId, data, onDataChange }: Props) {
     <div className="gantt" ref={boardRef}>
       {conflict && (
         <div role="alert" style={{ background: '#f5a623', color: '#000', padding: '8px 12px', fontSize: 13, textAlign: 'center' }}>
-          ⚠️ Ce planning a été modifié sur un autre appareil. <button onClick={discardDraftAndLoadServer}>Abandonner le brouillon et charger la version serveur</button>
+          {draftBaselineUnknown ? '⚠️ Ce brouillon ancien ne contient pas la version serveur de référence.' : '⚠️ Ce planning a été modifié sur un autre appareil.'}
+          {' '}<button onClick={overwriteServerWithDraft}>Écraser la version serveur avec ce brouillon</button>
+          <button onClick={discardDraftAndLoadServer}>Abandonner le brouillon et charger la version serveur</button>
         </div>
       )}
-      {draftRestored && <div role="status" style={{ padding: '8px 12px', fontSize: 13, textAlign: 'center' }}>Brouillon local récupéré. <button onClick={() => save(tasks, schema, templates)}>Enregistrer maintenant</button></div>}
+      {draftRestored && !conflict && <div role="status" style={{ padding: '8px 12px', fontSize: 13, textAlign: 'center' }}>Brouillon local récupéré. <button onClick={() => save(tasks, schema, templates)}>Enregistrer maintenant</button></div>}
       {saveError && <div role="alert" style={{ padding: '8px 12px', fontSize: 13, textAlign: 'center' }}>⚠️ Échec de sauvegarde ({saveError}). {draftAvailable ? 'Brouillon conservé sur cet appareil.' : 'Échec de la copie locale : garde cette page ouverte et réessaie.'} <button onClick={() => save(tasks, schema, templates)}>Réessayer</button></div>}
       {/* Toolbar */}
       <div className="gantt__toolbar">
