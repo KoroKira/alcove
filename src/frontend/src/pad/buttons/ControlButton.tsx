@@ -1,7 +1,7 @@
 import React from 'react';
 import './ControlButton.scss';
 import { Play, Square, LoaderCircle } from 'lucide-react';
-import { useWorkspace } from '../../hooks/useWorkspace';
+import { useWorkspace, WorkspaceIntegrationDisabledError } from '../../hooks/useWorkspace';
 
 export const ControlButton: React.FC = () => {
   const {
@@ -55,6 +55,19 @@ export const ControlButton: React.FC = () => {
       startWorkspace();
     }
   };
+
+  if (stateError instanceof WorkspaceIntegrationDisabledError) {
+    return (
+      <button
+        className="control-button control-button--disabled"
+        disabled={true}
+        aria-label="Workspace non configuré"
+        title="La gestion des workspaces n’est pas configurée sur cette instance."
+      >
+        <Play className="control-icon" color="black" />
+      </button>
+    );
+  }
 
   if (currentUiStatus === 'loading' || currentUiStatus === 'starting' || currentUiStatus === 'stopping' || isStarting || isStopping) {
     return (

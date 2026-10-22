@@ -1,6 +1,6 @@
 import React from 'react';
 import './StateIndicator.scss';
-import { useWorkspace } from '../hooks/useWorkspace';
+import { useWorkspace, WorkspaceIntegrationDisabledError } from '../hooks/useWorkspace';
 
 export const StateIndicator: React.FC = () => {
   const { workspaceState, isLoadingState, stateError } = useWorkspace();
@@ -10,6 +10,9 @@ export const StateIndicator: React.FC = () => {
       return { modifier: 'starting', text: 'Loading...' }; // Orange
     }
     if (stateError) {
+      if (stateError instanceof WorkspaceIntegrationDisabledError) {
+        return { modifier: 'unknown', text: 'Workspace désactivé' };
+      }
       return { modifier: 'error', text: 'Error Loading State' }; // Light gray
     }
     if (!workspaceState) {

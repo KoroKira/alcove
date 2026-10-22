@@ -50,23 +50,35 @@ def _validated_payload(raw: bytes, path: str) -> dict:
         total = sum(len(str(m.get("content", ""))) for m in messages if isinstance(m, dict))
         if total > AI_MAX_CONTEXT_CHARS:
             raise HTTPException(413, "Contexte IA trop volumineux")
-    elif path == "/api/embeddings":
-        prompt = payload.get("prompt", payload.get("input", ""))
-        if len(str(prompt)) > AI_MAX_EMBED_CHARS:
+    elif path in {"/api/embed", "/api/embeddings"}:
+        value = payload.get("input", payload.get("prompt", ""))
+        values = value if isinstance(value, list) else [value]
+        if any(len(str(item)) > AI_MAX_EMBED_CHARS for item in values):
             raise HTTPException(413, "Texte d'embedding trop volumineux")
     return payload
 
 
+def _normalize_embedding_payload(payload: dict) -> dict:
+    """Adapt cached clients using the former prompt field to Ollama's input field."""
+    normalized = dict(payload)
+    normalized["input"] = normalized.pop("prompt", normalized.get("input", ""))
+    return normalized
+
+
 async def _forward(request: Request, path: str, stream: bool, user: UserSession):
-    payload = await request.body()
-    _validated_payload(payload, path)
+    raw = await request.body()
+    payload = _validated_payload(raw, path)
+    return await _forward_payload(path, payload, stream, user)
+
+
+async def _forward_payload(path: str, payload: dict, stream: bool, user: UserSession):
     await charge_user(user.id)
     url = f"{OLLAMA_URL.rstrip('/')}{path}"
     if not stream:
         try:
             async with inference_slot(user.id):
                 async with httpx.AsyncClient(timeout=AI_UPSTREAM_TIMEOUT_SECONDS) as client:
-                    response = await client.post(url, content=payload, headers={"content-type": "application/json"})
+                    response = await client.post(url, json=payload, headers={"content-type": "application/json"})
             return StreamingResponse(iter([response.content]), status_code=response.status_code,
                                      media_type=response.headers.get("content-type", "application/json"))
         except HTTPException:
@@ -78,7 +90,7 @@ async def _forward(request: Request, path: str, stream: bool, user: UserSession)
     await slot.__aenter__()
     client = httpx.AsyncClient(timeout=httpx.Timeout(AI_UPSTREAM_TIMEOUT_SECONDS, read=AI_UPSTREAM_TIMEOUT_SECONDS))
     try:
-        upstream = await client.send(client.build_request("POST", url, content=payload,
+        upstream = await client.send(client.build_request("POST", url, json=payload,
             headers={"content-type": "application/json"}), stream=True)
     except Exception as exc:
         await client.aclose()
@@ -99,7 +111,16 @@ async def _forward(request: Request, path: str, stream: bool, user: UserSession)
 
 @router.post("/api/embeddings")
 async def embeddings(request: Request, user: UserSession = Depends(require_auth)):
-    return await _forward(request, "/api/embeddings", False, user)
+    # Convert cached legacy clients to Ollama's current /api/embed schema.
+    payload = _normalize_embedding_payload(
+        _validated_payload(await request.body(), "/api/embeddings")
+    )
+    return await _forward_payload("/api/embed", payload, False, user)
+
+
+@router.post("/api/embed")
+async def embed(request: Request, user: UserSession = Depends(require_auth)):
+    return await _forward(request, "/api/embed", False, user)
 
 
 @router.post("/api/chat")
