@@ -539,11 +539,12 @@ async def export_all_zip(
     user: UserSession = Depends(require_auth),
     session: AsyncSession = Depends(get_session)
 ):
-    """Export all pads as a ZIP archive (markdown + excalidraw files)."""
-    import io, zipfile, json as _json
+    """Export every active pad with a format appropriate to its pad type."""
+    import io, zipfile
     from fastapi.responses import StreamingResponse
     from domain.user import User as _User
     from sqlalchemy import select as _sel
+    from application.pad_exports import build_pad_export_files
 
     real_user = await _User.get_by_id(session, user.id)
     if not real_user:
@@ -557,16 +558,8 @@ async def export_all_zip(
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
-        for pad in pads:
-            safe = __import__('re').sub(r'[^\w\-]', '_', pad.display_name or 'untitled')
-            if getattr(pad, 'pad_type', 'canvas') == 'document':
-                content = ''
-                if isinstance(pad.data, dict):
-                    content = pad.data.get('content', '')
-                zf.writestr(f"{safe}.md", content or '')
-            else:
-                data = pad.data or {}
-                zf.writestr(f"{safe}.excalidraw", _json.dumps(data, ensure_ascii=False, indent=2))
+        for archive_path, content in build_pad_export_files(pads):
+            zf.writestr(archive_path, content)
     buf.seek(0)
     return StreamingResponse(
         buf,
