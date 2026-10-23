@@ -13,32 +13,7 @@ from database.models import PadMemberStore, PadStore
 from database.pad_serialization import serialize_pad
 from domain.pad import Pad
 from domain.user import User
-
-
-def match_pad(pad_type: str, data: Any, display_name: str, query: str):
-    """Pure full-text matcher shared by the legacy and v1 search endpoints."""
-    data = data if isinstance(data, dict) else {}
-    matches = []
-    if pad_type == "document":
-        content = data.get("content", "") or ""
-        idx = content.lower().find(query)
-        if idx != -1:
-            start = max(0, idx - 40)
-            excerpt = content[start:idx + 80].replace("\n", " ").strip()
-            matches.append({"element_id": "", "text": content[idx:idx + 60], "excerpt": excerpt})
-    else:
-        for elem in data.get("elements", []):
-            if not isinstance(elem, dict):
-                continue
-            label = elem.get("label") or {}
-            text = elem.get("text", "") or (label.get("text", "") if isinstance(label, dict) else "")
-            if text and query in text.lower():
-                matches.append({"element_id": elem.get("id", ""), "text": text[:60], "excerpt": text[:120]})
-
-    name_match = query in (display_name or "").lower()
-    if name_match or matches:
-        return name_match, matches[:5]
-    return None
+from services.pad_search import match_pad
 
 
 def pad_summary(pad: Any) -> Dict[str, Any]:

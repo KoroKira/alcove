@@ -17,7 +17,7 @@ from database.models.version_model import PadVersion
 from database.database import get_session
 from domain.pad import Pad
 from domain.user import User
-from application.pads import match_pad as _match_pad, pad_content
+from application.pads import pad_content
 from application.pads import pad_summary
 # schedule_reindex was removed in Phase 3C — the browser drives reindexing
 # now (manual "Réindexer tout" button) since the server no longer has an
@@ -501,11 +501,10 @@ async def search_pads(
     user: UserSession = Depends(require_auth),
     session: AsyncSession = Depends(get_session)
 ):
-    """Full-text search across pad names, document bodies and canvas text.
+    """Full-text search across all pad types and their user-authored text.
 
     Scans *all* of the user's pads in a single query (previously only the
-    currently-open tabs), and matches document `content` — not just canvas
-    text elements — so notes are actually searchable.
+    currently-open tabs), using the same text extraction rules as RAG.
     """
     from application.pads import PadQueryService
     return await PadQueryService(session).search(user.id, q)
