@@ -120,32 +120,34 @@ CLIENT_SECRET=$(curl -sf \
   -H "Authorization: Bearer ${KC_TOKEN}" | jq -r '.value')
 
 # ── Add Audience mapper (idempotent) ──────────────────────────────────────────
-DEDICATED_SCOPE_ID=$(curl -sf \
-  "http://localhost:${KC_PORT}/admin/realms/${KC_REALM}/clients/${CLIENT_UUID}/default-client-scopes" \
-  -H "Authorization: Bearer ${KC_TOKEN}" | jq -r ".[] | select(.name == \"${KC_CLIENT_ID}-dedicated\") | .id // empty")
+MAPPER_URL="http://localhost:${KC_PORT}/admin/realms/${KC_REALM}/clients/${CLIENT_UUID}/protocol-mappers/models"
+MAPPER_EXISTS=$(curl -sf "$MAPPER_URL" \
+  -H "Authorization: Bearer ${KC_TOKEN}" | jq -r '.[] | select(.name == "audience" and .protocolMapper == "oidc-audience-mapper") | .id // empty' | head -n 1)
+MAPPER_BODY=$(cat <<JSON
+{
+  "name": "audience",
+  "protocol": "openid-connect",
+  "protocolMapper": "oidc-audience-mapper",
+  "config": {
+    "included.client.audience": "${KC_CLIENT_ID}",
+    "access.token.claim": "true"
+  }
+}
+JSON
+)
 
-if [ -n "$DEDICATED_SCOPE_ID" ]; then
-  MAPPER_EXISTS=$(curl -sf \
-    "http://localhost:${KC_PORT}/admin/realms/${KC_REALM}/client-scopes/${DEDICATED_SCOPE_ID}/protocol-mappers/models" \
-    -H "Authorization: Bearer ${KC_TOKEN}" | jq -r '.[] | select(.name == "audience") | .id // empty')
-  if [ -z "$MAPPER_EXISTS" ]; then
-    curl -sf -X POST \
-      "http://localhost:${KC_PORT}/admin/realms/${KC_REALM}/client-scopes/${DEDICATED_SCOPE_ID}/protocol-mappers/models" \
-      -H "Authorization: Bearer ${KC_TOKEN}" \
-      -H "Content-Type: application/json" \
-      -d "{
-        \"name\": \"audience\",
-        \"protocol\": \"openid-connect\",
-        \"protocolMapper\": \"oidc-audience-mapper\",
-        \"config\": {
-          \"included.client.audience\": \"${KC_CLIENT_ID}\",
-          \"access.token.claim\": \"true\"
-        }
-      }" >/dev/null
-    success "Audience mapper added"
-  else
-    warn "Audience mapper already exists — skipping"
-  fi
+if [ -n "$MAPPER_EXISTS" ]; then
+  curl -sf -X PUT "${MAPPER_URL}/${MAPPER_EXISTS}" \
+    -H "Authorization: Bearer ${KC_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d "$MAPPER_BODY" >/dev/null
+  warn "Audience mapper already exists — ensured Alcove audience"
+else
+  curl -sf -X POST "$MAPPER_URL" \
+    -H "Authorization: Bearer ${KC_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d "$MAPPER_BODY" >/dev/null
+  success "Audience mapper added"
 fi
 
 # ── Create pad user (idempotent) ──────────────────────────────────────────────
