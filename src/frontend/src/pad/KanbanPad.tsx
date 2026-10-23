@@ -74,16 +74,19 @@ function isOverdue(d: string) {
 
 interface CardModalProps {
   card: KanbanCard;
+  columns: KanbanColumn[];
+  currentColumnId: string;
   schema: FieldDef[];
   templates: KanbanCardTemplate[];
   onSave: (card: KanbanCard) => void;
+  onMoveColumn: (card: KanbanCard, columnId: string) => void;
   onDelete: () => void;
   onSaveAsTemplate: (name: string, card: KanbanCard) => void;
   onSchemaChange: (schema: FieldDef[]) => void;
   onClose: () => void;
 }
 
-function CardModal({ card, schema, templates, onSave, onDelete, onSaveAsTemplate, onSchemaChange, onClose }: CardModalProps) {
+function CardModal({ card, columns, currentColumnId, schema, templates, onSave, onMoveColumn, onDelete, onSaveAsTemplate, onSchemaChange, onClose }: CardModalProps) {
   const [draft, setDraft] = useState<KanbanCard>({ ...card });
   const [saveTplName, setSaveTplName] = useState('');
   const [showSaveTpl, setShowSaveTpl] = useState(false);
@@ -143,6 +146,18 @@ function CardModal({ card, schema, templates, onSave, onDelete, onSaveAsTemplate
           rows={2}
           autoFocus
         />
+
+        <div className="card-modal__prop-row">
+          <label className="card-modal__prop-label" htmlFor="kanban-card-column">Colonne</label>
+          <select
+            id="kanban-card-column"
+            className="card-modal__column-select"
+            value={currentColumnId}
+            onChange={e => onMoveColumn(draft, e.target.value)}
+          >
+            {columns.map(column => <option key={column.id} value={column.id}>{column.title}</option>)}
+          </select>
+        </div>
 
         {/* Color strip */}
         <div className="card-modal__colors">
@@ -600,6 +615,18 @@ export default function KanbanPad({ padId, data, onDataChange }: Props) {
     update(next);
   };
 
+  const moveCardToColumn = (fromColId: string, card: KanbanCard, toColId: string) => {
+    if (fromColId === toColId) return;
+    const next = columns.map(col => {
+      if (col.id === fromColId) return { ...col, cards: col.cards.filter(item => item.id !== card.id) };
+      if (col.id === toColId) return { ...col, cards: [...col.cards, card] };
+      return col;
+    });
+    update(next);
+    setOpenCard(null);
+    setOpenCardColId(null);
+  };
+
   const deleteCard = (colId: string, cardId: string) => {
     update(columns.map(c => c.id === colId ? { ...c, cards: c.cards.filter(k => k.id !== cardId) } : c));
   };
@@ -671,9 +698,12 @@ export default function KanbanPad({ padId, data, onDataChange }: Props) {
       {openCard && openCardColId && (
         <CardModal
           card={openCard}
+          columns={columns}
+          currentColumnId={openCardColId}
           schema={schema}
           templates={templates}
           onSave={updated => updateCard(openCardColId, updated)}
+          onMoveColumn={(updated, toColId) => moveCardToColumn(openCardColId, updated, toColId)}
           onDelete={() => { deleteCard(openCardColId, openCard.id); setOpenCard(null); setOpenCardColId(null); }}
           onSaveAsTemplate={saveAsTemplate}
           onSchemaChange={updateSchema}

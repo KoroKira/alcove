@@ -673,6 +673,21 @@
   min-width: 80px;
 }
 
+.card-modal__column-select {
+  background: var(--color-surface-lowest, var(--ap-bg0));
+  border: 1px solid rgba(var(--ap-text0-rgb), 0.12);
+  border-radius: var(--ap-radius-sm);
+  color: var(--color-on-surface, var(--ap-text0));
+  flex: 1;
+  font: inherit;
+  min-height: 40px;
+  padding: 6px 8px;
+}
+
+.card-modal__column-select option {
+  background: var(--color-surface-mid, var(--ap-bg2));
+}
+
 /* Inline add-property form */
 .card-modal__add-field-form {
   background: rgba(var(--ap-text0-rgb), 0.04);
