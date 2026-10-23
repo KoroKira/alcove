@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { clearPrivateApiCaches } from '../lib/privateApiCache';
 
 interface LogoutResponse {
   status: string;
@@ -34,8 +35,14 @@ export const useLogout = () => {
 
   return useMutation<LogoutResponse, LogoutError, void>({
     mutationFn: logoutUser,
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       console.debug('[alcove] Logout mutation successful, Keycloak URL:', data.logout_url);
+
+      try {
+        await clearPrivateApiCaches();
+      } catch (error) {
+        console.warn('[alcove] Could not clear private offline caches during logout:', error);
+      }
 
       // Invalidate authStatus query to trigger a re-fetch and update UI.
       // This will make useAuthStatus re-evaluate, and isAuthenticated should become false.
