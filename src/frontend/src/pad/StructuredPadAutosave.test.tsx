@@ -180,4 +180,25 @@ describe.each([
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
+
+  it('snapshots the server version before a user-approved local draft overwrite', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ updated_at: 'server-v2' }) } as Response)
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ id: 'snapshot-1' }) } as Response)
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ updated_at: 'server-v3' }) } as Response);
+    vi.stubGlobal('fetch', fetchMock);
+    writeStructuredPadDraft('pad-conflict', first, 'old-server-version');
+    const Pad = Component as React.ComponentType<{ padId: string; data: any; onDataChange: (data: any) => void }>;
+    render(<Pad padId="pad-conflict" data={{ ...first, updated_at: 'server-v2' }} onDataChange={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Écraser la version serveur avec ce brouillon' }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3), { timeout: 2000 });
+    expect(fetchMock.mock.calls.map(([input]) => input)).toEqual([
+      '/api/pad/pad-conflict',
+      '/api/pad/pad-conflict/versions/snapshot',
+      url.replace('pad-a', 'pad-conflict'),
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls[2][1]?.body as string).expected_updated_at).toBe('server-v2');
+  });
 });

@@ -96,6 +96,17 @@ export async function fetchStructuredPadUpdatedAt(padId: string): Promise<string
   return typeof pad.updated_at === 'string' ? pad.updated_at : null;
 }
 
+/** Read the current concurrency token and preserve that server version before
+ * a user-approved local-draft overwrite. If snapshotting fails, callers must
+ * stop before submitting the replacement. */
+export async function fetchAndSnapshotStructuredPadVersion(padId: string): Promise<string> {
+  const updatedAt = await fetchStructuredPadUpdatedAt(padId);
+  if (!updatedAt) throw new Error('Version serveur indisponible');
+  const response = await fetch(`/api/pad/${encodeURIComponent(padId)}/versions/snapshot`, { method: 'POST' });
+  if (!response.ok) throw new Error(`Impossible de protéger la version serveur (HTTP ${response.status})`);
+  return updatedAt;
+}
+
 export function clearStructuredPadDraft<T>(padId: string, savedData: T): void {
   try {
     const raw = localStorage.getItem(keyFor(padId));
