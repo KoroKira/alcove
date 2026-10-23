@@ -38,11 +38,15 @@ from domain.pad import Pad
 from workers.canvas_worker import CanvasWorker
 from domain.user import User
 from application.authorization import authorize_read
+from logging_filters import RedactAccessLogQuery
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     level=logging.INFO,
 )
+
+
+logging.getLogger("uvicorn.access").addFilter(RedactAccessLogQuery())
 logger = logging.getLogger(__name__)
 
 if POSTHOG_API_KEY:
