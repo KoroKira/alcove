@@ -115,6 +115,7 @@ const TrashDialog: React.FC<Props> = ({ onClose }) => {
                     onClick={() => void restore(pad)}
                     disabled={restoringId !== null}
                     aria-label={`${t('sidebar.trashRestore')} ${pad.display_name}`}
+                    title={t('sidebar.trashRestore')}
                   >
                     <RotateCcw size={14} />
                     <span>{t('sidebar.trashRestore')}</span>
