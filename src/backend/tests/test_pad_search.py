@@ -1,10 +1,5 @@
-"""Tests for _match_pad — the full-text search matcher.
-
-The regression these guard against: document bodies must be searchable. The
-previous /search implementation only scanned canvas `elements`, so a query that
-appeared only in a document's `content` matched nothing.
-"""
-from routers.pad_router import _match_pad
+"""Tests that workspace full-text search covers each supported pad schema."""
+from services.pad_search import match_pad as _match_pad
 
 
 def test_document_body_is_searchable():
@@ -41,6 +36,35 @@ def test_canvas_label_text_is_searchable():
     data = {"elements": [{"id": "arrow1", "label": {"text": "vers kubernetes"}}]}
     result = _match_pad("canvas", data, "Flux", "kubernetes")
     assert result is not None
+
+
+def test_latex_source_is_searchable():
+    result = _match_pad("latex", {"source": r"\section{Kubernetes planning}"}, "Runbook", "kubernetes")
+    assert result is not None
+    assert "Kubernetes" in result[1][0]["excerpt"]
+
+
+def test_kanban_card_content_is_searchable():
+    result = _match_pad("kanban", {
+        "columns": [{"title": "À faire", "cards": [{"title": "Migrate Kubernetes", "desc": "Move cluster"}]}],
+    }, "Infra", "kubernetes")
+    assert result is not None
+    assert result[1][0]["text"].startswith("Kubernetes")
+
+
+def test_gantt_task_content_is_searchable():
+    result = _match_pad("gantt", {"tasks": [{"name": "Deploy Kubernetes", "desc": "Production cluster"}]}, "Roadmap", "kubernetes")
+    assert result is not None
+    assert "Kubernetes" in result[1][0]["excerpt"]
+
+
+def test_database_cell_content_is_searchable():
+    result = _match_pad("database", {
+        "columns": [{"id": "c-notes", "name": "Notes"}],
+        "rows": [{"cells": {"c-notes": "Kubernetes migration"}}],
+    }, "Systems", "kubernetes")
+    assert result is not None
+    assert "Kubernetes" in result[1][0]["excerpt"]
 
 
 def test_element_with_null_label_does_not_crash():

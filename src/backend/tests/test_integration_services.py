@@ -180,6 +180,43 @@ async def test_pad_trash_hides_from_reads_and_restores_without_content_loss(inte
 
 
 @pytest.mark.integration
+async def test_workspace_search_finds_content_in_every_pad_type(integration_session):
+    owner_id = uuid4()
+    owner = UserStore(
+        id=owner_id,
+        username=f"search-owner-{owner_id}",
+        email=f"{owner_id}@example.test",
+    )
+    pad_data = [
+        ("document", {"content": "Document needle-document"}),
+        ("latex", {"source": r"\section{needle-latex}"}),
+        ("canvas", {"elements": [{"id": "text1", "text": "needle-canvas"}]}),
+        ("kanban", {"columns": [{"title": "À faire", "cards": [{"title": "needle-kanban"}]}]}),
+        ("gantt", {"tasks": [{"name": "needle-gantt"}]}),
+        ("database", {
+            "columns": [{"id": "c-name", "name": "Nom"}],
+            "rows": [{"id": "row1", "cells": {"c-name": "needle-database"}}],
+        }),
+    ]
+    pads = [
+        PadStore(
+            id=uuid4(), owner_id=owner_id, display_name=f"{pad_type} search test",
+            data=data, sharing_policy="private", whitelist=[], pad_type=pad_type,
+        )
+        for pad_type, data in pad_data
+    ]
+    integration_session.add_all([owner, *pads])
+    await integration_session.commit()
+
+    service = PadQueryService(integration_session)
+    for pad_type, _ in pad_data:
+        results = await service.search(owner_id, f"needle-{pad_type}")
+        assert [item["pad_id"] for item in results] == [
+            str(next(pad.id for pad in pads if pad.pad_type == pad_type))
+        ]
+
+
+@pytest.mark.integration
 async def test_zip_export_contains_active_pads_and_excludes_trashed_pads(integration_session):
     owner_id = uuid4()
     owner = UserStore(
