@@ -21,6 +21,7 @@ import { findTransclusionTargets, parseWikiLink, resolveWikiLink } from '../lib/
 import { enqueueSerializedSave } from '../lib/saveQueue';
 import { readVideoMeta, stripVideoMeta, parseTimestamp, replaceReportBody } from '../lib/videoMeta';
 import { createManualSnapshot } from '../lib/manualSnapshot';
+import { escapeHtmlText } from '../lib/exportUtils';
 import VideoEmbed, { VideoEmbedHandle } from '../ui/VideoEmbed';
 import ListenButton from '../ui/ListenButton';
 
@@ -1007,18 +1008,20 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
     const blob = new Blob([content], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `${name}.md`; a.click();
-    URL.revokeObjectURL(url);
+    // Let the browser start the download before releasing the object URL.
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const exportPdf = () => {
     const tab = tabs.find(t => t.id === padId);
     const title = tab?.title || 'Document';
+    const safeTitle = escapeHtmlText(title);
     const dateStr = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
     const win = window.open('', '_blank');
     if (!win) return;
     win.document.write(`<!DOCTYPE html><html lang="fr"><head>
 <meta charset="UTF-8">
-<title>${title}</title>
+<title>${safeTitle}</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; }
   @page { margin: 2cm 2.5cm; }
@@ -1066,7 +1069,7 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
 </style>
 </head><body>
 <div class="pdf-header">
-  <div class="pdf-header__title">${title}</div>
+  <div class="pdf-header__title">${safeTitle}</div>
   <div class="pdf-header__meta">${dateStr}</div>
 </div>
 ${renderedHtml}
