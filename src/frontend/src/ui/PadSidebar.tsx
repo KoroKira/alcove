@@ -161,8 +161,19 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
 
   // Multi-selection: Cmd/Ctrl+click toggles, Shift+click range-selects.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkEditor, setBulkEditor] = useState<'folder' | 'tags' | null>(null);
+  const [editorTargetIds, setEditorTargetIds] = useState<string[]>([]);
+  const [bulkValue, setBulkValue] = useState('');
   const lastClickedRef = useRef<string | null>(null);
-  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+  const closeBulkEditor = () => {
+    setBulkEditor(null);
+    setEditorTargetIds([]);
+    setBulkValue('');
+  };
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+    closeBulkEditor();
+  }, []);
 
   // Escape clears an active multi-selection.
   useEffect(() => {
@@ -262,15 +273,42 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
     [rows],
   );
 
-  // Ask for a folder name (existing or new) and move a set of pads into it.
-  const promptMoveToFolder = useCallback((padIds: string[]) => {
-    if (!onUpdateFolder || padIds.length === 0) return;
-    const hint = knownFolders.length ? `\n(${t('sidebar.folderExisting')} : ${knownFolders.join(', ')})` : '';
-    const input = window.prompt(t('sidebar.folderPrompt') + hint, '');
-    if (input === null) return; // cancelled
-    const folder = input.trim() || null; // empty = ungroup
-    padIds.forEach(id => onUpdateFolder({ padId: id, folder }));
-  }, [onUpdateFolder, knownFolders, t]);
+  const openBulkEditor = (kind: 'folder' | 'tags') => {
+    setBulkValue('');
+    setBulkEditor(kind);
+    setEditorTargetIds([...selectedIds]);
+  };
+
+  const openFolderEditor = (padIds: string[]) => {
+    setBulkValue('');
+    setBulkEditor('folder');
+    setEditorTargetIds(padIds);
+  };
+
+  const submitBulkAction = (event: React.FormEvent) => {
+    event.preventDefault();
+    const value = bulkValue.trim();
+    if (!value) return;
+    if (bulkEditor === 'folder' && onUpdateFolder) {
+      editorTargetIds.forEach(padId => onUpdateFolder({ padId, folder: value }));
+    } else if (bulkEditor === 'tags' && onUpdateTags) {
+      const newTags = value.split(',').map(tag => tag.trim()).filter(Boolean);
+      if (newTags.length === 0) return;
+      tabs.filter(tab => editorTargetIds.includes(tab.id)).forEach(tab => {
+        const tags = Array.from(new Set([...(tab.tags || []), ...newTags]));
+        onUpdateTags({ padId: tab.id, tags });
+      });
+    } else {
+      return;
+    }
+    clearSelection();
+  };
+
+  const removeEditorTargetsFromFolders = () => {
+    if (!onUpdateFolder) return;
+    editorTargetIds.forEach(padId => onUpdateFolder({ padId, folder: null }));
+    clearSelection();
+  };
 
   // Click on a pad row: plain = open, Cmd/Ctrl = toggle, Shift = range-select.
   const handleItemClick = (e: React.MouseEvent, tab: Tab, index: number) => {
@@ -304,26 +342,10 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
     onSelectPad(tab.id);
   };
 
-  const bulkAddTag = () => {
-    const input = window.prompt(t('sidebar.bulkTagPrompt'));
-    if (!input?.trim() || !onUpdateTags) return;
-    const newTags = input.split(',').map(s => s.trim()).filter(Boolean);
-    tabs.filter(tb => selectedIds.has(tb.id)).forEach(tb => {
-      const merged = Array.from(new Set([...(tb.tags || []), ...newTags]));
-      onUpdateTags({ padId: tb.id, tags: merged });
-    });
-    clearSelection();
-  };
-
   const bulkDelete = () => {
     const count = selectedIds.size;
     if (!window.confirm(t('sidebar.bulkDeleteConfirm', { count }))) return;
     selectedIds.forEach(id => onDelete(id));
-    clearSelection();
-  };
-
-  const bulkMoveFolder = () => {
-    promptMoveToFolder([...selectedIds]);
     clearSelection();
   };
 
@@ -425,12 +447,12 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
           <div className="pad-sidebar__bulk-bar">
             <span className="pad-sidebar__bulk-count">{t('sidebar.bulkSelected', { count: selectedIds.size })}</span>
             {onUpdateFolder && (
-              <button className="pad-sidebar__bulk-btn" onClick={bulkMoveFolder} title={t('sidebar.bulkFolder')}>
+              <button className="pad-sidebar__bulk-btn" onClick={() => openBulkEditor('folder')} title={t('sidebar.bulkFolder')} aria-label={t('sidebar.bulkFolder')} aria-expanded={bulkEditor === 'folder'}>
                 <FolderInput size={13} />
               </button>
             )}
             {onUpdateTags && (
-              <button className="pad-sidebar__bulk-btn" onClick={bulkAddTag} title={t('sidebar.bulkTag')}>
+              <button className="pad-sidebar__bulk-btn" onClick={() => openBulkEditor('tags')} title={t('sidebar.bulkTag')} aria-label={t('sidebar.bulkTag')} aria-expanded={bulkEditor === 'tags'}>
                 <Hash size={13} />
               </button>
             )}
@@ -441,6 +463,32 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
               <X size={13} />
             </button>
           </div>
+        )}
+
+        {bulkEditor && editorTargetIds.length > 0 && (
+          <form className="pad-sidebar__bulk-editor" onSubmit={submitBulkAction} role="group" aria-label={t(bulkEditor === 'folder' ? 'sidebar.bulkFolder' : 'sidebar.bulkTag')}>
+            <label className="pad-sidebar__bulk-label" htmlFor="pad-sidebar-bulk-value">
+              {t(bulkEditor === 'folder' ? 'sidebar.folderDestination' : 'sidebar.bulkTagPrompt')}
+            </label>
+            <input
+              id="pad-sidebar-bulk-value"
+              autoFocus
+              value={bulkValue}
+              onChange={event => setBulkValue(event.target.value)}
+              onKeyDown={event => { if (event.key === 'Escape') closeBulkEditor(); }}
+              list={bulkEditor === 'folder' ? 'pad-sidebar-folder-suggestions' : undefined}
+              placeholder={bulkEditor === 'folder' ? t('sidebar.folderExisting') : t('sidebar.bulkTagPrompt')}
+              aria-label={t(bulkEditor === 'folder' ? 'sidebar.folderDestination' : 'sidebar.bulkTagPrompt')}
+            />
+            {bulkEditor === 'folder' && knownFolders.length > 0 && (
+              <datalist id="pad-sidebar-folder-suggestions">
+                {knownFolders.map(folder => <option key={folder} value={folder} />)}
+              </datalist>
+            )}
+            <button type="submit" disabled={!bulkValue.trim()}>{t('sidebar.bulkApply')}</button>
+            {bulkEditor === 'folder' && <button type="button" onClick={removeEditorTargetsFromFolders}>{t('sidebar.folderRemove')}</button>}
+            <button type="button" onClick={closeBulkEditor}>{t('sidebar.bulkCancel')}</button>
+          </form>
         )}
 
         <div className="pad-sidebar__list">
@@ -643,7 +691,7 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
             onUpdateTheme({ padId, theme });
           }}
           onUpdateTags={onUpdateTags ? (padId, tags) => onUpdateTags({ padId, tags }) : undefined}
-          onMoveToFolder={onUpdateFolder ? (padId) => promptMoveToFolder([padId]) : undefined}
+          onMoveToFolder={onUpdateFolder ? padId => openFolderEditor([padId]) : undefined}
           currentFolder={ctxTab.folder}
           onToggleReadLater={onUpdateTags ? (padId, tags) => onUpdateTags({ padId, tags }) : undefined}
           onClose={closeContextMenu}
