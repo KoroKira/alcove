@@ -1,7 +1,9 @@
 """Integration checks against real PostgreSQL and Redis services."""
 
 import json
+import io
 import time
+import zipfile
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -28,7 +30,7 @@ from cache import RedisClient
 from domain.pad import Pad
 from routers import ws_router
 from api.v1.router import v1_router
-from routers.pad_router import list_trashed_pads, restore_pad
+from routers.pad_router import export_all_zip, list_trashed_pads, restore_pad
 
 
 @pytest.mark.integration
@@ -165,6 +167,51 @@ async def test_pad_trash_hides_from_reads_and_restores_without_content_loss(inte
     assert restored is not None
     assert restored.data == original_content
     assert any(item["id"] == str(pad.id) for item in await service.list_pads(owner_id))
+
+
+@pytest.mark.integration
+async def test_zip_export_contains_active_pads_and_excludes_trashed_pads(integration_session):
+    owner_id = uuid4()
+    owner = UserStore(
+        id=owner_id,
+        username=f"export-owner-{owner_id}",
+        email=f"{owner_id}@example.test",
+    )
+    active = PadStore(
+        id=uuid4(),
+        owner_id=owner_id,
+        display_name="Isolated export note",
+        data={"content": "This exact isolated content must be exported."},
+        sharing_policy="private",
+        whitelist=[],
+        pad_type="document",
+    )
+    trashed = PadStore(
+        id=uuid4(),
+        owner_id=owner_id,
+        display_name="Isolated trashed note",
+        data={"content": "This content must stay out of exports."},
+        sharing_policy="private",
+        whitelist=[],
+        pad_type="document",
+        deleted_at=datetime.now(timezone.utc),
+    )
+    integration_session.add_all([owner, active, trashed])
+    await integration_session.commit()
+
+    response = await export_all_zip(SimpleNamespace(id=owner_id), integration_session)
+    payload = b"".join([chunk async for chunk in response.body_iterator])
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        names = archive.namelist()
+        manifest = json.loads(archive.read("manifest.json"))
+        content = "\n".join(archive.read(name).decode("utf-8") for name in names)
+
+    assert [item["display_name"] for item in manifest["pads"]] == ["Isolated export note"]
+    assert manifest["pads"][0]["id"] == str(active.id)
+    assert manifest["pads"][0]["file"] in names
+    assert "This exact isolated content must be exported." in content
+    assert "Isolated trashed note" not in content
+    assert "This content must stay out of exports." not in content
 
 
 @pytest.mark.integration
