@@ -17,6 +17,7 @@ import katex from 'katex';
 import mermaid from 'mermaid';
 import { Link, History, Bookmark, Download, FileText, List, Maximize2, Minimize2, BookOpen, Save, Play, Globe, Terminal, Sparkles, ExternalLink } from 'lucide-react';
 import { useRelatedPads } from '../hooks/useRelatedPads';
+import { parseWikiLink, resolveWikiLink } from '../lib/wikilinks';
 import { readVideoMeta, stripVideoMeta, parseTimestamp, replaceReportBody } from '../lib/videoMeta';
 import { createManualSnapshot } from '../lib/manualSnapshot';
 import VideoEmbed, { VideoEmbedHandle } from '../ui/VideoEmbed';
@@ -160,10 +161,11 @@ const renderInner = (text: string, tabs: Tab[]): string => {
     return `MI_${id}_`;
   });
   p = p.replace(/\[\[([^\]]+)\]\]/g, (_, name) => {
-    const target = tabs.find(t => t.title.toLowerCase() === name.toLowerCase());
+    const target = resolveWikiLink(name, tabs);
+    const { label } = parseWikiLink(name);
     return target
-      ? `<a class="wikilink wikilink--found" data-pad-id="${target.id}">${name}</a>`
-      : `<span class="wikilink wikilink--missing">${name}</span>`;
+      ? `<a class="wikilink wikilink--found" data-pad-id="${target.id}">${label}</a>`
+      : `<span class="wikilink wikilink--missing">${label}</span>`;
   });
   let html = DOMPurify.sanitize(marked.parse(p, { async: false }) as string, { ADD_ATTR: ['data-pad-id', 'class', 'id'] });
   mathBlocks.forEach((mh, id) => { html = html.replace(`MB_${id}_`, mh).replace(`MI_${id}_`, mh); });
@@ -232,21 +234,23 @@ const renderContent = (text: string, tabs: Tab[], transcluded: Transcluded = {})
 
   // === Transclusion ![[name]] ===
   processed = processed.replace(/!\[\[([^\]]+)\]\]/g, (_, name) => {
-    const target = tabs.find(t => t.title.toLowerCase() === name.toLowerCase());
+    const target = resolveWikiLink(name, tabs);
+    const { label } = parseWikiLink(name);
     if (target && transcluded[target.id]) {
       const inner = renderInner(transcluded[target.id], tabs);
       return `<TRANSCLUSION_${target.id}_START>${inner}</TRANSCLUSION_${target.id}_END>`;
     }
-    if (target) return `<span class="transclusion transclusion--loading">↗ ${name}…</span>`;
-    return `<span class="transclusion transclusion--missing">![[${name}]]</span>`;
+    if (target) return `<span class="transclusion transclusion--loading">↗ ${label}…</span>`;
+    return `<span class="transclusion transclusion--missing">![[${label}]]</span>`;
   });
 
   // === Wikilinks [[name]] ===
   processed = processed.replace(/\[\[([^\]]+)\]\]/g, (_, name) => {
-    const target = tabs.find(t => t.title.toLowerCase() === name.toLowerCase());
+    const target = resolveWikiLink(name, tabs);
+    const { label } = parseWikiLink(name);
     return target
-      ? `<a class="wikilink wikilink--found" data-pad-id="${target.id}">${name}</a>`
-      : `<span class="wikilink wikilink--missing">${name}</span>`;
+      ? `<a class="wikilink wikilink--found" data-pad-id="${target.id}">${label}</a>`
+      : `<span class="wikilink wikilink--missing">${label}</span>`;
   });
 
   // Render markdown
