@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Plus, Trash2, Table2, Columns3, X } from 'lucide-react';
 import { snapshotDomPad } from '../lib/thumbnailSnapshot';
-import { clearStructuredPadDraft, fetchStructuredPadUpdatedAt, hasStructuredPadDraft, isStructuredPadDraftStale, readStructuredPadDraftRecord, removeStructuredPadDraft, UNKNOWN_STRUCTURED_DRAFT_BASELINE, writeStructuredPadDraft } from '../lib/structuredPadDraft';
+import { enqueueSerializedSave } from '../lib/saveQueue';
+import { advanceStructuredPadDraftVersion, clearStructuredPadDraft, fetchStructuredPadUpdatedAt, hasStructuredPadDraft, isStructuredPadDraftStale, readStructuredPadDraftRecord, removeStructuredPadDraft, UNKNOWN_STRUCTURED_DRAFT_BASELINE, writeStructuredPadDraft } from '../lib/structuredPadDraft';
 import './DatabasePad.scss';
 
 export interface DbColumn { id: string; name: string; }
@@ -23,6 +24,7 @@ export default function DatabasePad({ padId, data, onDataChange }: Props) {
   const [initialDraft] = useState(() => readStructuredPadDraftRecord<DatabaseData>(padId));
   const [local, setLocal] = useState<DatabaseData>(() => initialDraft?.data ?? data);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const baselineUnknown = Boolean(initialDraft && (!initialDraft.baselineKnown || !initialDraft.expectedUpdatedAt));
   const initialConflict = Boolean(initialDraft && isStructuredPadDraftStale(initialDraft, data.updated_at ?? null));
   const baselineUnknownRef = useRef(baselineUnknown);
@@ -52,14 +54,15 @@ export default function DatabasePad({ padId, data, onDataChange }: Props) {
 
   const commit = useCallback((next: DatabaseData) => {
     const savePadId = padId;
-    const expectedUpdatedAt = lastUpdatedAt.current;
     setLocal(next);
     onDataChange(next);
     setDraftAvailable(writeStructuredPadDraft(padId, next, lastUpdatedAt.current, !baselineUnknownRef.current));
     setSaveError(null);
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
+    saveTimer.current = setTimeout(() => {
+      void enqueueSerializedSave(saveQueue, async () => {
       if (padIdRef.current !== savePadId) return;
+      const expectedUpdatedAt = lastUpdatedAt.current;
       // Strip updated_at from the payload — it's the concurrency baseline,
       // not part of pad.data. Sending it inside `data` would poison the DB.
       const { updated_at: _u, ...payload } = next;
@@ -75,9 +78,12 @@ export default function DatabasePad({ padId, data, onDataChange }: Props) {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         if (res.ok) {
           const j = await res.json().catch(() => null);
+          if (j?.updated_at) {
+            if (padIdRef.current === savePadId) lastUpdatedAt.current = j.updated_at;
+            advanceStructuredPadDraftVersion(savePadId, next, j.updated_at);
+          }
           clearStructuredPadDraft(savePadId, next);
           if (padIdRef.current !== savePadId) return;
-          if (j?.updated_at) lastUpdatedAt.current = j.updated_at;
           setConflict(false);
           setSaveError(null);
           setDraftRestored(false);
@@ -88,6 +94,7 @@ export default function DatabasePad({ padId, data, onDataChange }: Props) {
       } catch (error) {
         if (padIdRef.current === savePadId) setSaveError(error instanceof Error ? error.message : 'Erreur réseau');
       }
+      });
     }, 400);
   }, [padId, onDataChange]);
 

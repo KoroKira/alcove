@@ -18,6 +18,7 @@ import mermaid from 'mermaid';
 import { Link, History, Bookmark, Download, FileText, List, Maximize2, Minimize2, BookOpen, Save, Play, Globe, Terminal, Sparkles, ExternalLink } from 'lucide-react';
 import { useRelatedPads } from '../hooks/useRelatedPads';
 import { findTransclusionTargets, parseWikiLink, resolveWikiLink } from '../lib/wikilinks';
+import { enqueueSerializedSave } from '../lib/saveQueue';
 import { readVideoMeta, stripVideoMeta, parseTimestamp, replaceReportBody } from '../lib/videoMeta';
 import { createManualSnapshot } from '../lib/manualSnapshot';
 import VideoEmbed, { VideoEmbedHandle } from '../ui/VideoEmbed';
@@ -374,6 +375,7 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
   const [latexStatus, setLatexStatus] = useState<'idle' | 'compiling' | 'ok' | 'err'>('idle');
   const latexBlobUrl = useRef<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const previewRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const monacoRef = useRef<any>(null);
@@ -550,43 +552,42 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
     setDraftStorageFailed(!writeLocalDocumentDraft(padId, text, lastUpdatedAt.current));
     setSaveStatus('unsaved');
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
+    saveTimer.current = setTimeout(() => {
       saveTimer.current = null;
-      setSaveStatus('saving');
-      try {
-        const url = isLatex ? `/api/pad/${padId}/data` : `/api/pad/${padId}/doc`;
-        const body = isLatex
-          ? { data: { source: text }, expected_updated_at: lastUpdatedAt.current }
-          : { content: text, format: 'markdown', expected_updated_at: lastUpdatedAt.current };
-        const res = await fetch(url, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        if (res.status === 409) {
-          // Another session (same account on another device) wrote after we
-          // loaded. We keep the local text so nothing is silently dropped;
-          // the status badge switches to 'conflict' so the user knows.
-          if (padIdRef.current === padId) setSaveStatus('conflict');
-          return;
-        }
-        if (res.ok) {
-          const j = await res.json().catch(() => null);
-          if (j?.updated_at) {
-            if (padIdRef.current === padId) lastUpdatedAt.current = j.updated_at;
-            advanceLocalDocumentDraftVersion(padId, text, j.updated_at);
+      void enqueueSerializedSave(saveQueue, async () => {
+        if (padIdRef.current === padId) setSaveStatus('saving');
+        try {
+          const url = isLatex ? `/api/pad/${padId}/data` : `/api/pad/${padId}/doc`;
+          const body = isLatex
+            ? { data: { source: text }, expected_updated_at: lastUpdatedAt.current }
+            : { content: text, format: 'markdown', expected_updated_at: lastUpdatedAt.current };
+          const res = await fetch(url, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          if (res.status === 409) {
+            if (padIdRef.current === padId) setSaveStatus('conflict');
+            return;
           }
-          clearLocalDocumentDraft(padId, text);
-          if (padIdRef.current === padId) {
-            if (contentRef.current === text) setSaveStatus('saved');
-            else setSaveStatus('unsaved');
+          if (res.ok) {
+            const j = await res.json().catch(() => null);
+            if (j?.updated_at) {
+              if (padIdRef.current === padId) lastUpdatedAt.current = j.updated_at;
+              advanceLocalDocumentDraftVersion(padId, text, j.updated_at);
+            }
+            clearLocalDocumentDraft(padId, text);
+            if (padIdRef.current === padId) {
+              if (contentRef.current === text) setSaveStatus('saved');
+              else setSaveStatus('unsaved');
+            }
+          } else if (padIdRef.current === padId) {
+            setSaveStatus('unsaved');
           }
-        } else {
+        } catch {
           if (padIdRef.current === padId) setSaveStatus('unsaved');
         }
-      } catch {
-        if (padIdRef.current === padId) setSaveStatus('unsaved');
-      }
+      });
     }, SAVE_DEBOUNCE_MS);
   }, [padId, isLatex]);
 
