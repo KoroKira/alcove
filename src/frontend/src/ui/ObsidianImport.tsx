@@ -115,10 +115,18 @@ export default function ObsidianImport({ onClose, onImported }: Props) {
           </div>
         ) : (
           <div className="obs-import__body">
-            <div className="obs-import__prog-bar">
+            <div
+              className="obs-import__prog-bar"
+              role="progressbar"
+              aria-label="Progression de l’import Obsidian"
+              aria-valuemin={0}
+              aria-valuemax={total}
+              aria-valuenow={progress}
+              aria-valuetext={`${progress} / ${total} fichiers traités`}
+            >
               <div className="obs-import__prog-fill" style={{ width: `${pct}%` }} />
             </div>
-            <div className="obs-import__counter">
+            <div className="obs-import__counter" role="status" aria-live="polite" aria-atomic="true">
               {progress} / {total} fichiers traités
             </div>
             <div className="obs-import__results">
