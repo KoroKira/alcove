@@ -8,7 +8,7 @@ import type { FieldDef, FieldValue, FieldType, Attachment, Priority } from './fi
 import { uid, PRIORITY_LABELS, PRIORITY_COLORS, FIELD_TYPE_LABELS } from './fieldTypes';
 import { snapshotDomPad } from '../lib/thumbnailSnapshot';
 import { enqueueSerializedSave } from '../lib/saveQueue';
-import { advanceStructuredPadDraftVersion, clearStructuredPadDraft, fetchStructuredPadUpdatedAt, hasStructuredPadDraft, isStructuredPadDraftStale, readStructuredPadDraftRecord, removeStructuredPadDraft, UNKNOWN_STRUCTURED_DRAFT_BASELINE, writeStructuredPadDraft } from '../lib/structuredPadDraft';
+import { advanceStructuredPadDraftVersion, clearStructuredPadDraft, fetchAndSnapshotStructuredPadVersion, hasStructuredPadDraft, isStructuredPadDraftStale, readStructuredPadDraftRecord, removeStructuredPadDraft, UNKNOWN_STRUCTURED_DRAFT_BASELINE, writeStructuredPadDraft } from '../lib/structuredPadDraft';
 import './KanbanPad.scss';
 
 /* ─── Data types ─── */
@@ -574,8 +574,7 @@ export default function KanbanPad({ padId, data, onDataChange }: Props) {
   const overwriteServerWithDraft = async () => {
     const targetPadId = padId;
     try {
-      const updatedAt = await fetchStructuredPadUpdatedAt(targetPadId);
-      if (!updatedAt) throw new Error('Version serveur indisponible');
+      const updatedAt = await fetchAndSnapshotStructuredPadVersion(targetPadId);
       if (padIdRef.current !== targetPadId) return;
       lastUpdatedAt.current = updatedAt;
       baselineUnknownRef.current = false;
