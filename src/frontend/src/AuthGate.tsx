@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useAppConfig } from "./hooks/useAppConfig";
 import { useAuthStatus } from "./hooks/useAuthStatus";
+import { clearPrivateApiCaches } from "./lib/privateApiCache";
 
 /**
  * If unauthenticated, it shows the AuthModal as an overlay, but still renders the app behind it.
@@ -17,6 +18,13 @@ export default function AuthGate() {
   const timeoutRef = useRef<number | null>(null);
   const { config, isLoadingConfig, configError } = useAppConfig(); // Use the hook
   const { isAuthenticated, isLoading: isLoadingAuth } = useAuthStatus();
+
+  useEffect(() => {
+    if (isLoadingAuth || isAuthenticated !== false) return;
+    void clearPrivateApiCaches().catch(error => {
+      console.warn('[alcove] Could not clear private offline caches after sign-out:', error);
+    });
+  }, [isAuthenticated, isLoadingAuth]);
 
   useEffect(() => {
     if (isAuthenticated && !isLoadingAuth && !coderAuthDone && config && !isLoadingConfig && !configError) {
