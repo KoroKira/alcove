@@ -18,6 +18,7 @@ import mermaid from 'mermaid';
 import { Link, History, Bookmark, Download, FileText, List, Maximize2, Minimize2, BookOpen, Save, Play, Globe, Terminal, Sparkles, ExternalLink } from 'lucide-react';
 import { useRelatedPads } from '../hooks/useRelatedPads';
 import { readVideoMeta, stripVideoMeta, parseTimestamp, replaceReportBody } from '../lib/videoMeta';
+import { createManualSnapshot } from '../lib/manualSnapshot';
 import VideoEmbed, { VideoEmbedHandle } from '../ui/VideoEmbed';
 import ListenButton from '../ui/ListenButton';
 
@@ -360,6 +361,7 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
   const [regenProgress, setRegenProgress] = useState<string | null>(null);
   const [transcluded, setTranscluded] = useState<Transcluded>({});
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [snapshotStatus, setSnapshotStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [tocOpen, setTocOpen] = useState(false);
   const [habitTick, setHabitTick] = useState(0);
   // LaTeX compile state
@@ -424,6 +426,7 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
   useEffect(() => {
     let active = true;
     setLoading(true);
+    setSnapshotStatus('idle');
     setLoadError(null);
     setContent('');
     contentRef.current = '';
@@ -1069,10 +1072,6 @@ ${renderedHtml}
     win.document.close();
   };
 
-  const manualSnapshot = async () => {
-    await fetch(`/api/pad/${padId}/versions/snapshot`, { method: 'POST' });
-  };
-
   const statusLabel =
     saveStatus === 'saving' ? t('editor.saving')
     : saveStatus === 'unsaved' ? t('editor.unsaved')
@@ -1083,6 +1082,27 @@ ${renderedHtml}
     : saveStatus !== 'saved' || saveTimer.current
       ? 'Attends la fin de la sauvegarde avant de restaurer une version.'
       : undefined;
+  const snapshotBlockedReason = recoveryDraft
+    ? t('editor.snapshotResolveDraft')
+    : saveStatus !== 'saved' || saveTimer.current
+      ? t('editor.snapshotWaitForSave')
+      : undefined;
+  const manualSnapshot = async () => {
+    if (snapshotBlockedReason || snapshotStatus === 'saving') return;
+    const snapshotPadId = padId;
+    setSnapshotStatus('saving');
+    try {
+      await createManualSnapshot(snapshotPadId);
+      if (padIdRef.current === snapshotPadId) setSnapshotStatus('saved');
+    } catch (cause) {
+      console.error('Could not confirm manual revision snapshot:', cause);
+      if (padIdRef.current === snapshotPadId) setSnapshotStatus('error');
+    }
+  };
+  const snapshotMessage = snapshotStatus === 'saving' ? t('editor.snapshotSaving')
+    : snapshotStatus === 'saved' ? t('editor.snapshotSaved')
+    : snapshotStatus === 'error' ? t('editor.snapshotFailed')
+    : null;
   const saveStatusControl = (
     <>
       <span className={`document-pad__status document-pad__status--${saveStatus}`}>{statusLabel}</span>
@@ -1215,9 +1235,24 @@ ${renderedHtml}
                   <ExternalLink size={14} /> Source
                 </a>
               )}
-              <button className="document-pad__toolbar-btn" onClick={manualSnapshot} title={t('editor.snapshot')}>
+              <button
+                className="document-pad__toolbar-btn"
+                onClick={manualSnapshot}
+                disabled={Boolean(snapshotBlockedReason) || snapshotStatus === 'saving'}
+                title={snapshotBlockedReason || (snapshotStatus === 'saving' ? t('editor.snapshotSaving') : t('editor.snapshot'))}
+                aria-label={snapshotBlockedReason || (snapshotStatus === 'saving' ? t('editor.snapshotSaving') : t('editor.snapshot'))}
+              >
                 <Bookmark size={14} />
               </button>
+              {snapshotMessage && (
+                <span
+                  className="document-pad__status"
+                  role={snapshotStatus === 'error' ? 'alert' : 'status'}
+                  aria-live={snapshotStatus === 'error' ? 'assertive' : 'polite'}
+                >
+                  {snapshotMessage}
+                </span>
+              )}
               <button className="document-pad__toolbar-btn" onClick={clipUrl} disabled={clipping} title={t('editor.clipTitle')}>
                 <Globe size={14} />{clipping ? '…' : ''}
               </button>

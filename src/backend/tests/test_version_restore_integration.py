@@ -9,7 +9,41 @@ import pytest
 from database.models import PadStore, UserStore
 from database.models.version_model import PadVersion
 from domain.pad import Pad
-from routers.pad_router import restore_version
+from routers.pad_router import manual_snapshot, restore_version
+
+
+@pytest.mark.integration
+async def test_manual_snapshot_persists_the_current_document(integration_session):
+    owner_id = uuid4()
+    owner = UserStore(
+        id=owner_id,
+        username=f"snapshot-owner-{owner_id}",
+        email=f"{owner_id}@example.test",
+    )
+    store = PadStore(
+        id=uuid4(),
+        owner_id=owner_id,
+        display_name="isolated manual snapshot integration pad",
+        data={"content": "saved document content", "format": "markdown"},
+        sharing_policy="private",
+        whitelist=[],
+        pad_type="document",
+    )
+    integration_session.add_all([owner, store])
+    await integration_session.commit()
+
+    pad = Pad.from_store(store, redis=None)
+    result = await manual_snapshot(
+        pad.id,
+        (pad, SimpleNamespace(id=owner_id)),
+        integration_session,
+    )
+
+    assert result["id"]
+    history = await PadVersion.list_for_pad(integration_session, pad.id)
+    assert len(history) == 1
+    assert history[0].snapshot_reason == "manual"
+    assert history[0].data == {"content": "saved document content", "format": "markdown"}
 
 
 @pytest.mark.integration
