@@ -29,6 +29,17 @@ export function chunkText(text: string, size = CHUNK_SIZE, overlap = CHUNK_OVERL
   return chunks;
 }
 
+async function storeChunks(
+  padId: string,
+  chunks: { index: number; text: string; embedding: number[] }[],
+): Promise<void> {
+  const resp = await fetch('/api/ai/rag/index-chunks', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+    body: JSON.stringify({ pad_id: padId, chunks }),
+  });
+  if (!resp.ok) throw new Error(`index-chunks ${resp.status}`);
+}
+
 /** Embed a single text via the local Ollama instance. Throws on non-2xx. */
 export async function embedText(text: string, model = EMBED_MODEL_DEFAULT): Promise<number[]> {
   const url = getOllamaUrl();
@@ -82,10 +93,7 @@ export async function indexPad(
   const chunks = chunkText(meta.text || '');
   if (!chunks.length) {
     // Empty text — tell the server to drop any existing embeddings for this pad.
-    await fetch('/api/ai/rag/index-chunks', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ pad_id: padId, chunks: [] }),
-    });
+    await storeChunks(padId, []);
     onProgress?.({ padId, displayName, chunks: 0, status: 'done' });
     return 0;
   }
@@ -98,11 +106,7 @@ export async function indexPad(
   }
 
   onProgress?.({ padId, displayName, chunks: chunks.length, status: 'storing' });
-  const resp = await fetch('/api/ai/rag/index-chunks', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-    body: JSON.stringify({ pad_id: padId, chunks: payload }),
-  });
-  if (!resp.ok) throw new Error(`index-chunks ${resp.status}`);
+  await storeChunks(padId, payload);
   onProgress?.({ padId, displayName, chunks: chunks.length, status: 'done' });
   return chunks.length;
 }
@@ -130,15 +134,21 @@ export async function indexAll(
     });
     const chunks = chunkText(p.text || '');
     if (!chunks.length) {
-      await fetch('/api/ai/rag/index-chunks', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ pad_id: p.pad_id, chunks: [] }),
-      });
       done += 1;
-      onProgress?.({
-        padId: p.pad_id, displayName: p.display_name, chunks: 0,
-        status: 'done', current: done, total,
-      });
+      try {
+        await storeChunks(p.pad_id, []);
+        indexedPads += 1;
+        onProgress?.({
+          padId: p.pad_id, displayName: p.display_name, chunks: 0,
+          status: 'done', current: done, total,
+        });
+      } catch (e) {
+        onProgress?.({
+          padId: p.pad_id, displayName: p.display_name, chunks: 0,
+          status: 'error', error: e instanceof Error ? e.message : String(e),
+          current: done, total,
+        });
+      }
       continue;
     }
 
@@ -152,11 +162,7 @@ export async function indexAll(
         const vec = await embedText(chunks[i], model);
         payload.push({ index: i, text: chunks[i], embedding: vec });
       }
-      const resp = await fetch('/api/ai/rag/index-chunks', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ pad_id: p.pad_id, chunks: payload }),
-      });
-      if (!resp.ok) throw new Error(`index-chunks ${resp.status}`);
+      await storeChunks(p.pad_id, payload);
       indexedPads += 1;
       totalChunks += chunks.length;
       done += 1;
