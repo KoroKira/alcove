@@ -17,6 +17,8 @@ interface Props {
 const uid = (p: string) => `${p}-${Math.random().toString(36).slice(2, 8)}`;
 
 export default function DatabasePad({ padId, data, onDataChange }: Props) {
+  const padIdRef = useRef(padId);
+  padIdRef.current = padId;
   const [view, setView] = useState<'table' | 'board'>('table');
   const [initialDraft] = useState(() => readStructuredPadDraftRecord<DatabaseData>(padId));
   const [local, setLocal] = useState<DatabaseData>(() => initialDraft?.data ?? data);
@@ -49,34 +51,43 @@ export default function DatabasePad({ padId, data, onDataChange }: Props) {
   }, [padId]);
 
   const commit = useCallback((next: DatabaseData) => {
+    const savePadId = padId;
+    const expectedUpdatedAt = lastUpdatedAt.current;
     setLocal(next);
     onDataChange(next);
     setDraftAvailable(writeStructuredPadDraft(padId, next, lastUpdatedAt.current, !baselineUnknownRef.current));
     setSaveError(null);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
+      if (padIdRef.current !== savePadId) return;
       // Strip updated_at from the payload — it's the concurrency baseline,
       // not part of pad.data. Sending it inside `data` would poison the DB.
       const { updated_at: _u, ...payload } = next;
       try {
-        const res = await fetch(`/api/pad/${padId}/data`, {
+        const res = await fetch(`/api/pad/${savePadId}/data`, {
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ data: payload, expected_updated_at: lastUpdatedAt.current }),
+          body: JSON.stringify({ data: payload, expected_updated_at: expectedUpdatedAt }),
         });
-        if (res.status === 409) { setConflict(true); return; }
+        if (res.status === 409) {
+          if (padIdRef.current === savePadId) setConflict(true);
+          return;
+        }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         if (res.ok) {
           const j = await res.json().catch(() => null);
+          clearStructuredPadDraft(savePadId, next);
+          if (padIdRef.current !== savePadId) return;
           if (j?.updated_at) lastUpdatedAt.current = j.updated_at;
           setConflict(false);
           setSaveError(null);
-          clearStructuredPadDraft(padId, next);
           setDraftRestored(false);
           baselineUnknownRef.current = false;
           setDraftBaselineUnknown(false);
-          if (boardRef.current) void snapshotDomPad(padId, boardRef.current);
+          if (boardRef.current) void snapshotDomPad(savePadId, boardRef.current);
         }
-      } catch (error) { setSaveError(error instanceof Error ? error.message : 'Erreur réseau'); }
+      } catch (error) {
+        if (padIdRef.current === savePadId) setSaveError(error instanceof Error ? error.message : 'Erreur réseau');
+      }
     }, 400);
   }, [padId, onDataChange]);
 
@@ -87,16 +98,18 @@ export default function DatabasePad({ padId, data, onDataChange }: Props) {
   };
 
   const overwriteServerWithDraft = async () => {
+    const targetPadId = padId;
     try {
-      const updatedAt = await fetchStructuredPadUpdatedAt(padId);
+      const updatedAt = await fetchStructuredPadUpdatedAt(targetPadId);
       if (!updatedAt) throw new Error('Version serveur indisponible');
+      if (padIdRef.current !== targetPadId) return;
       lastUpdatedAt.current = updatedAt;
       baselineUnknownRef.current = false;
       setDraftBaselineUnknown(false);
       setConflict(false);
       commit(local);
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : 'Impossible de vérifier la version serveur');
+      if (padIdRef.current === targetPadId) setSaveError(error instanceof Error ? error.message : 'Impossible de vérifier la version serveur');
     }
   };
 

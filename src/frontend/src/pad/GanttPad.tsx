@@ -434,6 +434,8 @@ function TaskPanel({ task, schema, allTasks, templates, onUpdate, onDelete, onSa
 /* ─── Main GanttPad ─── */
 
 export default function GanttPad({ padId, data, onDataChange }: Props) {
+  const padIdRef = useRef(padId);
+  padIdRef.current = padId;
   const [initialDraft] = useState(() => readStructuredPadDraftRecord<GanttData>(padId));
   const initialData = initialDraft?.data ?? data;
   const [tasks, setTasks] = useState<GanttTask[]>(initialData.tasks ?? []);
@@ -471,32 +473,41 @@ export default function GanttPad({ padId, data, onDataChange }: Props) {
   }, [padId]);
 
   const save = useCallback((t: GanttTask[], sc: FieldDef[], tpls: GanttTaskTemplate[]) => {
+    const savePadId = padId;
+    const expectedUpdatedAt = lastUpdatedAt.current;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     const d: GanttData = { tasks: t, fieldSchema: sc, taskTemplates: tpls };
     setDraftAvailable(writeStructuredPadDraft(padId, d, lastUpdatedAt.current, !baselineUnknownRef.current));
     setSaveError(null);
     saveTimer.current = setTimeout(async () => {
+      if (padIdRef.current !== savePadId) return;
       onDataChange(d);
       try {
-        const res = await fetch(`/api/pad/${padId}/data`, {
+        const res = await fetch(`/api/pad/${savePadId}/data`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ data: d, expected_updated_at: lastUpdatedAt.current }),
+          body: JSON.stringify({ data: d, expected_updated_at: expectedUpdatedAt }),
         });
-        if (res.status === 409) { setConflict(true); return; }
+        if (res.status === 409) {
+          if (padIdRef.current === savePadId) setConflict(true);
+          return;
+        }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         if (res.ok) {
           const j = await res.json().catch(() => null);
+          clearStructuredPadDraft(savePadId, d);
+          if (padIdRef.current !== savePadId) return;
           if (j?.updated_at) lastUpdatedAt.current = j.updated_at;
           setConflict(false);
           setSaveError(null);
-          clearStructuredPadDraft(padId, d);
           setDraftRestored(false);
           baselineUnknownRef.current = false;
           setDraftBaselineUnknown(false);
-          if (boardRef.current) void snapshotDomPad(padId, boardRef.current);
+          if (boardRef.current) void snapshotDomPad(savePadId, boardRef.current);
         }
-      } catch (e) { setSaveError(e instanceof Error ? e.message : 'Erreur réseau'); }
+      } catch (e) {
+        if (padIdRef.current === savePadId) setSaveError(e instanceof Error ? e.message : 'Erreur réseau');
+      }
     }, SAVE_DEBOUNCE);
   }, [padId, onDataChange]);
 
@@ -507,16 +518,18 @@ export default function GanttPad({ padId, data, onDataChange }: Props) {
   };
 
   const overwriteServerWithDraft = async () => {
+    const targetPadId = padId;
     try {
-      const updatedAt = await fetchStructuredPadUpdatedAt(padId);
+      const updatedAt = await fetchStructuredPadUpdatedAt(targetPadId);
       if (!updatedAt) throw new Error('Version serveur indisponible');
+      if (padIdRef.current !== targetPadId) return;
       lastUpdatedAt.current = updatedAt;
       baselineUnknownRef.current = false;
       setDraftBaselineUnknown(false);
       setConflict(false);
       save(tasks, schema, templates);
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : 'Impossible de vérifier la version serveur');
+      if (padIdRef.current === targetPadId) setSaveError(error instanceof Error ? error.message : 'Impossible de vérifier la version serveur');
     }
   };
 
