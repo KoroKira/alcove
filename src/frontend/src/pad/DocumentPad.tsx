@@ -19,6 +19,7 @@ import { Link, History, Bookmark, Download, FileText, List, Maximize2, Minimize2
 import { useRelatedPads } from '../hooks/useRelatedPads';
 import { findTransclusionTargets, parseWikiLink, resolveWikiLink } from '../lib/wikilinks';
 import { enqueueSerializedSave } from '../lib/saveQueue';
+import { saveDocumentAfterConflict } from '../lib/conflictSave';
 import { readVideoMeta, stripVideoMeta, parseTimestamp, replaceReportBody } from '../lib/videoMeta';
 import { createManualSnapshot } from '../lib/manualSnapshot';
 import { escapeHtmlText } from '../lib/exportUtils';
@@ -343,6 +344,8 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved' | 'conflict'>('saved');
   const [recoveryDraft, setRecoveryDraft] = useState<LocalDocumentDraft | null>(null);
   const [draftStorageFailed, setDraftStorageFailed] = useState(false);
+  const [conflictResolving, setConflictResolving] = useState(false);
+  const [conflictResolutionError, setConflictResolutionError] = useState<string | null>(null);
   const contentRef = useRef('');
   const padIdRef = useRef(padId);
   padIdRef.current = padId;
@@ -433,6 +436,9 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
     setLoading(true);
     setSnapshotStatus('idle');
     setLoadError(null);
+    setSaveStatus('saved');
+    setConflictResolving(false);
+    setConflictResolutionError(null);
     setContent('');
     contentRef.current = '';
     setBacklinks([]);
@@ -598,6 +604,35 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
     setContent(text);
     scheduleSave(text);
     onContentChange?.(text);
+  };
+
+  const resolveSaveConflict = async () => {
+    if (conflictResolving || saveStatus !== 'conflict') return;
+    const conflictPadId = padId;
+    const conflictedText = contentRef.current;
+    setConflictResolving(true);
+    setConflictResolutionError(null);
+    try {
+      const updatedAt = await saveDocumentAfterConflict(
+        conflictPadId,
+        isLatex ? `/api/pad/${conflictPadId}/data` : `/api/pad/${conflictPadId}/doc`,
+        latestUpdatedAt => isLatex
+          ? { data: { source: conflictedText }, expected_updated_at: latestUpdatedAt }
+          : { content: conflictedText, format: 'markdown', expected_updated_at: latestUpdatedAt },
+      );
+      if (padIdRef.current !== conflictPadId) return;
+      lastUpdatedAt.current = updatedAt;
+      advanceLocalDocumentDraftVersion(conflictPadId, conflictedText, updatedAt);
+      clearLocalDocumentDraft(conflictPadId, conflictedText);
+      if (contentRef.current === conflictedText) setSaveStatus('saved');
+      else scheduleSave(contentRef.current);
+    } catch (cause) {
+      if (padIdRef.current === conflictPadId) {
+        setConflictResolutionError(cause instanceof Error ? cause.message : 'Résolution du conflit impossible.');
+      }
+    } finally {
+      if (padIdRef.current === conflictPadId) setConflictResolving(false);
+    }
   };
 
   const recoverLocalDraft = () => {
@@ -1081,7 +1116,7 @@ ${renderedHtml}
   const statusLabel =
     saveStatus === 'saving' ? t('editor.saving')
     : saveStatus === 'unsaved' ? t('editor.unsaved')
-    : saveStatus === 'conflict' ? '⚠️ Modifié ailleurs — recharge la page'
+    : saveStatus === 'conflict' ? '⚠️ Modifié ailleurs — résolution nécessaire'
     : t('editor.saved');
   const restoreBlockedReason = recoveryDraft
     ? 'Récupère ou écarte le brouillon local avant de restaurer une version.'
@@ -1147,6 +1182,17 @@ ${renderedHtml}
             <button onClick={recoverLocalDraft}>Restaurer le brouillon</button>
             <button onClick={discardLocalDraft}>Ignorer</button>
           </div>
+        </div>
+      )}
+      {saveStatus === 'conflict' && (
+        <div className="document-pad__recovery" role="status">
+          <span>Une autre version existe sur le serveur. Ton brouillon local est conservé.</span>
+          <div className="document-pad__recovery-actions">
+            <button onClick={() => void resolveSaveConflict()} disabled={conflictResolving}>
+              {conflictResolving ? 'Protection et enregistrement…' : 'Garder mon brouillon'}
+            </button>
+          </div>
+          {conflictResolutionError && <span className="document-pad__recovery-error" role="alert">{conflictResolutionError}</span>}
         </div>
       )}
       {draftStorageFailed && saveStatus !== 'saved' && (
