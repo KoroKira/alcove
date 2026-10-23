@@ -104,6 +104,29 @@ describe('ObsidianImport', () => {
     expect(onImported).toHaveBeenCalledWith(['pad-second']);
   });
 
+  it('announces import progress to assistive technology while the import is running', async () => {
+    let resolveSecond: ((value: Response) => void) | undefined;
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response('pad-first'))
+      .mockImplementationOnce(() => new Promise<Response>(resolve => { resolveSecond = resolve; }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { container } = render(<ObsidianImport onClose={vi.fn()} onImported={vi.fn()} />);
+    const folderInput = container.querySelector('input[webkitdirectory]')!;
+
+    fireEvent.change(folderInput, {
+      target: { files: [note('Vault/First.md', 'first'), note('Vault/Second.md', 'second')] },
+    });
+
+    const progress = await screen.findByRole('progressbar', { name: 'Progression de l’import Obsidian' });
+    await waitFor(() => expect(progress).toHaveAttribute('aria-valuenow', '1'));
+    expect(progress).toHaveAttribute('aria-valuemax', '2');
+    expect(progress).toHaveAttribute('aria-valuetext', '1 / 2 fichiers traités');
+    expect(screen.getByRole('status')).toHaveTextContent('1 / 2 fichiers traités');
+
+    resolveSecond?.(response('pad-second'));
+    expect(await screen.findByText('2 notes importées ✓')).toBeInTheDocument();
+  });
+
   it('retries only failed notes without recreating notes that already imported', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({
