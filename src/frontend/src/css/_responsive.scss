@@ -42,10 +42,20 @@
     flex-wrap: wrap;
   }
 
-  /* Give icon buttons a bigger hit area on touch. */
-  .pad-sidebar__icon-btn {
-    width: 30px;
-    height: 30px;
+  /* Component styles load after this file, so use a more specific selector
+     * to keep the touch target size in effect on phones. */
+  .pad-sidebar.pad-sidebar--collapsed {
+    width: 44px;
+  }
+  .pad-sidebar .pad-sidebar__icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* The onboarding skip action sits above the whole app on first launch. */
+  .onboarding .onboarding__skip {
+    min-height: 44px;
+    padding: 12px 16px;
   }
 
   /* Graph filter panel: sliders + timeline + color-group rows laid out in a
