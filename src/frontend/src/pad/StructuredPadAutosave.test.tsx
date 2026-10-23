@@ -108,6 +108,40 @@ describe('DatabasePad autosave', () => {
   });
 });
 
+describe('KanbanPad mobile card movement', () => {
+  it('moves a card from its details without drag and saves the destination column', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => ({
+      ok: true, status: 200, json: async () => ({ updated_at: 'version-b' }),
+    }) as Response);
+    vi.stubGlobal('fetch', fetchMock);
+    render(
+      <KanbanPad
+        padId="kanban-mobile"
+        data={{
+          columns: [
+            { id: 'todo', title: 'À faire', cards: [{ id: 'card-1', title: 'Préparer la démo' }] },
+            { id: 'done', title: 'Terminé', cards: [] },
+          ],
+          updated_at: 'version-a',
+        }}
+        onDataChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByText('Préparer la démo'));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Colonne' }), { target: { value: 'done' } });
+
+    expect(screen.queryByRole('combobox', { name: 'Colonne' })).not.toBeInTheDocument();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      '/api/pad/kanban-mobile/data',
+      expect.objectContaining({ method: 'PUT' }),
+    ), { timeout: 2000 });
+    const saved = JSON.parse(fetchMock.mock.calls[0][0] && (fetchMock.mock.calls[0][1]?.body as string)).data;
+    expect(saved.columns[0].cards).toHaveLength(0);
+    expect(saved.columns[1].cards).toEqual([{ id: 'card-1', title: 'Préparer la démo' }]);
+  });
+});
+
 describe.each([
   {
     name: 'KanbanPad',
