@@ -71,6 +71,24 @@ export function removeStructuredPadDraft(padId: string): void {
   }
 }
 
+/** Keep a newer local edit based on the server version written by an earlier save. */
+export function advanceStructuredPadDraftVersion<T>(
+  padId: string,
+  savedData: T,
+  updatedAt: string,
+): void {
+  try {
+    const raw = localStorage.getItem(keyFor(padId));
+    if (!raw) return;
+    const draft = JSON.parse(raw) as { data?: T; expectedUpdatedAt?: string | null };
+    if (JSON.stringify(draft.data) !== JSON.stringify(savedData)) {
+      writeStructuredPadDraft(padId, draft.data, updatedAt, true);
+    }
+  } catch {
+    // A malformed draft remains available for manual recovery.
+  }
+}
+
 export async function fetchStructuredPadUpdatedAt(padId: string): Promise<string | null> {
   const response = await fetch(`/api/pad/${encodeURIComponent(padId)}`);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);

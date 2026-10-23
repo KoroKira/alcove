@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { clearStructuredPadDraft, isStructuredPadDraftStale, readStructuredPadDraft, readStructuredPadDraftRecord, removeStructuredPadDraft, writeStructuredPadDraft } from './structuredPadDraft';
+import { advanceStructuredPadDraftVersion, clearStructuredPadDraft, isStructuredPadDraftStale, readStructuredPadDraft, readStructuredPadDraftRecord, removeStructuredPadDraft, writeStructuredPadDraft } from './structuredPadDraft';
 
 describe('structured pad drafts', () => {
   afterEach(() => localStorage.clear());
@@ -25,6 +25,20 @@ describe('structured pad drafts', () => {
     expect(readStructuredPadDraft('pad-1', null)).toEqual(newerDraft);
     clearStructuredPadDraft('pad-1', newerDraft);
     expect(readStructuredPadDraft('pad-1', null)).toBeNull();
+  });
+
+  it('advances a newer local edit after an earlier save succeeds', () => {
+    const saved = { value: 'first' };
+    const newer = { value: 'second' };
+    writeStructuredPadDraft('pad-1', newer, 'old-version');
+
+    advanceStructuredPadDraftVersion('pad-1', saved, 'new-version');
+
+    expect(readStructuredPadDraftRecord('pad-1')).toMatchObject({
+      data: newer,
+      expectedUpdatedAt: 'new-version',
+      baselineKnown: true,
+    });
   });
 
   it('removes a conflicting draft when the user chooses the server copy', () => {

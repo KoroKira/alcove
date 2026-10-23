@@ -7,7 +7,8 @@ import { FieldValueRow, AttachmentList } from './FieldEditor';
 import type { FieldDef, FieldValue, FieldType, Attachment, Priority } from './fieldTypes';
 import { uid, PRIORITY_LABELS, PRIORITY_COLORS, FIELD_TYPE_LABELS } from './fieldTypes';
 import { snapshotDomPad } from '../lib/thumbnailSnapshot';
-import { clearStructuredPadDraft, fetchStructuredPadUpdatedAt, hasStructuredPadDraft, isStructuredPadDraftStale, readStructuredPadDraftRecord, removeStructuredPadDraft, UNKNOWN_STRUCTURED_DRAFT_BASELINE, writeStructuredPadDraft } from '../lib/structuredPadDraft';
+import { enqueueSerializedSave } from '../lib/saveQueue';
+import { advanceStructuredPadDraftVersion, clearStructuredPadDraft, fetchStructuredPadUpdatedAt, hasStructuredPadDraft, isStructuredPadDraftStale, readStructuredPadDraftRecord, removeStructuredPadDraft, UNKNOWN_STRUCTURED_DRAFT_BASELINE, writeStructuredPadDraft } from '../lib/structuredPadDraft';
 import './KanbanPad.scss';
 
 /* ─── Data types ─── */
@@ -490,6 +491,7 @@ export default function KanbanPad({ padId, data, onDataChange }: Props) {
   const [dragCard, setDragCard] = useState<{ cardId: string; fromColId: string } | null>(null);
   const [dragOverColId, setDragOverColId] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const baselineUnknown = Boolean(initialDraft && (!initialDraft.baselineKnown || !initialDraft.expectedUpdatedAt));
   const initialConflict = Boolean(initialDraft && isStructuredPadDraftStale(initialDraft, data.updated_at ?? null));
   const baselineUnknownRef = useRef(baselineUnknown);
@@ -519,13 +521,14 @@ export default function KanbanPad({ padId, data, onDataChange }: Props) {
 
   const save = useCallback((cols: KanbanColumn[], sc: FieldDef[], tpls: KanbanCardTemplate[]) => {
     const savePadId = padId;
-    const expectedUpdatedAt = lastUpdatedAt.current;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     const d: KanbanData = { columns: cols, fieldSchema: sc, cardTemplates: tpls };
     setDraftAvailable(writeStructuredPadDraft(padId, d, lastUpdatedAt.current, !baselineUnknownRef.current));
     setSaveError(null);
-    saveTimer.current = setTimeout(async () => {
+    saveTimer.current = setTimeout(() => {
+      void enqueueSerializedSave(saveQueue, async () => {
       if (padIdRef.current !== savePadId) return;
+      const expectedUpdatedAt = lastUpdatedAt.current;
       onDataChange(d);
       try {
         const res = await fetch(`/api/pad/${savePadId}/data`, {
@@ -540,9 +543,12 @@ export default function KanbanPad({ padId, data, onDataChange }: Props) {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         if (res.ok) {
           const j = await res.json().catch(() => null);
+          if (j?.updated_at) {
+            if (padIdRef.current === savePadId) lastUpdatedAt.current = j.updated_at;
+            advanceStructuredPadDraftVersion(savePadId, d, j.updated_at);
+          }
           clearStructuredPadDraft(savePadId, d);
           if (padIdRef.current !== savePadId) return;
-          if (j?.updated_at) lastUpdatedAt.current = j.updated_at;
           setConflict(false);
           setSaveError(null);
           setDraftRestored(false);
@@ -555,6 +561,7 @@ export default function KanbanPad({ padId, data, onDataChange }: Props) {
       } catch (e) {
         if (padIdRef.current === savePadId) setSaveError(e instanceof Error ? e.message : 'Erreur réseau');
       }
+      });
     }, SAVE_DEBOUNCE);
   }, [padId, onDataChange]);
 
