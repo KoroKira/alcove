@@ -1,5 +1,6 @@
 export interface ObsidianImportResult {
   name: string;
+  sourceKey: string;
   id?: string;
   error?: string;
 }
@@ -15,6 +16,10 @@ function noteLocation(file: RelativeFile): { name: string; folder: string | null
   const filename = relative.pop() || file.name;
   const name = filename.replace(/\.md$/i, '');
   return { name, folder: relative.length ? relative.join('/') : null };
+}
+
+function sourceKey(file: RelativeFile): string {
+  return (file.webkitRelativePath || file.name).replace(/\\/g, '/');
 }
 
 async function responseError(response: Response): Promise<string> {
@@ -61,10 +66,11 @@ export async function importObsidianFiles(
       if (!response.ok) throw new Error(await responseError(response));
       const pad = await response.json() as { id?: unknown };
       if (typeof pad.id !== 'string' || !pad.id) throw new Error('Réponse serveur invalide : identifiant du pad absent');
-      results.push({ name: location.name, id: pad.id });
+      results.push({ name: location.name, sourceKey: sourceKey(file as RelativeFile), id: pad.id });
     } catch (cause) {
       results.push({
         name: location.name || file.name,
+        sourceKey: sourceKey(file as RelativeFile),
         error: cause instanceof Error ? cause.message : String(cause),
       });
     } finally {
