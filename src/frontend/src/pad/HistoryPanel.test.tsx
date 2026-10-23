@@ -78,4 +78,42 @@ describe('HistoryPanel', () => {
     await waitFor(() => expect(onRestore).toHaveBeenCalledOnce());
     expect(fetchMock).toHaveBeenLastCalledWith('/api/pad/pad-1/versions/v1/restore', { method: 'POST' });
   });
+
+  it('keeps the history open and reports when the restored document cannot be reloaded', async () => {
+    const onClose = vi.fn();
+    const onRestore = vi.fn().mockRejectedValue(new Error('Restauration effectuée, mais rechargement impossible (503).'));
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(response(200, { versions: [version] }))
+      .mockResolvedValueOnce(response(200, { ok: true })));
+
+    render(<HistoryPanel padId="pad-1" onClose={onClose} onRestore={onRestore} />);
+    fireEvent.click(await screen.findByTitle('Restaurer cette version'));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Restauration effectuée, mais rechargement impossible (503).');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onRestore).toHaveBeenCalledOnce();
+  });
+
+  it('disables other versions while one restore request is in progress', async () => {
+    const versionTwo = { ...version, id: 'v2', created_at: '2026-10-21T12:00:00Z' };
+    let finishRestore!: (value: Response) => void;
+    const pendingRestore = new Promise<Response>(resolve => { finishRestore = resolve; });
+    const onRestore = vi.fn();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response(200, { versions: [version, versionTwo] }))
+      .mockReturnValueOnce(pendingRestore);
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<HistoryPanel padId="pad-1" onClose={vi.fn()} onRestore={onRestore} />);
+    const restoreButtons = await screen.findAllByTitle('Restaurer cette version');
+    fireEvent.click(restoreButtons[0]);
+
+    await waitFor(() => {
+      expect(restoreButtons[0]).toBeDisabled();
+      expect(restoreButtons[1]).toBeDisabled();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    finishRestore(response(200, { ok: true }));
+    await waitFor(() => expect(onRestore).toHaveBeenCalledOnce());
+  });
 });
