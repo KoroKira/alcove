@@ -73,6 +73,15 @@ describe('ObsidianImport', () => {
     expect(onImported).toHaveBeenCalledWith(['pad-overview', 'pad-design']);
   });
 
+  it('provides an accessible dialog and explicit file and folder selection controls', () => {
+    render(<ObsidianImport onClose={vi.fn()} onImported={vi.fn()} />);
+
+    expect(screen.getByRole('dialog', { name: 'Importer depuis Obsidian' })).toHaveAttribute('aria-modal', 'true');
+    expect(screen.getByRole('button', { name: 'Sélectionner des fichiers' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sélectionner un dossier' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fermer l’import' })).toBeInTheDocument();
+  });
+
   it('continues after a failed note and shows the per-note error', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({

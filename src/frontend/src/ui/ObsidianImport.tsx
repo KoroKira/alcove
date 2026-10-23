@@ -75,10 +75,10 @@ export default function ObsidianImport({ onClose, onImported }: Props) {
 
   return (
     <div className="obs-import__backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="obs-import__panel" role="dialog">
+      <div className="obs-import__panel" role="dialog" aria-modal="true" aria-labelledby="obs-import-title">
         <div className="obs-import__header">
-          <span className="obs-import__header-title"><Upload size={13} /> Importer depuis Obsidian</span>
-          <button className="obs-import__close" onClick={onClose}><X size={14} /></button>
+          <span id="obs-import-title" className="obs-import__header-title"><Upload size={13} /> Importer depuis Obsidian</span>
+          <button className="obs-import__close" aria-label="Fermer l’import" onClick={onClose}><X size={14} /></button>
         </div>
 
         {!total ? (
@@ -87,19 +87,20 @@ export default function ObsidianImport({ onClose, onImported }: Props) {
             onDragOver={e => { e.preventDefault(); setDragging(true); }}
             onDragLeave={() => setDragging(false)}
             onDrop={handleDrop}
-            onClick={() => fileRef.current?.click()}
           >
             <FolderOpen size={36} className="obs-import__drop-icon" />
             <div className="obs-import__drop-title">Glisse tes fichiers <code>.md</code> ici</div>
-            <div className="obs-import__drop-sub">ou clique pour sélectionner des fichiers</div>
+            <div className="obs-import__drop-sub">Choisis des fichiers individuels ou tout un dossier.</div>
             <div className="obs-import__drop-sub">Les notes sont importées avec leurs dossiers; les images et pièces jointes ne le sont pas encore.</div>
             {emptyError && <div className="obs-import__empty-error" role="alert">{emptyError}</div>}
-            <button
-              className="obs-import__folder-btn"
-              onClick={e => { e.stopPropagation(); folderRef.current?.click(); }}
-            >
-              Sélectionner un dossier
-            </button>
+            <div className="obs-import__selection-actions">
+              <button className="obs-import__folder-btn" onClick={() => fileRef.current?.click()}>
+                Sélectionner des fichiers
+              </button>
+              <button className="obs-import__folder-btn" onClick={() => folderRef.current?.click()}>
+                Sélectionner un dossier
+              </button>
+            </div>
 
             {/* Hidden inputs */}
             <input ref={fileRef} type="file" accept=".md" multiple style={{ display: 'none' }} onChange={handleFiles} />
