@@ -26,7 +26,7 @@ describe('Obsidian import', () => {
 
     const results = await importObsidianFiles(files, progress, request);
 
-    expect(results).toEqual([{ name: 'Overview', id: 'pad-123' }]);
+    expect(results).toEqual([{ name: 'Overview', sourceKey: 'My vault/Projects/Launch/Overview.MD', id: 'pad-123' }]);
     expect(request).toHaveBeenCalledTimes(1);
     expect(request).toHaveBeenCalledWith('/api/pad/new', expect.objectContaining({
       method: 'POST',
@@ -59,8 +59,8 @@ describe('Obsidian import', () => {
     ], undefined, request);
 
     expect(results).toEqual([
-      { name: 'First', error: 'Storage temporarily unavailable' },
-      { name: 'Second', id: 'pad-456' },
+      { name: 'First', sourceKey: 'Vault/First.md', error: 'Storage temporarily unavailable' },
+      { name: 'Second', sourceKey: 'Vault/Second.md', id: 'pad-456' },
     ]);
     expect(request).toHaveBeenCalledTimes(2);
   });
@@ -74,6 +74,6 @@ describe('Obsidian import', () => {
 
     const results = await importObsidianFiles([note('Note.md', 'Vault/Note.md', 'text')], undefined, request);
 
-    expect(results).toEqual([{ name: 'Note', error: 'Réponse serveur invalide : identifiant du pad absent' }]);
+    expect(results).toEqual([{ name: 'Note', sourceKey: 'Vault/Note.md', error: 'Réponse serveur invalide : identifiant du pad absent' }]);
   });
 });

@@ -10,6 +10,7 @@ interface Props {
 
 export default function ObsidianImport({ onClose, onImported }: Props) {
   const [results, setResults] = useState<ObsidianImportResult[]>([]);
+  const [failedFiles, setFailedFiles] = useState<File[]>([]);
   const [progress, setProgress] = useState(0);
   const [total, setTotal] = useState(0);
   const [done, setDone] = useState(false);
@@ -18,7 +19,7 @@ export default function ObsidianImport({ onClose, onImported }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
 
-  const runImport = async (files: File[]) => {
+  const runImport = async (files: File[], retry = false) => {
     const mdFiles = files.filter(file => {
       if (!/\.md$/i.test(file.name)) return false;
       const path = (file as File & { webkitRelativePath?: string }).webkitRelativePath || '';
@@ -33,9 +34,24 @@ export default function ObsidianImport({ onClose, onImported }: Props) {
     setProgress(0);
     setDone(false);
     setEmptyError('');
-    setResults([]);
+    if (!retry) {
+      setResults([]);
+      setFailedFiles([]);
+    }
     const imported = await importObsidianFiles(mdFiles, setProgress);
-    setResults(imported);
+    const fileByPath = new Map(mdFiles.map(file => [
+      ((file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name).replace(/\\/g, '/'),
+      file,
+    ]));
+    setFailedFiles(imported.flatMap(result => result.error && fileByPath.has(result.sourceKey)
+      ? [fileByPath.get(result.sourceKey)!]
+      : []));
+    setResults(current => {
+      if (!retry) return imported;
+      const bySource = new Map(current.map(result => [result.sourceKey, result]));
+      imported.forEach(result => bySource.set(result.sourceKey, result));
+      return [...bySource.values()];
+    });
 
     setDone(true);
     const ids = imported.flatMap(result => result.id ? [result.id] : []);
@@ -43,7 +59,9 @@ export default function ObsidianImport({ onClose, onImported }: Props) {
   };
 
   const handleFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) runImport(Array.from(e.target.files));
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    e.target.value = '';
+    if (files.length) void runImport(files);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -123,6 +141,11 @@ export default function ObsidianImport({ onClose, onImported }: Props) {
             <span className="obs-import__summary">
               {successCount} note{successCount > 1 ? 's' : ''} importée{successCount > 1 ? 's' : ''} ✓
             </span>
+            {failedFiles.length > 0 && (
+              <button className="obs-import__btn" onClick={() => void runImport(failedFiles, true)}>
+                Réessayer les {failedFiles.length} échec{failedFiles.length > 1 ? 's' : ''}
+              </button>
+            )}
             <button className="obs-import__btn" onClick={onClose}>Fermer</button>
           </div>
         )}

@@ -94,4 +94,36 @@ describe('ObsidianImport', () => {
     expect(screen.getByText('Storage temporarily unavailable')).toBeInTheDocument();
     expect(onImported).toHaveBeenCalledWith(['pad-second']);
   });
+
+  it('retries only failed notes without recreating notes that already imported', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        json: async () => ({ detail: 'Storage temporarily unavailable' }),
+      })
+      .mockResolvedValueOnce(response('pad-second'))
+      .mockResolvedValueOnce(response('pad-first-retry'));
+    vi.stubGlobal('fetch', fetchMock);
+    const onImported = vi.fn();
+    const { container } = render(<ObsidianImport onClose={vi.fn()} onImported={onImported} />);
+    const folderInput = container.querySelector('input[webkitdirectory]')!;
+
+    fireEvent.change(folderInput, {
+      target: { files: [note('Vault/First.md', 'first'), note('Vault/Second.md', 'second')] },
+    });
+
+    expect(await screen.findByText('1 note importée ✓')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Réessayer les 1 échec' }));
+
+    expect(await screen.findByText('2 notes importées ✓')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/pad/new', expect.objectContaining({
+      body: JSON.stringify({ pad_type: 'document', display_name: 'First', content: 'first' }),
+    }));
+    expect(screen.getAllByText('First')).toHaveLength(1);
+    expect(screen.getByText('Second')).toBeInTheDocument();
+    expect(onImported).toHaveBeenNthCalledWith(1, ['pad-second']);
+    expect(onImported).toHaveBeenNthCalledWith(2, ['pad-first-retry']);
+  });
 });
