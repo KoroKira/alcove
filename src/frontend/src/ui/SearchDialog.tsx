@@ -78,7 +78,13 @@ const SearchDialog: React.FC<SearchDialogProps> = ({ onClose, onSelectPad }) => 
 
   return (
     <div className="search-overlay" onClick={onClose}>
-      <div className="search-dialog" onClick={e => e.stopPropagation()}>
+      <div
+        className="search-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('search.placeholder')}
+        onClick={e => e.stopPropagation()}
+      >
         <input
           ref={inputRef}
           className="search-dialog__input"
@@ -103,9 +109,14 @@ const SearchDialog: React.FC<SearchDialogProps> = ({ onClose, onSelectPad }) => 
                 {r.name_match && <span className="search-result__badge">nom</span>}
               </button>
               {r.matches.map((m, i) => (
-                <div key={i} className="search-result__match" onClick={() => { onSelectPad(r.pad_id); onClose(); }}>
+                <button
+                  key={i}
+                  type="button"
+                  className="search-result__match"
+                  onClick={() => { onSelectPad(r.pad_id); onClose(); }}
+                >
                   "{m.excerpt}"
-                </div>
+                </button>
               ))}
             </div>
           ))}

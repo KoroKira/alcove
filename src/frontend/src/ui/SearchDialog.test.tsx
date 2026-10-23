@@ -58,4 +58,25 @@ describe('SearchDialog', () => {
     expect(screen.queryByRole('button', { name: /Stale result/ })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /New result/ })).toBeInTheDocument();
   });
+
+  it('exposes excerpts as keyboard-operable controls that open their pad', async () => {
+    const onSelectPad = vi.fn();
+    const onClose = vi.fn();
+    vi.mocked(apiV1.search).mockResolvedValueOnce([{
+      ...result('pad-1', 'Research notes'),
+      matches: [{ element_id: 'body', text: 'needle', excerpt: 'A matching excerpt' }],
+    }]);
+    render(<SearchDialog onClose={onClose} onSelectPad={onSelectPad} />);
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'needle' } });
+
+    await act(async () => {
+      vi.advanceTimersByTime(250);
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole('dialog', { name: 'search.placeholder' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /A matching excerpt/ }));
+    expect(onSelectPad).toHaveBeenCalledWith('pad-1');
+    expect(onClose).toHaveBeenCalledOnce();
+  });
 });

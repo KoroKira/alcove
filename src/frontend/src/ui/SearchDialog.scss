@@ -80,10 +80,16 @@
   }
 
   &__match {
+    display: block;
+    width: 100%;
     padding: 4px 20px 4px 32px;
+    border: 0;
+    background: transparent;
     font-size: 12px;
     color: var(--ap-text2);
     cursor: pointer;
+    text-align: left;
+    font-family: inherit;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
