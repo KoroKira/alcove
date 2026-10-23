@@ -45,6 +45,26 @@ describe('HistoryPanel', () => {
     await waitFor(() => expect(onRestore).not.toHaveBeenCalled());
   });
 
+  it('blocks restore while the current document has an unsaved local state', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response(200, { versions: [version] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<HistoryPanel
+      padId="pad-1"
+      onClose={vi.fn()}
+      onRestore={vi.fn()}
+      canRestore={false}
+      restoreBlockedReason="Attends la fin de la sauvegarde."
+    />);
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Attends la fin de la sauvegarde.');
+    const restoreButton = await screen.findByTitle('Restaurer cette version');
+    expect(restoreButton).toBeDisabled();
+    fireEvent.click(restoreButton);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith('/api/pad/pad-1/versions');
+  });
+
   it('refreshes the document after a successful restore', async () => {
     const onRestore = vi.fn();
     const fetchMock = vi.fn()

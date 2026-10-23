@@ -38,6 +38,14 @@
     &:hover { color: var(--ap-text0); background: var(--ap-bg2); }
   }
 
+  &__hint {
+    padding: 8px 14px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--ap-text2);
+    border-bottom: 1px solid var(--color-surface-mid, var(--ap-bg2));
+  }
+
   &__list {
     overflow-y: auto;
     flex: 1;
