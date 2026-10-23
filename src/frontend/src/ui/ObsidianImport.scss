@@ -47,7 +47,6 @@
   border: none;
   border-radius: var(--ap-radius-xs);
   color: var(--color-on-surface-low, var(--ap-text2));
-  cursor: pointer;
   display: flex;
   padding: 2px;
   transition: color 0.12s;
@@ -60,7 +59,6 @@
   border: 2px dashed rgba(var(--ap-accent2-rgb), 0.25);
   border-radius: var(--ap-radius-lg);
   color: var(--color-on-surface-low, var(--ap-text2));
-  cursor: pointer;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -69,7 +67,7 @@
   text-align: center;
   transition: all 0.15s;
 
-  &:hover, &--over {
+  &--over {
     background: rgba(var(--ap-accent2-rgb), 0.05);
     border-color: rgba(var(--ap-accent2-rgb), 0.5);
     color: var(--ap-accent2);
@@ -101,6 +99,14 @@
   font-size: 12px;
 }
 
+.obs-import__selection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 4px;
+}
+
 .obs-import__folder-btn {
   background: rgba(var(--ap-accent2-rgb), 0.1);
   border: 1px solid rgba(var(--ap-accent2-rgb), 0.3);
@@ -109,7 +115,6 @@
   cursor: pointer;
   font-family: inherit;
   font-size: 12px;
-  margin-top: 4px;
   padding: 6px 14px;
   transition: all 0.15s;
 
