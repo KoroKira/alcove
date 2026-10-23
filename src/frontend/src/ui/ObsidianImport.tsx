@@ -16,6 +16,7 @@ export default function ObsidianImport({ onClose, onImported }: Props) {
   const [done, setDone] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [emptyError, setEmptyError] = useState('');
+  const importKeys = useRef<WeakMap<File, string>>(new WeakMap());
   const fileRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
 
@@ -35,21 +36,19 @@ export default function ObsidianImport({ onClose, onImported }: Props) {
     setDone(false);
     setEmptyError('');
     if (!retry) {
+      importKeys.current = new WeakMap();
       setResults([]);
       setFailedFiles([]);
     }
-    const imported = await importObsidianFiles(mdFiles, setProgress);
-    const fileByPath = new Map(mdFiles.map(file => [
-      ((file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name).replace(/\\/g, '/'),
-      file,
-    ]));
-    setFailedFiles(imported.flatMap(result => result.error && fileByPath.has(result.sourceKey)
-      ? [fileByPath.get(result.sourceKey)!]
+    const imported = await importObsidianFiles(mdFiles, setProgress, fetch, importKeys.current);
+    const fileByIdempotencyKey = new Map(mdFiles.map(file => [importKeys.current.get(file), file]));
+    setFailedFiles(imported.flatMap(result => result.error && result.idempotencyKey && fileByIdempotencyKey.has(result.idempotencyKey)
+      ? [fileByIdempotencyKey.get(result.idempotencyKey)!]
       : []));
     setResults(current => {
       if (!retry) return imported;
-      const bySource = new Map(current.map(result => [result.sourceKey, result]));
-      imported.forEach(result => bySource.set(result.sourceKey, result));
+      const bySource = new Map(current.map(result => [result.idempotencyKey || result.sourceKey, result]));
+      imported.forEach(result => bySource.set(result.idempotencyKey || result.sourceKey, result));
       return [...bySource.values()];
     });
 

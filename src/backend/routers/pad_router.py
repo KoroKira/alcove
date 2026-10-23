@@ -4,7 +4,7 @@ from uuid import UUID
 from datetime import datetime, timezone
 from typing import Dict, Any, Tuple, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import update as sa_update, select as sa_select, text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
@@ -216,7 +216,8 @@ async def get_or_create_scratch_pad(
 async def create_new_pad(
     body: NewPadRequest = None,
     user: UserSession = Depends(require_auth),
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
 ) -> Dict[str, Any]:
     """Create a new pad for the authenticated user"""
     try:
@@ -225,6 +226,39 @@ async def create_new_pad(
         pad_type = req.pad_type if req.pad_type in VALID_PAD_TYPES else "canvas"
         default_names = {"document": "New document", "kanban": "New kanban", "gantt": "New gantt", "latex": "New LaTeX", "database": "New database"}
         display_name = req.display_name or default_names.get(pad_type, "New pad")
+
+        # The Obsidian importer sends an idempotency key because a network
+        # timeout can happen after the database commit but before the browser
+        # receives the response. Replaying the same create must return the
+        # original pad rather than silently duplicating the note.
+        if isinstance(idempotency_key, str):
+            from application.errors import ConflictError, ValidationError
+            from application.pad_writes import PadWriteService
+            from application.principal import Principal
+
+            try:
+                created, _replayed = await PadWriteService(session).create_pad(
+                    Principal(id=user.id),
+                    display_name=display_name,
+                    pad_type=pad_type,
+                    content=req.content if pad_type == "document" else None,
+                    folder=req.folder,
+                    idempotency_key=idempotency_key,
+                )
+            except ConflictError as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+            except ValidationError as error:
+                raise HTTPException(status_code=422, detail=str(error)) from error
+
+            try:
+                pad_id = UUID(created["id"])
+            except (KeyError, ValueError) as error:
+                raise HTTPException(status_code=500, detail="Pad creation result is invalid") from error
+            pad = await Pad.get_by_id(session, pad_id)
+            if pad is None:
+                raise HTTPException(status_code=409, detail="The pad created by this request is no longer available")
+            return pad.to_dict()
+
         pad = await Pad.create(
             session=session,
             owner_id=user.id,
@@ -259,6 +293,8 @@ async def create_new_pad(
             }
         await pad.save(session)
         return pad.to_dict()
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=500,

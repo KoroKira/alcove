@@ -1,6 +1,7 @@
 export interface ObsidianImportResult {
   name: string;
   sourceKey: string;
+  idempotencyKey?: string;
   id?: string;
   error?: string;
 }
@@ -40,6 +41,7 @@ export async function importObsidianFiles(
   files: File[],
   onProgress: (completed: number) => void = () => {},
   request: typeof fetch = fetch,
+  idempotencyKeys: WeakMap<File, string> = new WeakMap(),
 ): Promise<ObsidianImportResult[]> {
   const notes = files
     .filter(file => /\.md$/i.test(file.name))
@@ -48,14 +50,19 @@ export async function importObsidianFiles(
 
   for (const file of notes) {
     const location = noteLocation(file as RelativeFile);
+    const key = sourceKey(file as RelativeFile);
+    let idempotencyKey: string | undefined;
     try {
       if (!location.name.trim()) throw new Error('Nom de note vide');
       if (location.name.length > 100) throw new Error('Nom trop long (100 caractères maximum)');
       if (location.folder && location.folder.length > 80) throw new Error('Chemin de dossier trop long (80 caractères maximum)');
 
+      idempotencyKey = idempotencyKeys.get(file) || crypto.randomUUID();
+      idempotencyKeys.set(file, idempotencyKey);
+
       const response = await request('/api/pad/new', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify({
           pad_type: 'document',
           display_name: location.name,
@@ -66,11 +73,12 @@ export async function importObsidianFiles(
       if (!response.ok) throw new Error(await responseError(response));
       const pad = await response.json() as { id?: unknown };
       if (typeof pad.id !== 'string' || !pad.id) throw new Error('Réponse serveur invalide : identifiant du pad absent');
-      results.push({ name: location.name, sourceKey: sourceKey(file as RelativeFile), id: pad.id });
+      results.push({ name: location.name, sourceKey: key, idempotencyKey, id: pad.id });
     } catch (cause) {
       results.push({
         name: location.name || file.name,
-        sourceKey: sourceKey(file as RelativeFile),
+        sourceKey: key,
+        ...(idempotencyKey ? { idempotencyKey } : {}),
         error: cause instanceof Error ? cause.message : String(cause),
       });
     } finally {
