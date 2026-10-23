@@ -54,7 +54,12 @@ callback_port = 18765
 ```
 
 L'URL et le port doivent correspondre au client provisionné par
-l'administrateur. Conserver les autres entrées de configuration existantes.
+l'administrateur. Ce callback fixe suppose que Keycloak annonce
+`authorization_response_iss_parameter_supported: true` dans sa découverte OIDC.
+Sinon Codex peut ajouter un identifiant à son callback, tandis que ce script
+accepte uniquement le chemin `/callback` pour Codex. Dans ce cas, utiliser une
+clé personnelle en attendant une configuration OAuth adaptée. Conserver les
+autres entrées de configuration existantes.
 Lancer ensuite `codex mcp login alcove --scopes alcove:read`, puis
 `codex mcp list`. Une session déjà ouverte peut nécessiter la réouverture du
 chat pour charger les nouveaux outils.
@@ -93,6 +98,10 @@ client non géré. Il n'active pas l'enregistrement dynamique public de clients.
 
 Obtenir un jeton d'administration Keycloak de courte durée dans un fichier
 privé (`0600`), sans le copier dans le terminal ou dans une commande Git.
+Le compte qui l'émet doit pouvoir gérer les clients et les scopes du realm;
+le rôle limité à la gestion des utilisateurs ne suffit pas. Le répertoire
+parent privé doit déjà exister; choisir un nouveau répertoire de sauvegarde et
+un nouveau fichier de clients, car le script refuse de les écraser.
 Depuis un environnement Python disposant des dépendances backend :
 
 ```sh
@@ -110,7 +119,10 @@ Vérifier l'URL de retour exacte dans ChatGPT : elle peut dépendre du mode de
 callback de la connexion. Utiliser cette valeur si elle diffère de l'exemple.
 Chaque client est optionnel, mais au moins une URL de retour est requise.
 Le fichier de clients contient le secret ChatGPT; ne pas le publier. Le script
-sauvegarde la configuration précédente et restaure celle-ci en cas d'échec.
+sauvegarde la configuration précédente dans
+`nouveau-backup-oauth/keycloak-mcp-before.json` et tente de la restaurer en cas
+d'échec. Si la récupération automatique échoue aussi, réessayer avec cette
+sauvegarde et la commande de rollback ci-dessous.
 
 Ajouter au **même fichier d'environnement que le service Compose** :
 
@@ -121,6 +133,9 @@ MCP_OAUTH_CLIENT_IDS=alcove-codex,alcove-chatgpt
 MCP_OAUTH_WRITE_ENABLED=false
 ```
 
+Remplacer l'origine d'exemple et ne conserver dans `MCP_OAUTH_CLIENT_IDS` que
+les identifiants effectivement provisionnés. Si le service utilise un fichier
+extérieur au dépôt, utiliser son chemin exact à la place de `.env` ci-dessous.
 Puis recréer seulement le service `pad` avec son image épinglée :
 
 ```sh
@@ -155,7 +170,7 @@ Pour restaurer les clients Keycloak (avec un nouveau jeton admin valide) :
 python scripts/provision_mcp_oauth.py \
   --server-url https://auth.example.org --realm alcove \
   --admin-token-file /CHEMIN/PRIVE/admin-token.json \
-  rollback --snapshot /CHEMIN/PRIVE/nouveau-backup-oauth/snapshot.json
+  rollback --snapshot /CHEMIN/PRIVE/nouveau-backup-oauth/keycloak-mcp-before.json
 ```
 
 Les clés personnelles se révoquent individuellement depuis Alcove; pour
