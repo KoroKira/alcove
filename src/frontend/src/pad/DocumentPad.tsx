@@ -17,7 +17,7 @@ import katex from 'katex';
 import mermaid from 'mermaid';
 import { Link, History, Bookmark, Download, FileText, List, Maximize2, Minimize2, BookOpen, Save, Play, Globe, Terminal, Sparkles, ExternalLink } from 'lucide-react';
 import { useRelatedPads } from '../hooks/useRelatedPads';
-import { parseWikiLink, resolveWikiLink } from '../lib/wikilinks';
+import { findTransclusionTargets, parseWikiLink, resolveWikiLink } from '../lib/wikilinks';
 import { readVideoMeta, stripVideoMeta, parseTimestamp, replaceReportBody } from '../lib/videoMeta';
 import { createManualSnapshot } from '../lib/manualSnapshot';
 import VideoEmbed, { VideoEmbedHandle } from '../ui/VideoEmbed';
@@ -412,12 +412,10 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
 
   // Fetch transcluded pads referenced via ![[name]]
   useEffect(() => {
-    const matches = Array.from(content.matchAll(/!\[\[([^\]]+)\]\]/g));
-    const names = Array.from(new Set(matches.map(m => m[1].toLowerCase())));
-    if (names.length === 0) return;
-    names.forEach(name => {
-      const target = tabs.find(t => t.title.toLowerCase() === name);
-      if (!target || target.padType !== 'document' || transcluded[target.id] !== undefined) return;
+    const targets = findTransclusionTargets(content, tabs);
+    if (targets.length === 0) return;
+    targets.forEach(target => {
+      if (transcluded[target.id] !== undefined) return;
       setTranscluded(prev => ({ ...prev, [target.id]: '' }));
       fetch(`/api/pad/${target.id}`)
         .then(r => r.json())

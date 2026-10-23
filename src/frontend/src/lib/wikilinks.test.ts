@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { parseWikiLink, resolveWikiLink } from './wikilinks';
+import { findTransclusionTargets, parseWikiLink, resolveWikiLink } from './wikilinks';
 
 const tabs = [
-  { id: 'one', title: 'Overview', folder: 'Projects/Launch' },
-  { id: 'two', title: 'Overview', folder: 'Projects/Design' },
+  { id: 'one', title: 'Overview', folder: 'Projects/Launch', padType: 'document' },
+  { id: 'two', title: 'Overview', folder: 'Projects/Design', padType: 'document' },
 ] as any;
 
 describe('Obsidian wikilinks', () => {
@@ -25,5 +25,12 @@ describe('Obsidian wikilinks', () => {
       target: 'Projects/Launch/Overview',
       label: 'Overview',
     });
+  });
+
+  it('finds folder-qualified transclusions and deduplicates repeated references', () => {
+    expect(findTransclusionTargets(
+      '![[Projects/Design/Overview#Architecture|Design]] and ![[Projects/Design/Overview]]',
+      tabs,
+    ).map(tab => tab.id)).toEqual(['two']);
   });
 });

@@ -27,3 +27,16 @@ export function resolveWikiLink(value: string, tabs: Tab[]): { id: string; title
   }
   return candidates[0];
 }
+
+/** Resolve the document pads needed to render all transclusions in content. */
+export function findTransclusionTargets(content: string, tabs: Tab[]): Tab[] {
+  const targets = new Map<string, Tab>();
+  for (const match of content.matchAll(/!\[\[([^\]]+)\]\]/g)) {
+    const target = resolveWikiLink(match[1], tabs);
+    if (target) {
+      const tab = tabs.find(candidate => candidate.id === target.id);
+      if (tab?.padType === 'document') targets.set(tab.id, tab);
+    }
+  }
+  return [...targets.values()];
+}
