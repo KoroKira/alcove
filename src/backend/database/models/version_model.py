@@ -20,15 +20,16 @@ class PadVersion(Base):
         from sqlalchemy import select, delete, func as sa_func
         version = cls(pad_id=pad_id, data=data, pad_type=pad_type, snapshot_reason=reason)
         session.add(version)
-        # Keep only the last 50 versions per pad
+        # Keep only the last 50 versions per pad. The pending version is
+        # autoflushed by the count query below, so prune only rows above 50.
         count_stmt = select(sa_func.count()).where(cls.pad_id == pad_id)
         count = (await session.execute(count_stmt)).scalar()
-        if count >= 50:
+        if count > 50:
             oldest_stmt = (
                 select(cls.id)
                 .where(cls.pad_id == pad_id)
                 .order_by(cls.created_at.asc())
-                .limit(count - 49)
+                .limit(count - 50)
             )
             oldest_ids = (await session.execute(oldest_stmt)).scalars().all()
             if oldest_ids:

@@ -1,8 +1,9 @@
 """End-to-end restore behavior against isolated PostgreSQL integration data."""
 
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from uuid import uuid4
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 
@@ -94,3 +95,54 @@ async def test_restore_restores_selected_data_and_snapshots_current_data(integra
     snapshots = {entry.snapshot_reason: entry.data for entry in history}
     assert snapshots["manual"] == {"content": "older content", "format": "markdown"}
     assert snapshots["pre-restore"] == {"content": "current content", "format": "markdown"}
+
+
+@pytest.mark.integration
+async def test_version_history_keeps_exactly_the_latest_50_versions(integration_session):
+    owner_id = uuid4()
+    owner = UserStore(
+        id=owner_id,
+        username=f"version-limit-owner-{owner_id}",
+        email=f"{owner_id}@example.test",
+    )
+    pad = PadStore(
+        id=uuid4(),
+        owner_id=owner_id,
+        display_name="isolated version limit integration pad",
+        data={"content": "current content", "format": "markdown"},
+        sharing_policy="private",
+        whitelist=[],
+        pad_type="document",
+    )
+    integration_session.add_all([owner, pad])
+    await integration_session.flush()
+
+    first_created = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    versions = [
+        PadVersion(
+            id=uuid4(),
+            pad_id=pad.id,
+            data={"content": f"revision {index}", "format": "markdown"},
+            pad_type="document",
+            snapshot_reason="manual",
+            created_at=first_created + timedelta(days=index),
+        )
+        for index in range(50)
+    ]
+    integration_session.add_all(versions)
+    await integration_session.commit()
+
+    await PadVersion.create(
+        integration_session,
+        pad_id=pad.id,
+        data={"content": "latest revision", "format": "markdown"},
+        pad_type="document",
+        reason="manual",
+    )
+
+    history = await PadVersion.list_for_pad(integration_session, pad.id)
+    contents = {version.data["content"] for version in history}
+    assert len(history) == 50
+    assert "revision 0" not in contents
+    assert {f"revision {index}" for index in range(1, 50)} <= contents
+    assert "latest revision" in contents
