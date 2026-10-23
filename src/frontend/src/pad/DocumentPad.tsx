@@ -1295,15 +1295,18 @@ ${renderedHtml}
           canRestore={!restoreBlockedReason}
           restoreBlockedReason={restoreBlockedReason}
           onClose={() => setHistoryOpen(false)}
-          onRestore={() => {
-            setHistoryOpen(false);
-            clearLocalDocumentDraft(padId);
+          onRestore={async () => {
+            const restoredPadId = padId;
+            clearLocalDocumentDraft(restoredPadId);
             setRecoveryDraft(null);
-            fetch(`/api/pad/${padId}`).then(r => r.json()).then(d => {
-              const next = d.content || '';
-              contentRef.current = next;
-              setContent(next);
-            });
+            const response = await fetch(`/api/pad/${restoredPadId}`);
+            if (!response.ok) throw new Error(`Restauration effectuée, mais rechargement impossible (${response.status}).`);
+            const d = await response.json();
+            if (padIdRef.current !== restoredPadId) return;
+            const next = d.content || '';
+            contentRef.current = next;
+            setContent(next);
+            setHistoryOpen(false);
           }}
         />
       )}

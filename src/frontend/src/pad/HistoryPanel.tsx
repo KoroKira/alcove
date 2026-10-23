@@ -12,7 +12,7 @@ interface Version {
 interface Props {
   padId: string;
   onClose: () => void;
-  onRestore: () => void;
+  onRestore: () => void | Promise<void>;
   canRestore?: boolean;
   restoreBlockedReason?: string;
 }
@@ -71,7 +71,7 @@ const HistoryPanel: React.FC<Props> = ({
     try {
       const response = await fetch(`/api/pad/${padId}/versions/${versionId}/restore`, { method: 'POST' });
       if (!response.ok) throw new Error(`Impossible de restaurer cette version (${response.status}).`);
-      onRestore();
+      await onRestore();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Impossible de restaurer cette version.');
     } finally {
@@ -116,7 +116,7 @@ const HistoryPanel: React.FC<Props> = ({
             <button
               className="history-panel__restore-btn"
               onClick={() => restore(v.id)}
-              disabled={restoring === v.id || !canRestore}
+              disabled={restoring !== null || !canRestore}
               title="Restaurer cette version"
             >
               <RotateCcw size={12} />
