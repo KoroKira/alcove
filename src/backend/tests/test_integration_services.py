@@ -31,6 +31,16 @@ from domain.pad import Pad
 from routers import ws_router
 from api.v1.router import v1_router
 from routers.pad_router import export_all_zip, list_trashed_pads, restore_pad
+from routers.ai.rag import (
+    ChunkPayload,
+    IndexChunksRequest,
+    KnnRequest,
+    RelatedPadsRequest,
+    index_chunks,
+    indexable_text,
+    knn,
+    related_pads,
+)
 
 
 @pytest.mark.integration
@@ -212,6 +222,71 @@ async def test_zip_export_contains_active_pads_and_excludes_trashed_pads(integra
     assert "This exact isolated content must be exported." in content
     assert "Isolated trashed note" not in content
     assert "This content must stay out of exports." not in content
+
+
+@pytest.mark.integration
+async def test_rag_indexing_knn_and_related_pads_are_owner_scoped(integration_session):
+    owner_id, stranger_id = uuid4(), uuid4()
+    owner = UserStore(
+        id=owner_id,
+        username=f"rag-owner-{owner_id}",
+        email=f"{owner_id}@example.test",
+    )
+    stranger = UserStore(
+        id=stranger_id,
+        username=f"rag-stranger-{stranger_id}",
+        email=f"{stranger_id}@example.test",
+    )
+    target = PadStore(
+        id=uuid4(), owner_id=owner_id, display_name="Private target",
+        data={"content": "Owner-only retrieval material."}, sharing_policy="private",
+        whitelist=[], pad_type="document",
+    )
+    related = PadStore(
+        id=uuid4(), owner_id=owner_id, display_name="Private related",
+        data={"content": "A related owner note."}, sharing_policy="private",
+        whitelist=[], pad_type="document",
+    )
+    foreign = PadStore(
+        id=uuid4(), owner_id=stranger_id, display_name="Foreign secret",
+        data={"content": "A different user's secret."}, sharing_policy="private",
+        whitelist=[], pad_type="document",
+    )
+    integration_session.add_all([owner, stranger, target, related, foreign])
+    await integration_session.commit()
+
+    target_text = await indexable_text(str(target.id), SimpleNamespace(id=owner_id), integration_session)
+    assert target_text["text"] == "Owner-only retrieval material."
+
+    async def index_pad(user_id, pad, vector):
+        await index_chunks(
+            IndexChunksRequest(
+                pad_id=str(pad.id),
+                chunks=[ChunkPayload(index=0, text=f"chunk for {pad.display_name}", embedding=vector)],
+            ),
+            SimpleNamespace(id=user_id),
+            integration_session,
+        )
+
+    await index_pad(owner_id, target, [1.0, 0.0])
+    await index_pad(owner_id, related, [0.98, 0.02])
+    await index_pad(stranger_id, foreign, [1.0, 0.0])
+
+    owner_results = await knn(KnnRequest(query_embedding=[1.0, 0.0]), SimpleNamespace(id=owner_id), integration_session)
+    assert {item["pad_name"] for item in owner_results["results"]} == {"Private target", "Private related"}
+    outsider_results = await knn(KnnRequest(query_embedding=[1.0, 0.0]), SimpleNamespace(id=stranger_id), integration_session)
+    assert {item["pad_name"] for item in outsider_results["results"]} == {"Foreign secret"}
+
+    related_results = await related_pads(
+        RelatedPadsRequest(pad_id=str(target.id)),
+        SimpleNamespace(id=owner_id),
+        integration_session,
+    )
+    assert [item["pad_name"] for item in related_results["related"]] == ["Private related"]
+
+    with pytest.raises(HTTPException) as denied:
+        await indexable_text(str(target.id), SimpleNamespace(id=stranger_id), integration_session)
+    assert denied.value.status_code == 404
 
 
 @pytest.mark.integration
