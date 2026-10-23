@@ -1,5 +1,6 @@
 {
   "sidebar": {
+    "trashRestored": "Se ha restaurado {{name}}.",
     "filter": "Filtrar…",
     "files": "Archivos",
     "reading": "Lectura",

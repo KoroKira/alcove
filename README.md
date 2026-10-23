@@ -4,239 +4,133 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-support-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/guilhemdl)
 
-> **Alcove** est un espace de travail personnel open source combinant tableau blanc (Excalidraw), documents, organisation de projets et gestion de connaissances, avec IA locale via Ollama. **Vos notes et votre IA ne quittent jamais votre machine.**
->
-> Le projet a été initialement dérivé de [pad.ws](https://github.com/coderamp-labs/pad.ws), puis a évolué en un produit indépendant. Alcove conserve avec reconnaissance l'historique et l'attribution du projet d'origine.
+**Alcove** est un espace de travail personnel open source : documents Markdown,
+canvas Excalidraw, Kanban, Gantt et LaTeX, reliés par la recherche et les
+wikilinks. L'assistant utilise Ollama sur la machine configurée par l'opérateur.
+En hébergement, les notes et les requêtes IA transitent par votre serveur Alcove.
 
----
+Initialement dérivé de [pad.ws](https://github.com/coderamp-labs/pad.ws), Alcove
+conserve l'historique et l'attribution du projet d'origine.
 
-## Fonctionnalités
+## Choisir son installation
 
-### Pads (types de contenu)
-
-| Type | Description |
+| Besoin | Procédure |
 |---|---|
-| **Canvas** | Tableau blanc Excalidraw — dessins, formes, connexions |
-| **Document** | Éditeur Markdown (Monaco) avec preview en temps réel |
-| **LaTeX** | Éditeur LaTeX avec compilation PDF intégrée |
-| **Kanban** | Tableau à colonnes glissables (À faire / En cours / Terminé) |
-| **Gantt** | Diagramme de Gantt interactif (frappe-gantt) |
+| Essayer sur son ordinateur, sans compte | [Docker local](#essayer-en-local-avec-docker) |
+| Développer avec rechargement automatique | [Mode développement](SETUP.md#développement-local) |
+| Héberger avec HTTPS et comptes privés | [Guide serveur](SETUP.md#serveur-https-avec-comptes) |
+| Relier un assistant à ses pads | [Guide MCP](docs/MCP.md) |
+| Mettre à jour, sauvegarder et revenir en arrière | [Exploitation](SETUP.md#mise-à-jour-et-retour-en-arrière) |
 
-### Gestion de connaissances
+Le mode local contourne l'authentification : il reste limité à votre ordinateur.
+Pour une URL publique ou plusieurs utilisateurs, utiliser le guide serveur.
+`docker-compose.yml` et `.env.template` sont des fichiers historiques avec
+Coder, conservés pour les installations existantes; ils ne sont pas le point
+de départ recommandé.
 
-| Feature | Description |
-|---|---|
-| **Wikilinks** | `[[nom-du-pad]]` — liens entre pads avec autocomplétion |
-| **Transclusion** | `![[nom-du-pad]]` — embarque le contenu d'un autre pad |
-| **Callouts** | `> [!NOTE]`, `> [!TIP]`, `> [!WARNING]` — blocs style Obsidian |
-| **KaTeX** | Formules mathématiques `$inline$` et `$$bloc$$` |
-| **Image paste** | Coller une image → base64 dans le Markdown |
-| **Table des matières** | Générée automatiquement depuis les titres `##` |
-| **Daily notes** | Un pad document par jour, généré automatiquement |
-| **Graphe de connaissances** | Vue graphe de tous les wikilinks entre pads |
-| **Recherche full-text** | Recherche dans les titres et le contenu de tous les pads |
-| **Historique de versions** | Snapshots automatiques (toutes les 5 min) et manuels |
-| **Tags** | Étiquettes sur chaque pad, filtrage dans le Dashboard |
-| **Flashcards** | Syntaxe `Q:/A:` dans les docs + répétition espacée (SM-2) |
-| **Export** | `.md`, PDF (impression), ZIP de tous les pads |
-| **Import Obsidian** | Import d'un vault Obsidian (`.md` + images) |
+## Essayer en local avec Docker
 
-### Assistant IA (Ollama — 100% local)
+Installer et démarrer Docker Desktop (ou Docker Engine avec Compose v2 sous
+Linux), puis :
 
-| Feature | Description |
-|---|---|
-| **Chat** | Conversation libre avec un modèle local |
-| **Résumé** | Résume le document ouvert en 3-5 points |
-| **Suggestion de tags** | Génère des tags à partir du contenu |
-| **Liens suggérés** | Propose des wikilinks pertinents |
-| **RAG** | Recherche sémantique dans tous les pads + réponse contextuelle |
-| **Flashcards IA** | Génère des flashcards Q/A depuis un document |
-| **Quiz** | Questions/réponses sur le contenu de plusieurs pads |
-| **Auto-démarrage** | Ollama est lancé automatiquement s'il est installé mais éteint |
-
-> La qualité des réponses IA dépend du modèle local utilisé — `llama3.2` par défaut. Un modèle plus gros (`OLLAMA_DEFAULT_MODEL`) donne de meilleurs résultats.
-
-### Outils
-
-| Feature | Description |
-|---|---|
-| **Palette de commandes** | `Cmd+K` — accès rapide à toutes les actions |
-| **Dashboard** | Vue de tous les pads avec filtres par tags |
-| **Templates canvas** | 5 templates prédéfinis (Réunion, Brainstorm, Kanban…) |
-| **Pomodoro** | Timer intégré directement dans l'interface |
-| **Terminal local** | Shell zsh embarqué dans un canvas (ttyd) |
-| **Thèmes** | Thème clair/sombre par pad + builder de thèmes personnalisés |
-| **PWA offline** | Fonctionne hors-ligne via Service Worker |
-| **Pad scratch** | Pad épinglé toujours en première position |
-
----
-
-## Démarrage rapide
-
-### 🚀 Le plus simple : lancer chez un(e) ami(e) (Windows ou macOS)
-
-> Le seul prérequis est [Docker Desktop](https://www.docker.com/products/docker-desktop/). Pas de Python, pas de Node, pas de ligne de commande à connaître.
-
-1. Télécharge le projet : bouton vert **Code → Download ZIP** sur cette page GitHub, puis décompresse le dossier (ou `git clone` si tu préfères).
-2. Installe [Docker Desktop](https://www.docker.com/products/docker-desktop/) si ce n'est pas déjà fait, et lance-le au moins une fois.
-3. Double-clique sur :
-   - **Windows** : `scripts\start-for-friends.bat`
-   - **macOS** : `scripts/start-for-friends.command` (clic droit → Ouvrir la première fois, à cause de Gatekeeper)
-
-Le script construit l'image, démarre tout (app, base de données, IA) et ouvre `http://localhost:8000` automatiquement dans ton navigateur. Le tout premier lancement prend quelques minutes (build de l'image + téléchargement du modèle IA, ~2 Go) ; les suivants sont quasi instantanés.
-
-Connexion automatique en tant que `local@localhost` — pas de compte à créer.
-
-Pour arrêter : `docker compose -f docker-compose.friends.yml stop`.
-
-### Mode local macOS/Windows (pour usage solo, sans Docker pour l'app)
-
-> macOS : nécessite [Homebrew](https://brew.sh). Windows : nécessite [Docker Desktop](https://www.docker.com/products/docker-desktop/) (pour Postgres/Redis uniquement, l'app reste native) — voir [SETUP.md](SETUP.md).
-
-```bash
+```sh
 git clone https://github.com/KoroKira/alcove.git
 cd alcove
-
-# macOS
-bash scripts/run.sh
-
-# Windows (PowerShell)
-powershell -ExecutionPolicy Bypass -File scripts\run.ps1
+docker compose -f docker-compose.friends.yml up -d --build
 ```
 
-Le script installe automatiquement les dépendances manquantes, configure l'environnement et lance tous les services.
+Ouvrir [http://localhost:8000](http://localhost:8000). La connexion au compte
+local est automatique. L'application, PostgreSQL, Redis et Ollama tournent en
+conteneurs. Le premier téléchargement du modèle IA peut durer plusieurs
+minutes; les pads restent utilisables pendant ce temps.
 
-**→ Ouvrir [http://localhost:8000](http://localhost:8000)**
+Sur macOS et Windows, les lanceurs `scripts/start-for-friends.command` et
+`scripts/start-for-friends.bat` exécutent ce même parcours.
 
-Connexion automatique en tant que `local@localhost` (pas de mot de passe).
+```sh
+# Voir l'état et les erreurs éventuelles
+docker compose -f docker-compose.friends.yml ps
+docker compose -f docker-compose.friends.yml logs --tail=80 pad
 
-### Mode Docker complet (multi-utilisateurs, hébergement)
-
-> Nécessite [Docker Desktop](https://docs.docker.com/get-docker/) + `jq` (`brew install jq`). Inclut Keycloak (auth) et Coder (workspaces) — utile pour héberger l'app pour plusieurs personnes avec de vrais comptes, sinon préfère le mode "amis" ci-dessus.
-
-```bash
-git clone https://github.com/KoroKira/alcove.git
-cd alcove
-cp .env.template .env          # Édite les mots de passe avant de continuer
-bash scripts/setup.sh          # Premier lancement (~3-5 min)
-bash scripts/start.sh          # Démarrage quotidien
+# Arrêter sans effacer les données
+docker compose -f docker-compose.friends.yml stop
 ```
 
-**→ Ouvrir [http://localhost:8000](http://localhost:8000)**
+Les bases et les modèles sont conservés dans les volumes Docker; les fichiers
+synchronisés sont sous `./pads`. Un export ZIP des pads facilite leur transfert,
+mais ne remplace pas une sauvegarde complète de l'installation. Ne pas utiliser
+`down -v` pour une mise à jour : cette option supprime les volumes.
 
----
+## Ce qu'on peut faire
 
-## IA locale (Ollama)
+| Domaine | Fonctions |
+|---|---|
+| Pads | Canvas Excalidraw, document Markdown avec aperçu, Kanban, Gantt, LaTeX |
+| Organisation | Dossiers, tags, favoris, onglets, note du jour, dashboard |
+| Connaissances | `[[wikilinks]]`, `![[transclusion]]`, graphe, recherche titres/contenu |
+| Écriture | Callouts, formules KaTeX, images, table des matières |
+| Données | Autosauvegarde, historique de révisions, corbeille, export, import Obsidian |
+| IA | Chat contextuel, résumé, tags, liens suggérés, flashcards, quiz, recherche RAG |
+| Navigation | Palette de commandes, raccourcis, thèmes clair/sombre, interface installable PWA |
 
-L'assistant IA utilise [Ollama](https://ollama.com) pour tourner entièrement en local — aucune donnée n'est envoyée à un serveur externe.
+Les sauvegardes doivent être vérifiées avant toute restauration. L'installation
+PWA n'est pas une sauvegarde et ne garantit pas que toutes les fonctions
+marchent hors connexion. La compilation LaTeX dépend du moteur configuré;
+l'historique, les importations et le RAG doivent être vérifiés avec des données
+de test sur votre installation.
 
-```bash
-# Installer Ollama
-brew install ollama
+## IA avec Ollama
 
-# Télécharger un modèle (exemples)
-ollama pull deepseek-r1:1.5b   # rapide, léger (~1 Go)
-ollama pull llama3.2           # polyvalent (~2 Go)
-ollama pull mistral            # puissant (~4 Go)
+Le navigateur passe par `/api/ai/ollama` sur son serveur Alcove. Il n'a pas besoin
+d'un Ollama local ni de modifier des autorisations CORS. `OLLAMA_URL` est
+l'adresse vue par le **backend**, pas par votre navigateur.
+
+Dans les stacks Docker local et serveur, Ollama reste accessible sur le réseau
+interne. Installer explicitement le modèle de chat et celui des embeddings pour
+le RAG :
+
+```sh
+# Pour la stack locale; voir SETUP.md pour la commande serveur
+docker compose -f docker-compose.friends.yml exec ollama ollama pull llama3.2
+docker compose -f docker-compose.friends.yml exec ollama ollama pull nomic-embed-text
 ```
 
-Si Ollama est installé, l'app le détecte et le lance automatiquement. Le panneau IA s'ouvre avec l'icône ✦ en haut à droite du canvas.
+Le chat fonctionne sans le modèle d'embeddings. La première indexation RAG
+nécessite que ce dernier soit présent et que le serveur ait assez de mémoire.
 
----
+## Navigation et accessibilité
 
-## Raccourcis clavier
+Les actions fréquentes sont accessibles depuis les boutons et la palette de
+commandes. Les raccourcis utilisent `Cmd` sur macOS et `Ctrl` ailleurs.
 
 | Raccourci | Action |
 |---|---|
-| `Cmd/Ctrl + N` | Nouveau canvas |
 | `Cmd/Ctrl + K` | Palette de commandes |
-| `Cmd/Ctrl + Shift + F` | Recherche full-text |
+| `Cmd/Ctrl + N` | Nouveau canvas |
+| `Cmd/Ctrl + Shift + F` | Recherche globale |
 | `Cmd/Ctrl + D` | Dashboard |
 | `Cmd/Ctrl + G` | Graphe de connaissances |
-| `Cmd/Ctrl + J` | Daily note d'aujourd'hui |
+| `Cmd/Ctrl + J` | Note du jour |
 
----
+Les contrôles au clavier, le focus visible, la lisibilité et les messages de
+sauvegarde font partie des parcours à vérifier lors d'une mise à jour. Signaler
+les problèmes d'accès avec le navigateur, le type de pad et les étapes de
+reproduction, sans joindre de contenu privé.
 
-## Configuration
+## Développement et contribution
 
-### Variables principales (`.env.local` pour mode local, `.env` pour Docker)
+Frontend React 19 / TypeScript / Vite, backend FastAPI / SQLAlchemy,
+PostgreSQL 16, Redis, authentification OIDC avec Keycloak pour l'hébergement.
+Le terminal optionnel hérité de Coder/ttyd n'est pas activé par la stack serveur
+recommandée.
 
-| Variable | Description | Défaut |
-|---|---|---|
-| `PAD_DEV_MODE` | Mode local sans auth (auto-login) | `false` |
-| `POSTGRES_USER` | Utilisateur PostgreSQL | `(ton username macOS)` |
-| `POSTGRES_DB` | Nom de la base de données | `pad` |
-| `REDIS_HOST` | Hôte Redis | `localhost` |
-| `OLLAMA_URL` | URL du serveur Ollama | `http://localhost:11434` |
-| `OLLAMA_DEFAULT_MODEL` | Modèle Ollama par défaut | `llama3.2` |
-| `SYNC_DIR` | Dossier de sync locale des pads `.excalidraw` | `~/Documents/pads/` |
-| `TTYD_URL` | URL du terminal local (ttyd) | `http://localhost:7681` |
-
-> ⚠️ Changez les mots de passe par défaut dans `.env` avant tout déploiement public.
-
----
-
-## Structure du projet
-
-```
-alcove/
-├── src/
-│   ├── backend/              # FastAPI (Python 3.11+)
-│   │   ├── routers/          # Endpoints API (pad, ai, auth, ws…)
-│   │   ├── domain/           # Logique métier (Pad, User, Session)
-│   │   ├── database/         # Modèles SQLAlchemy + init DB
-│   │   ├── workers/          # Canvas worker (sauvegarde périodique)
-│   │   ├── cache/            # Client Redis singleton
-│   │   └── config.py         # Variables d'environnement
-│   └── frontend/             # React 19 + TypeScript
-│       └── src/
-│           ├── pad/          # Éditeurs (Document, Kanban, Gantt, LaTeX)
-│           ├── ui/           # Composants (Dashboard, AIPanel, Tabs…)
-│           ├── hooks/        # State management (usePadTabs, useOllama…)
-│           └── lib/          # Collaboration temps réel (WebSocket)
-├── scripts/
-│   ├── start-for-friends.bat     # Double-clic Windows — mode "amis" (Docker seul)
-│   ├── start-for-friends.command # Double-clic macOS  — mode "amis" (Docker seul)
-│   ├── run.sh                    # Démarrage local macOS (sans Docker pour l'app)
-│   ├── run.ps1                   # Démarrage local Windows (sans Docker pour l'app)
-│   ├── docker-compose.local.yml  # Postgres+Redis pour run.ps1
-│   ├── setup.sh                  # Setup initial Docker complet
-│   └── start.sh                  # Démarrage quotidien Docker complet
-├── docker-compose.yml         # Mode Docker complet (Keycloak + Coder)
-├── docker-compose.friends.yml # Mode "amis" (app + Postgres + Redis + Ollama)
-├── .env.template              # Template config Docker complet
-├── .env.local.template        # Template config local macOS/Windows
-└── SETUP.md                   # Guide d'installation détaillé
-```
-
----
-
-## Stack technique
-
-| Couche | Technologie |
-|---|---|
-| Frontend | React 19, TypeScript, Excalidraw (fork `@atyrode/excalidraw`) |
-| Éditeur | Monaco Editor, marked.js, KaTeX, DOMPurify, Mermaid |
-| Backend | FastAPI, SQLAlchemy async, Python 3.11+ |
-| Base de données | PostgreSQL 16 (données canvas en JSONB) |
-| Cache / WebSocket | Redis |
-| Auth | Keycloak (OIDC) en production, `PAD_DEV_MODE=true` en local |
-| IA | Ollama (LLM local), nomic-embed-text (embeddings RAG) |
-| Build | Vite 5, vite-plugin-pwa (PWA + Service Worker) |
-
----
-
-## Sécurité & contribution
-
-⚠️ Cette app est conçue pour un **usage local mono-utilisateur**. Le terminal embarqué (ttyd) est un vrai shell sur votre machine : il est lié à `localhost` uniquement et ne doit jamais être exposé sur un réseau. Avant tout déploiement sur serveur, lisez [SECURITY.md](SECURITY.md) et changez tous les mots de passe par défaut du `.env`.
-
-Contributions bienvenues — voir [CONTRIBUTING.md](CONTRIBUTING.md).
-
----
+Voir [SETUP.md](SETUP.md), [CONTRIBUTING.md](CONTRIBUTING.md),
+[SECURITY.md](SECURITY.md) et [l'administration des comptes](docs/ACCOUNT_ADMINISTRATION.md).
+Les mots de passe, fichiers `.env` et clés MCP ne doivent jamais être commités.
 
 ## Crédits
 
-- [pad.ws](https://github.com/coderamp-labs/pad.ws) — projet d'origine dont Alcove a été initialement dérivé
+- [pad.ws](https://github.com/coderamp-labs/pad.ws) — projet d'origine
 - [Excalidraw](https://github.com/excalidraw/excalidraw) — moteur de canvas
-- [Ollama](https://ollama.com) — inférence LLM locale
-- [Alexandrie](https://github.com/Smaug6739/Alexandrie) - Surement l'une des meilleures app qui puisse exister, qui m'a bien inspiré pour mon projet
+- [Ollama](https://ollama.com) — inférence locale
+- [Alexandrie](https://github.com/Smaug6739/Alexandrie) — inspiration

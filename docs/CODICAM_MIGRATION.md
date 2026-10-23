@@ -136,12 +136,17 @@ les nouvelles données seraient perdues.
 ## 8. Sauvegarde automatisée
 
 `scripts/backup-codicam.sh` produit atomiquement un dump custom des deux bases,
-une archive des fichiers persistants, le compose, la révision Git et les seules
-clés (sans valeurs) de l'environnement. Il valide les archives, génère leurs
-SHA-256 et conserve 14 jours par défaut. Exemple de cron quotidien à 03:17 :
+une archive des fichiers persistants, le compose, l'identité de l'image exécutée,
+la révision Git si disponible et le `.env` nécessaire à la restauration (permissions
+privées). Il valide les archives et génère leurs SHA-256. Son projet Compose est
+`COMPOSE_PROJECT_NAME` (`alcove` par défaut); utiliser `ALCOVE_COMPOSE_PROJECT`
+pour un autre projet existant. Aucune purge n'est activée par défaut;
+`BACKUP_PRUNE=true` permet une rotation explicite selon `BACKUP_KEEP_DAYS`.
+Voir [SETUP.md](../SETUP.md#sauvegarde-et-restauration) pour le guide actuel.
+Exemple de cron quotidien à 03:17, à adapter aux chemins de l'installation :
 
 ```cron
-17 3 * * * /home/prez2codicam/services/alcove-next/scripts/backup-codicam.sh >> /home/prez2codicam/backups/alcove-next/backup.log 2>&1
+17 3 * * * /srv/alcove/scripts/backup-codicam.sh >> /srv/backups/alcove/backup.log 2>&1
 ```
 
 Une sauvegarde locale au serveur ne protège pas contre sa perte : synchroniser

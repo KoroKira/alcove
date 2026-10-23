@@ -1,219 +1,127 @@
 #!/usr/bin/env bash
-# setup.sh — First-time setup for Alcove on macOS (M1/M2/M3)
-# Run once. Re-running is safe (idempotent).
+# First installation of the authenticated server stack. Existing data is kept.
 set -euo pipefail
+umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(dirname "$SCRIPT_DIR")"
-cd "$ROOT"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+ENV_FILE="${ALCOVE_ENV_FILE:-$PROJECT_DIR/.env}"
+COMPOSE_FILE="${ALCOVE_COMPOSE_FILE:-$PROJECT_DIR/docker-compose.codicam.yml}"
+die() { printf '%s\n' "$*" >&2; exit 1; }
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
-info()    { echo -e "${CYAN}▶ $*${NC}"; }
-success() { echo -e "${GREEN}✓ $*${NC}"; }
-warn()    { echo -e "${YELLOW}⚠ $*${NC}"; }
-die()     { echo -e "${RED}✗ $*${NC}" >&2; exit 1; }
-
-# ── Prerequisites ─────────────────────────────────────────────────────────────
-command -v docker >/dev/null 2>&1 || die "Docker not found. Install Docker Desktop: https://www.docker.com/products/docker-desktop/"
-command -v jq     >/dev/null 2>&1 || die "jq not found. Install with: brew install jq"
-
-# ── .env ─────────────────────────────────────────────────────────────────────
-if [ ! -f .env ]; then
-  cp .env.template .env
-  success "Created .env from template"
-else
-  warn ".env already exists — skipping copy"
-fi
-
-# Load env vars
-set -a; source .env; set +a
-
-KC_PORT="${KEYCLOAK_PORT:-8080}"
-KC_ADMIN="${KEYCLOAK_ADMIN:-admin}"
-KC_ADMIN_PASS="${KEYCLOAK_ADMIN_PASSWORD:-admin123}"
-KC_REALM="${OIDC_REALM:-pad-ws}"
-KC_CLIENT_ID="${OIDC_CLIENT_ID:-pad-ws-client}"
-APP_PORT_VAL="${APP_PORT:-8000}"
-REDIRECT="${REDIRECT_URI:-http://localhost:${APP_PORT_VAL}/api/auth/callback}"
-CODER_PORT_VAL="${CODER_PORT:-7080}"
-
-# ── Build pad image ───────────────────────────────────────────────────────────
-info "Building pad image (this takes ~2 min on first run)…"
-docker compose build pad
-success "Pad image built"
-
-# ── Start infrastructure ──────────────────────────────────────────────────────
-info "Starting postgres and redis…"
-docker compose up -d postgres redis
-sleep 3
-success "postgres + redis running"
-
-# ── Keycloak ──────────────────────────────────────────────────────────────────
-info "Starting Keycloak (first start may take 60–90 s)…"
-docker compose up -d keycloak
-
-echo -n "  Waiting for Keycloak"
-for i in $(seq 1 60); do
-  if curl -sf "http://localhost:${KC_PORT}/health/ready" >/dev/null 2>&1; then
-    echo; break
-  fi
-  echo -n "."
-  sleep 3
+for dependency in docker curl jq; do
+  command -v "$dependency" >/dev/null 2>&1 || die "Missing dependency: $dependency"
 done
-curl -sf "http://localhost:${KC_PORT}/health/ready" >/dev/null 2>&1 \
-  || die "Keycloak did not start in time. Check: docker compose logs keycloak"
-success "Keycloak is ready"
+docker compose version >/dev/null 2>&1 || die "Docker Compose v2 is required (docker compose version)."
+[ -r "$ENV_FILE" ] || die "Copy .env.codicam.example to $ENV_FILE, configure it, then retry. See SETUP.md."
+# This is a trusted operator-owned configuration; it must use shell-compatible assignments.
+set -a
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+set +a
+COMPOSE_PROJECT="${ALCOVE_COMPOSE_PROJECT:-${COMPOSE_PROJECT_NAME:-alcove}}"
+compose() { docker compose --env-file "$ENV_FILE" -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" "$@"; }
 
-# ── Get admin token ───────────────────────────────────────────────────────────
-KC_TOKEN=$(curl -sf -X POST \
-  "http://localhost:${KC_PORT}/realms/master/protocol/openid-connect/token" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=${KC_ADMIN}&password=${KC_ADMIN_PASS}&grant_type=password&client_id=admin-cli" \
-  | jq -r '.access_token')
-[ -n "$KC_TOKEN" ] || die "Could not get Keycloak admin token. Check KEYCLOAK_ADMIN / KEYCLOAK_ADMIN_PASSWORD in .env"
+for key in POSTGRES_PASSWORD REDIS_PASSWORD KEYCLOAK_DB_PASSWORD KEYCLOAK_ADMIN_PASSWORD; do
+  value="${!key:-}"
+  case "$value" in ''|CHANGE_ME*|your_*) die "Configure $key with its own generated secret in $ENV_FILE." ;; esac
+  [ "${#value}" -ge 20 ] || die "$key must contain at least 20 characters."
+done
+: "${FRONTEND_URL:?Set FRONTEND_URL}" "${OIDC_SERVER_URL:?Set OIDC_SERVER_URL}"
+case "$FRONTEND_URL" in https://*) ;; *) die "FRONTEND_URL must be an HTTPS origin for the server stack." ;; esac
+case "$OIDC_SERVER_URL" in https://*) ;; *) die "OIDC_SERVER_URL must be an HTTPS origin for the server stack." ;; esac
+case "$FRONTEND_URL$OIDC_SERVER_URL" in *\?*|*\#*) die "Use origins without query strings or fragments." ;; esac
+[ "${FRONTEND_URL%/}" = "$FRONTEND_URL" ] || die "Remove the trailing slash from FRONTEND_URL."
+[ "${OIDC_SERVER_URL%/}" = "$OIDC_SERVER_URL" ] || die "Remove the trailing slash from OIDC_SERVER_URL."
+case "${ALCOVE_IMAGE:-}" in
+  ''|*REPLACE_WITH*) die "Pin ALCOVE_IMAGE to a published revision or digest before installation." ;;
+esac
+chmod 600 "$ENV_FILE"
+compose config --quiet
+printf '%s\n' 'Starting databases, cache and Keycloak…'
+compose up -d postgres keycloak-postgres redis keycloak
 
-# ── Create realm (idempotent) ─────────────────────────────────────────────────
-REALM_EXISTS=$(curl -sf -o /dev/null -w "%{http_code}" \
-  "http://localhost:${KC_PORT}/admin/realms/${KC_REALM}" \
-  -H "Authorization: Bearer ${KC_TOKEN}" || echo "404")
+KC_URL="http://127.0.0.1:${KEYCLOAK_PORT:-8080}"
+KC_REALM="${OIDC_REALM:-alcove}"
+KC_CLIENT_ID="${OIDC_CLIENT_ID:-alcove}"
+# Realm/client identifiers are used in URL paths and queries below.
+case "$KC_REALM:$KC_CLIENT_ID" in *[!A-Za-z0-9_.:-]*) die "Realm and client IDs must use letters, digits, dots, underscores or dashes." ;; esac
+ready=false
+for ((attempt=0; attempt<90; attempt++)); do
+  if curl --fail --silent --max-time 3 "$KC_URL/realms/master/.well-known/openid-configuration" >/dev/null; then
+    ready=true
+    break
+  fi
+  sleep 2
+done
+[ "$ready" = true ] || die "Keycloak is unavailable. Inspect: docker compose --env-file $ENV_FILE -p $COMPOSE_PROJECT -f $COMPOSE_FILE logs keycloak"
 
-if [ "$REALM_EXISTS" = "200" ]; then
-  warn "Realm '${KC_REALM}' already exists — skipping creation"
-else
-  curl -sf -X POST "http://localhost:${KC_PORT}/admin/realms" \
-    -H "Authorization: Bearer ${KC_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -d "{\"realm\": \"${KC_REALM}\", \"enabled\": true}" >/dev/null
-  success "Realm '${KC_REALM}' created"
-fi
+# --data-urlencode preserves passwords containing URL-reserved characters.
+KC_TOKEN=$(curl --fail --silent --show-error --max-time 20 -X POST \
+  "$KC_URL/realms/master/protocol/openid-connect/token" \
+  --data-urlencode "username=${KEYCLOAK_ADMIN:?Set KEYCLOAK_ADMIN}" \
+  --data-urlencode "password=${KEYCLOAK_ADMIN_PASSWORD}" \
+  --data-urlencode 'grant_type=password' --data-urlencode 'client_id=admin-cli' | jq -er '.access_token')
 
-# ── Create OIDC client (idempotent) ───────────────────────────────────────────
-CLIENT_UUID=$(curl -sf \
-  "http://localhost:${KC_PORT}/admin/realms/${KC_REALM}/clients?clientId=${KC_CLIENT_ID}" \
-  -H "Authorization: Bearer ${KC_TOKEN}" | jq -r '.[0].id // empty')
+realm_status=$(curl --silent --show-error --max-time 20 -o /dev/null -w '%{http_code}' \
+  "$KC_URL/admin/realms/$KC_REALM" -H "Authorization: Bearer $KC_TOKEN")
+case "$realm_status" in
+  200) printf 'Realm %s already exists; its policies are preserved.\n' "$KC_REALM" ;;
+  404)
+    jq -n --arg realm "$KC_REALM" '{realm:$realm,enabled:true,registrationAllowed:false,bruteForceProtected:true,passwordPolicy:"length(12)"}' |
+      curl --fail --silent --show-error --max-time 20 -X POST "$KC_URL/admin/realms" \
+        -H "Authorization: Bearer $KC_TOKEN" -H 'Content-Type: application/json' --data-binary @- >/dev/null
+    ;;
+  *) die "Cannot inspect realm (HTTP $realm_status). Check Keycloak administrator access." ;;
+esac
 
-if [ -n "$CLIENT_UUID" ]; then
-  warn "Client '${KC_CLIENT_ID}' already exists (${CLIENT_UUID}) — skipping creation"
-else
-  curl -sf -X POST \
-    "http://localhost:${KC_PORT}/admin/realms/${KC_REALM}/clients" \
-    -H "Authorization: Bearer ${KC_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -d "{
-      \"clientId\": \"${KC_CLIENT_ID}\",
-      \"enabled\": true,
-      \"publicClient\": false,
-      \"clientAuthenticatorType\": \"client-secret\",
-      \"redirectUris\": [\"*\"],
-      \"webOrigins\": [\"*\"],
-      \"directAccessGrantsEnabled\": true
-    }" >/dev/null
-  CLIENT_UUID=$(curl -sf \
-    "http://localhost:${KC_PORT}/admin/realms/${KC_REALM}/clients?clientId=${KC_CLIENT_ID}" \
-    -H "Authorization: Bearer ${KC_TOKEN}" | jq -r '.[0].id')
-  success "Client '${KC_CLIENT_ID}' created (${CLIENT_UUID})"
-fi
-
-# ── Get client secret ─────────────────────────────────────────────────────────
-CLIENT_SECRET=$(curl -sf \
-  "http://localhost:${KC_PORT}/admin/realms/${KC_REALM}/clients/${CLIENT_UUID}/client-secret" \
-  -H "Authorization: Bearer ${KC_TOKEN}" | jq -r '.value')
-
-# ── Add Audience mapper (idempotent) ──────────────────────────────────────────
-MAPPER_URL="http://localhost:${KC_PORT}/admin/realms/${KC_REALM}/clients/${CLIENT_UUID}/protocol-mappers/models"
-MAPPER_EXISTS=$(curl -sf "$MAPPER_URL" \
-  -H "Authorization: Bearer ${KC_TOKEN}" | jq -r '.[] | select(.name == "audience" and .protocolMapper == "oidc-audience-mapper") | .id // empty' | head -n 1)
-MAPPER_BODY=$(cat <<JSON
-{
-  "name": "audience",
-  "protocol": "openid-connect",
-  "protocolMapper": "oidc-audience-mapper",
-  "config": {
-    "included.client.audience": "${KC_CLIENT_ID}",
-    "access.token.claim": "true"
-  }
+client_uuid() {
+  curl --fail --silent --show-error --max-time 20 \
+    "$KC_URL/admin/realms/$KC_REALM/clients?clientId=$KC_CLIENT_ID" \
+    -H "Authorization: Bearer $KC_TOKEN" | jq -r '.[0].id // empty'
 }
-JSON
-)
-
-if [ -n "$MAPPER_EXISTS" ]; then
-  curl -sf -X PUT "${MAPPER_URL}/${MAPPER_EXISTS}" \
-    -H "Authorization: Bearer ${KC_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -d "$MAPPER_BODY" >/dev/null
-  warn "Audience mapper already exists — ensured Alcove audience"
+CLIENT_UUID=$(client_uuid)
+if [ -z "$CLIENT_UUID" ]; then
+  jq -n --arg client "$KC_CLIENT_ID" --arg origin "$FRONTEND_URL" \
+    '{clientId:$client,enabled:true,protocol:"openid-connect",publicClient:false,clientAuthenticatorType:"client-secret",standardFlowEnabled:true,directAccessGrantsEnabled:false,redirectUris:[($origin+"/api/auth/callback")],webOrigins:[$origin]}' |
+    curl --fail --silent --show-error --max-time 20 -X POST "$KC_URL/admin/realms/$KC_REALM/clients" \
+      -H "Authorization: Bearer $KC_TOKEN" -H 'Content-Type: application/json' --data-binary @- >/dev/null
+  CLIENT_UUID=$(client_uuid)
 else
-  curl -sf -X POST "$MAPPER_URL" \
-    -H "Authorization: Bearer ${KC_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -d "$MAPPER_BODY" >/dev/null
-  success "Audience mapper added"
+  printf 'Client %s already exists; verify its exact redirect URI in the console.\n' "$KC_CLIENT_ID"
 fi
-
-# ── Create pad user (idempotent) ──────────────────────────────────────────────
-PAD_USER="${PAD_USERNAME:-${KC_ADMIN}}"
-PAD_PASS="${PAD_PASSWORD:-${KC_ADMIN_PASS}}"
-PAD_EMAIL="${PAD_EMAIL:-admin@localhost}"
-
-USER_EXISTS=$(curl -sf \
-  "http://localhost:${KC_PORT}/admin/realms/${KC_REALM}/users?username=${PAD_USER}" \
-  -H "Authorization: Bearer ${KC_TOKEN}" | jq -r '.[0].id // empty')
-
-if [ -n "$USER_EXISTS" ]; then
-  warn "User '${PAD_USER}' already exists — skipping"
-else
-  curl -sf -X POST \
-    "http://localhost:${KC_PORT}/admin/realms/${KC_REALM}/users" \
-    -H "Authorization: Bearer ${KC_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -d "{
-      \"username\": \"${PAD_USER}\",
-      \"email\": \"${PAD_EMAIL}\",
-      \"emailVerified\": true,
-      \"enabled\": true,
-      \"credentials\": [{\"type\": \"password\", \"value\": \"${PAD_PASS}\", \"temporary\": false}]
-    }" >/dev/null
-  success "User '${PAD_USER}' created (password: ${PAD_PASS})"
+[ -n "$CLIENT_UUID" ] || die "Could not find the OIDC client."
+MAPPER_URL="$KC_URL/admin/realms/$KC_REALM/clients/$CLIENT_UUID/protocol-mappers/models"
+MAPPER_ID=$(curl --fail --silent --show-error --max-time 20 "$MAPPER_URL" \
+  -H "Authorization: Bearer $KC_TOKEN" | jq -r 'map(select(.name == "alcove-audience"))[0].id // empty')
+if [ -z "$MAPPER_ID" ]; then
+  jq -n --arg client "$KC_CLIENT_ID" \
+    '{name:"alcove-audience",protocol:"openid-connect",protocolMapper:"oidc-audience-mapper",config:{"included.client.audience":$client,"access.token.claim":"true"}}' |
+    curl --fail --silent --show-error --max-time 20 -X POST "$MAPPER_URL" \
+      -H "Authorization: Bearer $KC_TOKEN" -H 'Content-Type: application/json' --data-binary @- >/dev/null
 fi
-
-# ── Write client secret into .env ─────────────────────────────────────────────
-if grep -q "^OIDC_CLIENT_SECRET=your_client_secret" .env; then
-  sed -i '' "s|^OIDC_CLIENT_SECRET=.*|OIDC_CLIENT_SECRET=${CLIENT_SECRET}|" .env
-  success "OIDC_CLIENT_SECRET written to .env"
-fi
-if grep -q "^OIDC_REALM=pad-ws" .env && grep -q "^OIDC_CLIENT_ID=pad-ws-client" .env; then
-  : # already set
-fi
-
-# ── Start Coder ───────────────────────────────────────────────────────────────
-info "Starting Coder…"
-docker compose up -d coder
-
-echo ""
-echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN} Keycloak + infrastructure ready!${NC}"
-echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-echo -e "  OIDC client secret : ${CYAN}${CLIENT_SECRET}${NC}"
-echo -e "  Pad login          : ${CYAN}${PAD_USER}${NC} / ${CYAN}${PAD_PASS}${NC}"
-echo ""
-echo -e "${YELLOW}━━ Coder setup (optional — needed for terminal/VS Code in pad) ━━${NC}"
-echo ""
-echo "  1. Open http://localhost:${CODER_PORT_VAL} and create an admin account"
-echo "     (use 'Sign in for pad' button to link with Keycloak)"
-echo ""
-echo "  2. Create a workspace template (e.g. docker-containers)"
-echo ""
-echo "  3. Get your API key:"
-echo "     → Profile → Account → API Keys → New token"
-echo "     → Paste into .env: CODER_API_KEY=..."
-echo ""
-echo "  4. Get template & org IDs:"
-echo "     curl -H 'Coder-Session-Token: <key>' http://localhost:${CODER_PORT_VAL}/api/v2/templates"
-echo "     curl -H 'Coder-Session-Token: <key>' http://localhost:${CODER_PORT_VAL}/api/v2/organizations"
-echo "     → Paste into .env: CODER_TEMPLATE_ID=... CODER_DEFAULT_ORGANIZATION=..."
-echo ""
-echo -e "${YELLOW}━━ Once Coder is configured, start pad: ━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-echo "     ./scripts/start.sh"
-echo ""
+CLIENT_SECRET=$(curl --fail --silent --show-error --max-time 20 \
+  "$KC_URL/admin/realms/$KC_REALM/clients/$CLIENT_UUID/client-secret" \
+  -H "Authorization: Bearer $KC_TOKEN" | jq -er '.value | select(length > 0)')
+case "$CLIENT_SECRET" in
+  *[!A-Za-z0-9_.-]*) die "The client secret uses a custom format; configure OIDC_CLIENT_SECRET manually with quoting compatible with both Compose and bash." ;;
+esac
+# Atomically replace only this assignment, with quoting understood by Compose and bash.
+ENV_TMP=$(mktemp "${ENV_FILE}.XXXXXX")
+trap 'rm -f -- "$ENV_TMP"' EXIT
+while IFS= read -r line || [ -n "$line" ]; do
+  case "$line" in OIDC_CLIENT_SECRET=*) ;; *) printf '%s\n' "$line" >> "$ENV_TMP" ;; esac
+done < "$ENV_FILE"
+printf 'OIDC_CLIENT_SECRET=%s\n' "$(jq -rn --arg value "$CLIENT_SECRET" '$value | @sh')" >> "$ENV_TMP"
+mv "$ENV_TMP" "$ENV_FILE"
+trap - EXIT
+unset KC_TOKEN CLIENT_SECRET value
+# Compose already sees exported values from the old env; clear this one so the new file wins.
+unset OIDC_CLIENT_SECRET
+compose config --quiet
+compose pull pad ollama
+compose up -d ollama pad
+printf '\nAlcove started at %s\n' "$FRONTEND_URL"
+printf 'Create your application account in the %s realm: %s/admin/%s/console/\n' "$KC_REALM" "$OIDC_SERVER_URL" "$KC_REALM"
+printf '%s\n' 'The bootstrap administrator belongs to master; it is not an Alcove application account.'
+printf '%s\n' 'Configure and verify the HTTPS proxy, then follow SETUP.md for account creation, model installation and verification.'

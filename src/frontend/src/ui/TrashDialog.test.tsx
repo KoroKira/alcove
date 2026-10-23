@@ -75,4 +75,37 @@ describe('TrashDialog', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('sidebar.trashRestoreError');
     expect(screen.getByText('Pad de test isolé')).toBeInTheDocument();
   });
+
+  it('keeps Tab within the dialog and returns focus to its opener on close', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ pads: [trashedPad] }) }));
+    const opener = document.createElement('button');
+    document.body.appendChild(opener);
+    opener.focus();
+    const { unmount } = renderDialog();
+    const close = screen.getByRole('button', { name: 'dashboard.close' });
+    expect(close).toHaveFocus();
+    const restore = await screen.findByRole('button', { name: 'sidebar.trashRestore Pad de test isolé' });
+    const dialog = screen.getByRole('dialog');
+    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+    expect(restore).toHaveFocus();
+    fireEvent.keyDown(dialog, { key: 'Tab' });
+    expect(close).toHaveFocus();
+    unmount();
+    expect(opener).toHaveFocus();
+    opener.remove();
+  });
+
+  it('announces a restored pad and keeps focus on an available control', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ pads: [trashedPad] }) })
+      .mockResolvedValueOnce({ ok: true }));
+    renderDialog();
+    const restore = await screen.findByRole('button', { name: 'sidebar.trashRestore Pad de test isolé' });
+    restore.focus();
+    fireEvent.click(restore);
+    await waitFor(() => expect(screen.queryByText('Pad de test isolé')).not.toBeInTheDocument());
+    expect(screen.getByRole('status')).toHaveTextContent('sidebar.trashRestored');
+    expect(screen.getByRole('button', { name: 'dashboard.close' })).toHaveFocus();
+  });
+
 });

@@ -1,0 +1,31 @@
+.mcp-connections {
+  border-top: 1px solid var(--ap-bg3);
+  margin-top: 1rem;
+  padding-top: 1rem;
+  overflow-wrap: anywhere;
+  h3, h4 { margin: 0.5rem 0; }
+  p { line-height: 1.5; }
+  label { display: block; margin: 0.5rem 0; }
+  input:not([type='checkbox']), select {
+    box-sizing: border-box;
+    min-height: 44px;
+    min-width: 0;
+    width: 100%;
+    color: var(--ap-text0);
+    background: var(--ap-bg1);
+    border: 1px solid var(--ap-bg3);
+    border-radius: var(--ap-radius-sm);
+    padding: 0.5rem;
+    font: inherit;
+  }
+  button { min-height: 44px; padding: 0.5rem 0.75rem; cursor: pointer; }
+  button:disabled { cursor: default; }
+  :is(button, input, select, a):focus-visible { outline: 2px solid var(--ap-accent); outline-offset: 3px; }
+  fieldset { min-width: 0; padding: 0.75rem; border: 1px solid var(--ap-bg3); border-radius: var(--ap-radius-sm); }
+  ul { padding-left: 1.25rem; }
+  li { margin: 0.75rem 0; line-height: 1.5; }
+  &__row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0.5rem 0; }
+  &__row input { flex: 1 1 200px; }
+  &__checkbox { display: flex !important; align-items: center; gap: 0.5rem; min-height: 44px; }
+  &__secret { margin-top: 1rem; }
+}

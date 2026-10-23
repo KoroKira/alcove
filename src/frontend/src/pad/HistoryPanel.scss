@@ -2,7 +2,8 @@
   position: absolute;
   top: 40px;
   right: 0;
-  width: 300px;
+  width: min(360px, 100%);
+  box-sizing: border-box;
   background: var(--color-surface, var(--ap-bg1));
   border: 1px solid var(--color-surface-mid, var(--ap-bg2));
   border-radius: 8px 0 0 8px;
@@ -33,7 +34,9 @@
     border: none;
     color: var(--ap-overlay0);
     cursor: pointer;
-    padding: 2px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 8px;
     border-radius: var(--ap-radius-xs);
     &:hover { color: var(--ap-text0); background: var(--ap-bg2); }
   }
@@ -82,6 +85,7 @@
       justify-content: space-between;
       background: none;
       border: none;
+      min-height: 44px;
       padding: 8px 14px;
       cursor: pointer;
       text-align: left;
@@ -111,9 +115,42 @@
     border: none;
     color: var(--ap-overlay0);
     cursor: pointer;
-    padding: 6px 10px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 8px 10px;
     &:hover { color: var(--ap-green); }
     &:disabled { opacity: 0.4; cursor: not-allowed; }
+  }
+
+  button:focus-visible, pre:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: -3px;
+  }
+
+  &__confirmation {
+    padding: 12px 14px;
+    border-top: 1px solid var(--color-surface-mid, var(--ap-bg2));
+    font-size: 12px;
+    color: var(--ap-text0);
+
+    p { line-height: 1.5; }
+
+    &-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+
+      button {
+        min-height: 44px;
+        padding: 8px;
+        color: var(--ap-text0);
+        background: var(--ap-bg1);
+        border: 1px solid var(--color-surface-mid, var(--ap-bg2));
+        border-radius: var(--ap-radius-xs);
+        cursor: pointer;
+        &:disabled { opacity: 0.5; cursor: wait; }
+      }
+    }
   }
 
   &__preview {

@@ -14,24 +14,24 @@ lifecycle : initialize, tools/list, tools/call, notifications/initialized.
 Auth :
   · PAD_DEV_MODE : use the fixed DEV_USER_ID. No token needed. Perfect
     for "point Claude Desktop at localhost:8000/mcp/" one-shot setup.
-  · Prod : scoped Bearer API keys, verified against the MCP API-key table.
+  · Prod : scoped API keys; optionally dedicated Keycloak OAuth access tokens.
 """
 from __future__ import annotations
 
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import PAD_DEV_MODE
+from config import ALLOWED_ORIGINS, PAD_DEV_MODE
 from database.database import async_session, get_session
 from database.models import PadStore
 from database.models.embedding_model import PadEmbedding
@@ -39,10 +39,27 @@ from database.pad_serialization import serialize_pad
 from routers.ai.rag import rank_rows
 from routers.auth_router import DEV_USER_ID
 from services.mcp_api_key_service import McpPrincipal, verify_api_key_principal
+from services.mcp_oauth import (
+    auth_challenge, oauth_settings, protected_resource_metadata, verify_oauth_principal,
+)
 
 logger = logging.getLogger(__name__)
 
 mcp_router = APIRouter(prefix="/mcp")
+mcp_metadata_router = APIRouter()
+
+
+@mcp_metadata_router.get("/.well-known/oauth-protected-resource")
+@mcp_metadata_router.get("/.well-known/oauth-protected-resource/mcp")
+@mcp_metadata_router.get("/mcp/.well-known/oauth-protected-resource")
+async def mcp_resource_metadata():
+    try:
+        settings = oauth_settings()
+    except ValueError:
+        raise HTTPException(503, "MCP OAuth configuration unavailable") from None
+    if settings is None:
+        raise HTTPException(404, "MCP OAuth is not enabled")
+    return JSONResponse(protected_resource_metadata(settings), headers={"Cache-Control": "no-store"})
 
 # ── MCP protocol constants ─────────────────────────────────────────────────
 _PROTOCOL_VERSION = "2025-06-18"
@@ -178,19 +195,30 @@ async def _resolve_principal(request: Request) -> McpPrincipal:
     if PAD_DEV_MODE:
         return McpPrincipal(UUID(DEV_USER_ID), frozenset({"read", "write"}))
 
+    try:
+        settings = oauth_settings()
+    except ValueError:
+        raise HTTPException(503, "MCP OAuth configuration unavailable") from None
     auth_header = request.headers.get("authorization") or ""
     scheme, _, token = auth_header.partition(" ")
+    token = token.strip()
     if scheme.lower() != "bearer" or not token:
         raise HTTPException(
             status_code=401,
             detail={
                 "code": "auth_required",
-                "message": "MCP en production requiert un Bearer token API.",
+                "message": "Connectez Alcove avec OAuth ou une clé API MCP.",
             },
+            headers={"WWW-Authenticate": auth_challenge(settings)},
         )
 
     async with async_session() as session:
-        principal = await verify_api_key_principal(session, token)
+        # Token type chooses one verifier; never fall back from a rejected JWT
+        # into web-session auth or from an invalid API key into OAuth.
+        if token.startswith("amk_") or settings is None:
+            principal = await verify_api_key_principal(session, token)
+        else:
+            principal = await verify_oauth_principal(session, token)
 
     if principal is None:
         # Keep missing, malformed, expired, revoked, and unknown keys
@@ -199,8 +227,9 @@ async def _resolve_principal(request: Request) -> McpPrincipal:
             status_code=401,
             detail={
                 "code": "auth_invalid",
-                "message": "Token API MCP invalide, expiré ou révoqué.",
+                "message": "Accès MCP invalide, expiré ou révoqué.",
             },
+            headers={"WWW-Authenticate": auth_challenge(settings, invalid=True)},
         )
     return principal
 
@@ -408,6 +437,13 @@ _TOOL_HANDLERS = {
 
 
 # ── JSON-RPC dispatch ──────────────────────────────────────────────────────
+def _origin_allowed(request: Request) -> bool:
+    # Native/server MCP clients omit Origin. Browser clients must use an
+    # explicitly allowed origin, including in unauthenticated local dev mode.
+    origin = request.headers.get("origin")
+    return not origin or origin in ALLOWED_ORIGINS
+
+
 def _rpc_response(id: Any, result: Any) -> Dict[str, Any]:
     return {"jsonrpc": "2.0", "id": id, "result": result}
 
@@ -420,7 +456,7 @@ def _rpc_error(id: Any, code: int, message: str, data: Any = None) -> Dict[str, 
 
 
 class _MCPRequest(BaseModel):
-    jsonrpc: str
+    jsonrpc: Literal["2.0"]
     id: Optional[Any] = None
     method: str
     params: Optional[Dict[str, Any]] = None
@@ -428,7 +464,7 @@ class _MCPRequest(BaseModel):
 
 @mcp_router.post("/")
 @mcp_router.post("")
-async def mcp_endpoint(request: Request) -> JSONResponse:
+async def mcp_endpoint(request: Request) -> Response:
     """Single MCP endpoint — dispatches every JSON-RPC method by name.
 
     Client typically calls in order :
@@ -437,12 +473,17 @@ async def mcp_endpoint(request: Request) -> JSONResponse:
       3. tools/list          → we return the 4 tools
       4. tools/call          → we run the tool, return content
     """
+    if not _origin_allowed(request):
+        return JSONResponse(_rpc_error(None, -32001, "Origin rejected"), status_code=403)
     try:
         body = await request.json()
     except Exception:
         return JSONResponse(_rpc_error(None, -32700, "Parse error"), status_code=200)
 
-    # Notifications have no id — MCP still requires a 200 with no body per spec.
+    if not isinstance(body, dict):
+        return JSONResponse(_rpc_error(None, -32600, "Invalid Request"))
+
+    # Notifications are acknowledged with 202 and an empty response body.
     is_notification = "id" not in body
 
     try:
@@ -455,26 +496,36 @@ async def mcp_endpoint(request: Request) -> JSONResponse:
 
     # Method dispatch ---------------------------------------------------------
     try:
+        settings = oauth_settings()
+        # HTTP 401 is the MCP OAuth discovery signal, including initialize.
+        # The API-key-only deployment preserves its existing public catalog.
+        principal = await _resolve_principal(request) if settings is not None else None
+        if is_notification:
+            return Response(status_code=202)
+
         if method == "initialize":
             client_version = params.get("protocolVersion", _PROTOCOL_VERSION)
             return JSONResponse(_rpc_response(req.id, {
-                "protocolVersion": client_version,
+                "protocolVersion": client_version if client_version in {"2025-03-26", _PROTOCOL_VERSION} else _PROTOCOL_VERSION,
                 "capabilities": _SERVER_CAPABILITIES,
                 "serverInfo": _SERVER_INFO,
             }))
 
         if method in ("notifications/initialized", "initialized"):
             # No response for notifications.
-            return JSONResponse({}, status_code=202)
+            return Response(status_code=202)
 
         if method == "tools/list":
             tools = _TOOLS
-            if request.headers.get("authorization"):
-                principal = await _resolve_principal(request)
+            if principal is not None or request.headers.get("authorization"):
+                principal = principal or await _resolve_principal(request)
                 tools = [
                     tool for tool in _TOOLS
                     if ("read" if tool["name"] in _READ_TOOLS else "write") in principal.scopes
                 ]
+            if settings is not None:
+                tools = [{**tool, "securitySchemes": [{"type": "oauth2", "scopes": [
+                    "alcove:read" if tool["name"] in _READ_TOOLS else "alcove:write"]}]} for tool in tools]
             return JSONResponse(_rpc_response(req.id, {"tools": tools}))
 
         if method == "tools/call":
@@ -483,10 +534,12 @@ async def mcp_endpoint(request: Request) -> JSONResponse:
             handler = _TOOL_HANDLERS.get(name)
             if not handler:
                 return JSONResponse(_rpc_error(req.id, -32601, f"Unknown tool: {name}"), status_code=200)
-            principal = await _resolve_principal(request)
+            principal = principal or await _resolve_principal(request)
             required_scope = "read" if name in _READ_TOOLS else "write"
             if required_scope not in principal.scopes:
-                return JSONResponse(_rpc_error(req.id, -32003, "MCP token scope denied"), status_code=200)
+                return JSONResponse(_rpc_error(req.id, -32003, "MCP token scope denied"),
+                    status_code=403 if settings is not None else 200,
+                    headers={"WWW-Authenticate": auth_challenge(settings, scope=f"alcove:{required_scope}")} if settings else None)
             if not _valid_tool_arguments(name, arguments):
                 return JSONResponse(_rpc_error(req.id, -32602, "Invalid tool arguments"), status_code=200)
             user_id = principal.owner_id
@@ -497,9 +550,9 @@ async def mcp_endpoint(request: Request) -> JSONResponse:
                     result = await handler(arguments, user_id, session)
                 except ValueError as ve:
                     return JSONResponse(_rpc_error(req.id, -32602, str(ve)), status_code=200)
-                except Exception as e:
+                except Exception:
                     logger.exception("MCP tool %s failed", name)
-                    return JSONResponse(_rpc_error(req.id, -32603, "Internal error", str(e)), status_code=200)
+                    return JSONResponse(_rpc_error(req.id, -32603, "Internal error"), status_code=200)
                 # MCP tools return content as an array of blocks. Wrap the
                 # JSON payload as a "text" block containing pretty JSON —
                 # every MCP client can render this uniformly.
@@ -520,17 +573,26 @@ async def mcp_endpoint(request: Request) -> JSONResponse:
         return JSONResponse(_rpc_error(req.id, -32601, f"Method not found: {method}"), status_code=200)
 
     except HTTPException as he:
-        return JSONResponse(_rpc_error(req.id, -32001, he.detail if isinstance(he.detail, str) else "Auth error", he.detail), status_code=200)
-    except Exception as e:
+        return JSONResponse(_rpc_error(req.id, -32001, he.detail if isinstance(he.detail, str) else "Auth error", he.detail),
+                            status_code=he.status_code if settings is not None else 200, headers=he.headers)
+    except ValueError:
+        return JSONResponse(_rpc_error(req.id, -32603, "MCP OAuth configuration unavailable"), status_code=503)
+    except Exception:
         logger.exception("MCP dispatch failed")
-        return JSONResponse(_rpc_error(req.id, -32603, "Internal error", str(e)), status_code=200)
+        return JSONResponse(_rpc_error(req.id, -32603, "Internal error"), status_code=200)
 
 
 @mcp_router.get("/")
 @mcp_router.get("")
-async def mcp_info() -> Dict[str, Any]:
+async def mcp_info(request: Request):
     """GET on the MCP endpoint returns a short description — helps humans
     who paste the URL in a browser to check the server is live."""
+    if not _origin_allowed(request):
+        return JSONResponse({"detail": "Origin rejected"}, status_code=403)
+    if "text/event-stream" in request.headers.get("accept", ""):
+        # This stateless server answers POST with JSON; it has no server-push
+        # SSE stream. MCP clients must receive 405 rather than a JSON success.
+        return Response(status_code=405, headers={"Allow": "POST"})
     return {
         "server": _SERVER_INFO,
         "protocolVersion": _PROTOCOL_VERSION,
@@ -538,5 +600,5 @@ async def mcp_info() -> Dict[str, Any]:
         "tools": [{"name": t["name"], "description": t["description"]} for t in _TOOLS],
         "endpoint": "POST /mcp/",
         "transport": "http",
-        "auth": "PAD_DEV_MODE : anonymous (dev user). Prod : scoped Bearer API key.",
+        "auth": "PAD_DEV_MODE: local dev user. Production: scoped API key; optional dedicated OAuth.",
     }

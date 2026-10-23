@@ -1,14 +1,15 @@
-# docker-compose.selfhost.yml — home-server deployment (single-user), no in-container AI.
+# docker-compose.selfhost.yml — private single-user deployment; no authentication.
 #
 # Design:
 #   * No Keycloak, no Coder — one user, PAD_DEV_MODE=true.
-#   * No Ollama service — inference runs on the client (browser → its own localhost:11434).
+#   * No Ollama service — the app proxies to OLLAMA_URL on this server.
 #   * pad publishes only on the loopback (127.0.0.1:8000); Tailscale serves it in HTTPS
 #     over the tailnet, so nothing is exposed to the LAN or the public internet.
-#   * Persistent data lives under ${DATA_DIR} (bind mounts), so the host's nightly
-#     backup of /srv/appdata picks it up automatically.
+#   * Persistent data lives under ${DATA_DIR}. Configure and test a backup separately.
 #
-# Deploy (see docs at the bottom of this file for the full walkthrough):
+# This is for a trusted private tailnet only: every visitor shares the same user.
+# Use docker-compose.codicam.yml for authenticated or public hosting (SETUP.md).
+# Deploy:
 #   1. git clone <repo> /srv/docker/alcove && cd /srv/docker/alcove
 #   2. cp .env.selfhost.example .env  and edit POSTGRES_PASSWORD + FRONTEND_URL
 #   3. docker compose -f docker-compose.selfhost.yml up -d --build
@@ -39,14 +40,16 @@ services:
       - pad-network
 
   pad:
-    # Image is built by GitHub Actions (see .github/workflows/docker-build.yml)
-    # on every push to main, then pulled here. `build: .` is a fallback for local
-    # dev — compose uses it only when the tag is missing.
+    # CI publishes revision tags. Pull a pinned ALCOVE_IMAGE for repeatable updates;
+    # use --build explicitly when testing source changes on your own machine.
     build: .
-    image: ghcr.io/korokira/alcove:main
+    image: ${ALCOVE_IMAGE:-ghcr.io/korokira/alcove:main}
     container_name: alcove-pad
     environment:
       - PAD_DEV_MODE=true
+      # Required for the isolated container interface; the host port stays loopback-only.
+      - PAD_DEV_HOST=0.0.0.0
+      - PAD_DEV_ALLOW_DANGEROUS_BIND=true
       - STATIC_DIR=/app/frontend/dist
       - ASSETS_DIR=/app/frontend/dist/assets
       - FRONTEND_URL=${FRONTEND_URL}

@@ -26,6 +26,9 @@
     min-height: 200px;
     display: flex;
     flex-direction: column;
+    max-height: 70vh;
+    max-height: 70dvh;
+    overflow-y: auto;
   }
 
   &__loading, &__error {
@@ -47,6 +50,8 @@
     padding: 1.25rem;
     border-radius: var(--ap-radius-md);
     background-color: var(--dialog-bg-color);
+    flex-wrap: wrap;
+    gap: 0.75rem;
   }
 
   &__avatar {
@@ -63,6 +68,16 @@
 
   &__user-info {
     flex: 1;
+    min-width: 0;
+    a {
+      display: flex;
+      align-items: center;
+      min-height: 44px;
+      margin-top: 0.5rem;
+      color: inherit;
+      line-height: 1.5;
+      &:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+    }
   }
 
   &__name {
@@ -88,5 +103,6 @@
     font-family: var(--ap-font-mono);
     color: var(--text-secondary-color);
     opacity: 0.7;
+    overflow-wrap: anywhere;
   }
 }

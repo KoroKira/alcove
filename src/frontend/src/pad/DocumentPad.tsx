@@ -22,7 +22,8 @@ import { enqueueSerializedSave } from '../lib/saveQueue';
 import { saveDocumentAfterConflict } from '../lib/conflictSave';
 import { readVideoMeta, stripVideoMeta, parseTimestamp, replaceReportBody } from '../lib/videoMeta';
 import { createManualSnapshot } from '../lib/manualSnapshot';
-import { escapeHtmlText } from '../lib/exportUtils';
+import { downloadMarkdown, escapeHtmlText } from '../lib/exportUtils';
+import { reloadRestoredDocument } from '../lib/restoredDocument';
 import VideoEmbed, { VideoEmbedHandle } from '../ui/VideoEmbed';
 import ListenButton from '../ui/ListenButton';
 
@@ -370,6 +371,9 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
   const [regenProgress, setRegenProgress] = useState<string | null>(null);
   const [transcluded, setTranscluded] = useState<Transcluded>({});
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [versionRestoring, setVersionRestoring] = useState(false);
+  const restoreStartContent = useRef<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [snapshotStatus, setSnapshotStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [tocOpen, setTocOpen] = useState(false);
   const [habitTick, setHabitTick] = useState(0);
@@ -724,7 +728,7 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
 
   // Append AI-generated content to the editor
   useEffect(() => {
-    if (!contentToAppend || !monacoRef.current) return;
+    if (versionRestoring || !contentToAppend || !monacoRef.current) return;
     const editor = monacoRef.current;
     const model = editor.getModel();
     if (!model) return;
@@ -737,7 +741,7 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
       text: insertion,
     }]);
     onContentAppended?.();
-  }, [contentToAppend]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [contentToAppend, versionRestoring]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Handle wikilink clicks in preview
   useEffect(() => {
@@ -1038,23 +1042,29 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
   }, [renderedHtml, padId]);
 
   const exportMarkdown = () => {
-    const tab = tabs.find(t => t.id === padId);
-    const name = (tab?.title || 'document').replace(/[^\w\-]/g, '_');
-    const blob = new Blob([content], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `${name}.md`; a.click();
-    // Let the browser start the download before releasing the object URL.
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setExportError(null);
+    try {
+      downloadMarkdown(contentRef.current, tabs.find(tab => tab.id === padId)?.title || 'document');
+    } catch {
+      setExportError('Le téléchargement Markdown n’a pas démarré. Réessaie ou copie le contenu du document.');
+    }
   };
 
   const exportPdf = () => {
+    setExportError(null);
     const tab = tabs.find(t => t.id === padId);
     const title = tab?.title || 'Document';
     const safeTitle = escapeHtmlText(title);
     const dateStr = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
-    const win = window.open('', '_blank');
-    if (!win) return;
-    win.document.write(`<!DOCTYPE html><html lang="fr"><head>
+    let win: Window | null = null;
+    try {
+      win = window.open('', '_blank');
+      if (!win) {
+        setExportError('L’export PDF a été bloqué par le navigateur. Autorise les fenêtres surgissantes pour Alcove, puis réessaie.');
+        return;
+      }
+      win.opener = null;
+      win.document.write(`<!DOCTYPE html><html lang="fr"><head>
 <meta charset="UTF-8">
 <title>${safeTitle}</title>
 <style>
@@ -1110,7 +1120,11 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
 ${renderedHtml}
 <script>window.onload = function() { window.print(); }<\/script>
 </body></html>`);
-    win.document.close();
+      win.document.close();
+    } catch {
+      win?.close();
+      setExportError('Impossible de préparer le PDF. Réessaie ou exporte le document en Markdown.');
+    }
   };
 
   const statusLabel =
@@ -1201,13 +1215,14 @@ ${renderedHtml}
         </div>
       )}
       {!focusMode && (
-      <div className="document-pad__toolbar">
+      <div className="document-pad__toolbar" inert={versionRestoring}>
         <div className="document-pad__view-btns">
           {(['edit', 'split', 'preview'] as ViewMode[]).map(mode => (
             <button
               key={mode}
               className={`document-pad__view-btn ${viewMode === mode ? 'active' : ''}`}
               onClick={() => setViewMode(mode)}
+              aria-pressed={viewMode === mode}
             >
               {mode === 'edit' ? t('editor.edit') : mode === 'split' ? t('editor.split') : t('editor.preview')}
             </button>
@@ -1230,7 +1245,7 @@ ${renderedHtml}
                 </span>
               )}
               {saveStatusControl}
-              <button className="document-pad__toolbar-btn" onClick={onToggleFocus} title={t('editor.focus')}>
+              <button className="document-pad__toolbar-btn" onClick={onToggleFocus} title={t('editor.focus')} aria-label={t('editor.focus')}>
                 <Maximize2 size={14} />
               </button>
             </>
@@ -1262,6 +1277,8 @@ ${renderedHtml}
                   className={`document-pad__toolbar-btn ${tocOpen ? 'active' : ''}`}
                   onClick={() => setTocOpen(v => !v)}
                   title={t('editor.toc')}
+                  aria-label={t('editor.toc')}
+                  aria-expanded={tocOpen}
                 >
                   <List size={14} />
                 </button>
@@ -1270,10 +1287,12 @@ ${renderedHtml}
                 className={`document-pad__toolbar-btn${vimMode ? ' active' : ''}`}
                 onClick={toggleVim}
                 title={vimMode ? 'Mode Vim activé' : 'Activer le mode Vim'}
+                aria-label={vimMode ? 'Désactiver le mode Vim' : 'Activer le mode Vim'}
+                aria-pressed={vimMode}
               >
                 <Terminal size={14} />
               </button>
-              <button className="document-pad__toolbar-btn" onClick={() => setHistoryOpen(v => !v)} title={t('editor.history')}>
+              <button className="document-pad__toolbar-btn" onClick={() => setHistoryOpen(v => !v)} title={t('editor.history')} aria-label={t('editor.history')} aria-expanded={historyOpen}>
                 <History size={14} />
               </button>
               {sourceUrl && (
@@ -1305,18 +1324,19 @@ ${renderedHtml}
                   {snapshotMessage}
                 </span>
               )}
-              <button className="document-pad__toolbar-btn" onClick={clipUrl} disabled={clipping} title={t('editor.clipTitle')}>
+              <button className="document-pad__toolbar-btn" onClick={clipUrl} disabled={clipping} title={t('editor.clipTitle')} aria-label={t('editor.clipTitle')}>
                 <Globe size={14} />{clipping ? '…' : ''}
               </button>
-              <button className="document-pad__toolbar-btn" onClick={exportMarkdown} title={t('editor.exportMd')}>
+              <button className="document-pad__toolbar-btn" onClick={exportMarkdown} title={t('editor.exportMd')} aria-label={t('editor.exportMd')}>
                 <Download size={14} /> .md
               </button>
-              <button className="document-pad__toolbar-btn" onClick={exportPdf} title={t('editor.exportPdf')}>
+              <button className="document-pad__toolbar-btn" onClick={exportPdf} title={t('editor.exportPdf')} aria-label={t('editor.exportPdf')}>
                 <FileText size={14} /> PDF
               </button>
               <button
                 className="document-pad__toolbar-btn"
                 title="Enregistrer comme template"
+                aria-label="Enregistrer comme template"
                 onClick={() => {
                   const name = prompt('Nom du template ?', '');
                   if (!name?.trim()) return;
@@ -1326,7 +1346,7 @@ ${renderedHtml}
                 <Save size={14} />
               </button>
               {saveStatusControl}
-              <button className="document-pad__toolbar-btn" onClick={onToggleFocus} title={t('editor.focus')}>
+              <button className="document-pad__toolbar-btn" onClick={onToggleFocus} title={t('editor.focus')} aria-label={t('editor.focus')}>
                 <Maximize2 size={14} />
               </button>
             </>
@@ -1336,10 +1356,12 @@ ${renderedHtml}
       )}
 
       {focusMode && (
-        <button className="document-pad__focus-exit" onClick={onToggleFocus} title={t('editor.exitFocus')}>
+        <button className="document-pad__focus-exit" onClick={onToggleFocus} title={t('editor.exitFocus')} aria-label={t('editor.exitFocus')}>
           <Minimize2 size={15} />
         </button>
       )}
+
+      {exportError && <div className="document-pad__recovery-error" role="alert">{exportError}</div>}
 
       {historyOpen && (
         <HistoryPanel
@@ -1347,23 +1369,30 @@ ${renderedHtml}
           canRestore={!restoreBlockedReason}
           restoreBlockedReason={restoreBlockedReason}
           onClose={() => setHistoryOpen(false)}
+          onRestoringChange={restoring => {
+            if (restoring) restoreStartContent.current = contentRef.current;
+            setVersionRestoring(restoring);
+          }}
           onRestore={async () => {
             const restoredPadId = padId;
+            const restored = await reloadRestoredDocument(restoredPadId);
+            if (padIdRef.current !== restoredPadId) return;
+            if (restoreStartContent.current !== contentRef.current) {
+              throw new Error('Restauration effectuée, mais des modifications locales sont arrivées pendant l’opération. Elles restent dans l’éditeur et le brouillon local. Exporte-les avant de recharger.');
+            }
+            lastUpdatedAt.current = restored.updatedAt;
+            contentRef.current = restored.content;
+            setContent(restored.content);
             clearLocalDocumentDraft(restoredPadId);
             setRecoveryDraft(null);
-            const response = await fetch(`/api/pad/${restoredPadId}`);
-            if (!response.ok) throw new Error(`Restauration effectuée, mais rechargement impossible (${response.status}).`);
-            const d = await response.json();
-            if (padIdRef.current !== restoredPadId) return;
-            const next = d.content || '';
-            contentRef.current = next;
-            setContent(next);
+            setSaveStatus('saved');
+            onContentChange?.(restored.content);
             setHistoryOpen(false);
           }}
         />
       )}
 
-      <div className="document-pad__body">
+      <div className="document-pad__body" inert={versionRestoring} aria-busy={versionRestoring}>
         {(viewMode === 'edit' || viewMode === 'split') && (
           <div className="document-pad__editor">
             <Editor
@@ -1377,6 +1406,7 @@ ${renderedHtml}
               language={isLatex ? 'latex' : 'markdown'}
               theme={monacoTheme}
               options={{
+                readOnly: versionRestoring,
                 wordWrap: 'on',
                 minimap: { enabled: false },
                 fontSize: 14,
@@ -1433,7 +1463,7 @@ ${renderedHtml}
                   <div className="document-pad__toc">
                     <div className="document-pad__toc-header">
                       <span>Sommaire</span>
-                      <button onClick={() => setTocOpen(false)}>×</button>
+                      <button type="button" onClick={() => setTocOpen(false)} aria-label="Fermer le sommaire">×</button>
                     </div>
                     <nav className="document-pad__toc-list">
                       {tocItems.map((item, i) => (

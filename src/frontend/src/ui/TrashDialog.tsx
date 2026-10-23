@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RotateCcw, Trash2, X } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -22,6 +22,9 @@ const TrashDialog: React.FC<Props> = ({ onClose }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState('');
+  const dialogRef = useRef<HTMLElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -46,20 +49,42 @@ const TrashDialog: React.FC<Props> = ({ onClose }) => {
   }, [load]);
 
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    closeRef.current?.focus();
+    return () => { if (trigger?.isConnected) trigger.focus(); };
+  }, []);
+
+  const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]',
+    ) ?? []);
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
+    }
+  };
 
   const restore = async (pad: TrashedPad) => {
     setRestoringId(pad.id);
     setError('');
+    setAnnouncement('');
     try {
       const response = await fetch(`/api/pad/${pad.id}/restore`, { method: 'POST' });
       if (!response.ok) throw new Error('trash_restore_failed');
+      closeRef.current?.focus();
       setPads(current => current.filter(item => item.id !== pad.id));
+      setAnnouncement(t('sidebar.trashRestored', { name: pad.display_name }));
       await queryClient.invalidateQueries({ queryKey: ['padTabs'] });
     } catch {
       setError(t('sidebar.trashRestoreError'));
@@ -79,18 +104,19 @@ const TrashDialog: React.FC<Props> = ({ onClose }) => {
     <div className="trash-dialog__backdrop" onMouseDown={event => {
       if (event.target === event.currentTarget) onClose();
     }}>
-      <section className="trash-dialog" role="dialog" aria-modal="true" aria-labelledby="trash-dialog-title" aria-busy={loading}>
+      <section ref={dialogRef} onKeyDown={handleDialogKeyDown} className="trash-dialog" role="dialog" aria-modal="true" aria-labelledby="trash-dialog-title" aria-busy={loading || restoringId !== null}>
         <header className="trash-dialog__header">
           <div className="trash-dialog__heading">
             <Trash2 size={18} aria-hidden="true" />
             <h2 id="trash-dialog-title">{t('sidebar.trashTitle')}</h2>
           </div>
-          <button className="trash-dialog__close" type="button" onClick={onClose} aria-label={t('dashboard.close')}>
+          <button ref={closeRef} className="trash-dialog__close" type="button" onClick={onClose} aria-label={t('dashboard.close')}>
             <X size={17} />
           </button>
         </header>
 
-        <div className="trash-dialog__body" aria-live="polite">
+        <div className="trash-dialog__body">
+          <p className="trash-dialog__announcement" role="status">{announcement}</p>
           {loading ? <p className="trash-dialog__status">{t('sidebar.trashLoading')}</p> : null}
           {!loading && error ? (
             <div className="trash-dialog__error" role="alert">
