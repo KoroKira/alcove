@@ -13,9 +13,17 @@ interface Props {
   padId: string;
   onClose: () => void;
   onRestore: () => void;
+  canRestore?: boolean;
+  restoreBlockedReason?: string;
 }
 
-const HistoryPanel: React.FC<Props> = ({ padId, onClose, onRestore }) => {
+const HistoryPanel: React.FC<Props> = ({
+  padId,
+  onClose,
+  onRestore,
+  canRestore = true,
+  restoreBlockedReason,
+}) => {
   const [versions, setVersions] = useState<Version[]>([]);
   const [loading, setLoading] = useState(true);
   const [restoring, setRestoring] = useState<string | null>(null);
@@ -89,6 +97,9 @@ const HistoryPanel: React.FC<Props> = ({ padId, onClose, onRestore }) => {
         <span>Historique</span>
         <button className="history-panel__close" onClick={onClose}><X size={14} /></button>
       </div>
+      {!canRestore && restoreBlockedReason && (
+        <div className="history-panel__hint" role="status">{restoreBlockedReason}</div>
+      )}
       <div className="history-panel__list">
         {loading && <div className="history-panel__empty">Chargement…</div>}
         {!loading && !error && versions.length === 0 && (
@@ -105,7 +116,7 @@ const HistoryPanel: React.FC<Props> = ({ padId, onClose, onRestore }) => {
             <button
               className="history-panel__restore-btn"
               onClick={() => restore(v.id)}
-              disabled={restoring === v.id}
+              disabled={restoring === v.id || !canRestore}
               title="Restaurer cette version"
             >
               <RotateCcw size={12} />

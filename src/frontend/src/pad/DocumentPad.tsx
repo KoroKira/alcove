@@ -1078,6 +1078,11 @@ ${renderedHtml}
     : saveStatus === 'unsaved' ? t('editor.unsaved')
     : saveStatus === 'conflict' ? '⚠️ Modifié ailleurs — recharge la page'
     : t('editor.saved');
+  const restoreBlockedReason = recoveryDraft
+    ? 'Récupère ou écarte le brouillon local avant de restaurer une version.'
+    : saveStatus !== 'saved' || saveTimer.current
+      ? 'Attends la fin de la sauvegarde avant de restaurer une version.'
+      : undefined;
   const saveStatusControl = (
     <>
       <span className={`document-pad__status document-pad__status--${saveStatus}`}>{statusLabel}</span>
@@ -1250,16 +1255,22 @@ ${renderedHtml}
       )}
 
       {historyOpen && (
-        <HistoryPanel padId={padId} onClose={() => setHistoryOpen(false)} onRestore={() => {
-          setHistoryOpen(false);
-          clearLocalDocumentDraft(padId);
-          setRecoveryDraft(null);
-          fetch(`/api/pad/${padId}`).then(r => r.json()).then(d => {
-            const next = d.content || '';
-            contentRef.current = next;
-            setContent(next);
-          });
-        }} />
+        <HistoryPanel
+          padId={padId}
+          canRestore={!restoreBlockedReason}
+          restoreBlockedReason={restoreBlockedReason}
+          onClose={() => setHistoryOpen(false)}
+          onRestore={() => {
+            setHistoryOpen(false);
+            clearLocalDocumentDraft(padId);
+            setRecoveryDraft(null);
+            fetch(`/api/pad/${padId}`).then(r => r.json()).then(d => {
+              const next = d.content || '';
+              contentRef.current = next;
+              setContent(next);
+            });
+          }}
+        />
       )}
 
       <div className="document-pad__body">
