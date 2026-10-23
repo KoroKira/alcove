@@ -1,8 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PadSidebar from './PadSidebar';
 import { SharingPolicy, type Tab } from '../hooks/usePadTabs';
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'fr' } }),
+  Trans: ({ children }: { children?: unknown }) => children,
+  initReactI18next: { type: '3rdParty', init: () => {} },
+}));
 
 // Smoke coverage: the sidebar is 700+ LOC of layout + interactions, and its
 // primary jobs are (a) not crash when handed a plausible props shape, (b) list
@@ -112,5 +118,83 @@ describe('PadSidebar', () => {
     expect(scratchIdx).toBeGreaterThanOrEqual(0);
     expect(regularIdx).toBeGreaterThanOrEqual(0);
     expect(scratchIdx).toBeLessThan(regularIdx);
+  });
+
+  it('moves a multi-selection into a folder through the inline form', async () => {
+    const onUpdateFolder = vi.fn();
+    render(<PadSidebar {...baseProps({
+      tabs: [tab({ id: 'pad-1', title: 'Note A' }), tab({ id: 'pad-2', title: 'Note B' })],
+      onUpdateFolder,
+    })} />);
+
+    fireEvent.click(screen.getByText('Note A'), { ctrlKey: true });
+    fireEvent.click(screen.getByText('Note B'), { ctrlKey: true });
+    await userEvent.setup().click(screen.getByRole('button', { name: 'sidebar.bulkFolder' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'sidebar.folderDestination' }), {
+      target: { value: 'Projects/Launch' },
+    });
+    await userEvent.setup().click(screen.getByRole('button', { name: 'sidebar.bulkApply' }));
+
+    expect(onUpdateFolder).toHaveBeenNthCalledWith(1, { padId: 'pad-1', folder: 'Projects/Launch' });
+    expect(onUpdateFolder).toHaveBeenNthCalledWith(2, { padId: 'pad-2', folder: 'Projects/Launch' });
+    expect(screen.queryByRole('group', { name: 'sidebar.bulkFolder' })).not.toBeInTheDocument();
+  });
+
+  it('moves one pad from its context menu through the inline form', async () => {
+    const onUpdateFolder = vi.fn();
+    render(<PadSidebar {...baseProps({
+      tabs: [tab({ id: 'pad-1', title: 'Note A' })],
+      onUpdateFolder,
+    })} />);
+
+    fireEvent.contextMenu(screen.getByText('Note A'), { clientX: 40, clientY: 80 });
+    await userEvent.setup().click(screen.getByRole('button', { name: 'contextMenu.moveToFolder' }));
+    fireEvent.change(screen.getByLabelText('sidebar.folderDestination'), {
+      target: { value: 'Projects' },
+    });
+    await userEvent.setup().click(screen.getByRole('button', { name: 'sidebar.bulkApply' }));
+
+    expect(onUpdateFolder).toHaveBeenCalledWith({ padId: 'pad-1', folder: 'Projects' });
+  });
+
+  it('adds comma-separated tags to every selected pad through the inline form', async () => {
+    const onUpdateTags = vi.fn();
+    render(<PadSidebar {...baseProps({
+      tabs: [
+        tab({ id: 'pad-1', title: 'Note A', tags: ['existing'] }),
+        tab({ id: 'pad-2', title: 'Note B' }),
+      ],
+      onUpdateTags,
+    })} />);
+
+    fireEvent.click(screen.getByText('Note A'), { ctrlKey: true });
+    fireEvent.click(screen.getByText('Note B'), { ctrlKey: true });
+    await userEvent.setup().click(screen.getByRole('button', { name: 'sidebar.bulkTag' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'sidebar.bulkTagPrompt' }), {
+      target: { value: 'daily, planning' },
+    });
+    await userEvent.setup().click(screen.getByRole('button', { name: 'sidebar.bulkApply' }));
+
+    expect(onUpdateTags).toHaveBeenNthCalledWith(1, { padId: 'pad-1', tags: ['existing', 'daily', 'planning'] });
+    expect(onUpdateTags).toHaveBeenNthCalledWith(2, { padId: 'pad-2', tags: ['daily', 'planning'] });
+    expect(screen.queryByRole('group', { name: 'sidebar.bulkTag' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the selection when a bulk editor is cancelled and can explicitly ungroup pads', async () => {
+    const onUpdateFolder = vi.fn();
+    render(<PadSidebar {...baseProps({
+      tabs: [tab({ id: 'pad-1', title: 'Note A', folder: 'Projects' })],
+      onUpdateFolder,
+    })} />);
+
+    fireEvent.click(screen.getByText('Note A'), { ctrlKey: true });
+    await userEvent.setup().click(screen.getByRole('button', { name: 'sidebar.bulkFolder' }));
+    await userEvent.setup().click(screen.getByRole('button', { name: 'sidebar.bulkCancel' }));
+    expect(document.querySelector('.pad-sidebar__item--multiselected')).toBeInTheDocument();
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'sidebar.bulkFolder' }));
+    await userEvent.setup().click(screen.getByRole('button', { name: 'sidebar.folderRemove' }));
+    expect(onUpdateFolder).toHaveBeenCalledWith({ padId: 'pad-1', folder: null });
+    expect(document.querySelector('.pad-sidebar__item--multiselected')).not.toBeInTheDocument();
   });
 });
