@@ -131,6 +131,7 @@ class PadWriteService:
         display_name: str,
         pad_type: str,
         content: Optional[str],
+        folder: Optional[str] = None,
         idempotency_key: Optional[str] = None,
     ) -> tuple[dict[str, Any], bool]:
         name = " ".join(display_name.strip().split())
@@ -140,8 +141,16 @@ class PadWriteService:
             raise ValidationError("Unsupported pad type")
         if content is not None and len(content) > MAX_DATA_BYTES:
             raise ValidationError("Initial content exceeds the 2 MB API limit")
+        folder = folder.strip() if folder else None
+        folder = folder or None
+        if folder and len(folder) > 80:
+            raise ValidationError("folder must be 80 characters or fewer")
 
         payload = {"display_name": name, "pad_type": pad_type, "content": content}
+        # Keep existing versioned API idempotency hashes stable for clients
+        # that do not send a folder, while including it for imports.
+        if folder:
+            payload["folder"] = folder
         record, replay = await self._idempotency(principal, "pad.create", idempotency_key, payload)
         if replay is not None:
             return replay, True
@@ -156,6 +165,7 @@ class PadWriteService:
             sharing_policy="private",
             whitelist=[],
             pad_type=pad_type,
+            folder=folder,
         )
         self.session.add(pad)
         await self.session.flush()

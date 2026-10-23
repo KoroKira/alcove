@@ -26,7 +26,9 @@ describe('Obsidian import', () => {
 
     const results = await importObsidianFiles(files, progress, request);
 
-    expect(results).toEqual([{ name: 'Overview', sourceKey: 'My vault/Projects/Launch/Overview.MD', id: 'pad-123' }]);
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ name: 'Overview', sourceKey: 'My vault/Projects/Launch/Overview.MD', id: 'pad-123' });
+    expect(results[0].idempotencyKey).toBeTruthy();
     expect(request).toHaveBeenCalledTimes(1);
     expect(request).toHaveBeenCalledWith('/api/pad/new', expect.objectContaining({
       method: 'POST',
@@ -58,10 +60,9 @@ describe('Obsidian import', () => {
       note('Second.md', 'Vault/Second.md', 'two'),
     ], undefined, request);
 
-    expect(results).toEqual([
-      { name: 'First', sourceKey: 'Vault/First.md', error: 'Storage temporarily unavailable' },
-      { name: 'Second', sourceKey: 'Vault/Second.md', id: 'pad-456' },
-    ]);
+    expect(results).toHaveLength(2);
+    expect(results[0]).toMatchObject({ name: 'First', sourceKey: 'Vault/First.md', error: 'Storage temporarily unavailable' });
+    expect(results[1]).toMatchObject({ name: 'Second', sourceKey: 'Vault/Second.md', id: 'pad-456' });
     expect(request).toHaveBeenCalledTimes(2);
   });
 
@@ -74,6 +75,36 @@ describe('Obsidian import', () => {
 
     const results = await importObsidianFiles([note('Note.md', 'Vault/Note.md', 'text')], undefined, request);
 
-    expect(results).toEqual([{ name: 'Note', sourceKey: 'Vault/Note.md', error: 'Réponse serveur invalide : identifiant du pad absent' }]);
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ name: 'Note', sourceKey: 'Vault/Note.md', error: 'Réponse serveur invalide : identifiant du pad absent' });
+  });
+
+  it('reuses the same idempotency key when retrying a failed note', async () => {
+    const request = vi.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        json: async () => ({ detail: 'Storage temporarily unavailable' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: 'pad-retried' }),
+      }) as unknown as typeof fetch;
+    const keys = new WeakMap<File, string>();
+    const files = [note('Note.md', 'Vault/Note.md', 'same content')];
+
+    const first = await importObsidianFiles(files, undefined, request, keys);
+    const retry = await importObsidianFiles(files, undefined, request, keys);
+
+    expect(first[0]).toMatchObject({ error: 'Storage temporarily unavailable' });
+    expect(retry[0]).toMatchObject({ id: 'pad-retried' });
+    const idempotencyHeader = (call: unknown[]) => {
+      const init = call[1] as RequestInit;
+      return new Headers(init.headers).get('Idempotency-Key');
+    };
+    const calls = (request as unknown as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
+    expect(idempotencyHeader(calls[0])).toBeTruthy();
+    expect(idempotencyHeader(calls[1])).toBe(idempotencyHeader(calls[0]));
   });
 });
