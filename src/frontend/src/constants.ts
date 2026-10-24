@@ -6,6 +6,10 @@ import { UserSettings } from "./ui/types";
 export const INITIAL_APP_DATA = {
     appState: {
         theme: "dark",
+        // Excalidraw's interactive renderer iterates collaborators on every
+        // scene update. A newly created pad can render before usePad() applies
+        // its normalized server scene, so seed the required map at mount time.
+        collaborators: new Map(),
         gridModeEnabled: true,
         gridSize: 20,
         // One calm subdivision per 20px cell. The previous 5-step grid became
