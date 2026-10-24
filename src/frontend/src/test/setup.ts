@@ -31,7 +31,8 @@ for (const key of ['localStorage', 'sessionStorage'] as const) {
 // fake `i18n` object with a known language.
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string) => fallback ?? key,
+    t: (key: string, options?: string | { defaultValue?: string }) =>
+      typeof options === 'string' ? options : options?.defaultValue ?? key,
     i18n: { language: 'fr', changeLanguage: async () => {} },
   }),
   Trans: ({ children }: { children?: unknown }) => children as never,

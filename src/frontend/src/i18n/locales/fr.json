@@ -212,6 +212,8 @@
     "ragMode": "Recherche",
     "ragDesc": "Recherche sémantique dans tous vos pads indexés. Commencez par indexer vos notes.",
     "ragIndexAll": "Indexer tous les pads",
+    "ragIndexCurrent": "Indexer ce pad",
+    "ragCurrentPad": "Ce pad",
     "ragIndexing": "Indexation en cours…",
     "ragPlaceholder": "Posez une question — l'IA fouille vos notes…",
     "ragInputPlaceholder": "Question… (Entrée pour chercher)",

@@ -11,7 +11,7 @@ import {
   extractEntities, fetchWikipediaSummary, EntityType, WikipediaSummary,
 } from '../lib/aiPrompts';
 import QuizModal from './QuizModal';
-import { indexAll, agenticRagChat } from '../lib/rag';
+import { indexAll, indexPad, agenticRagChat } from '../lib/rag';
 import { Message, filterThinkBlocks } from '../lib/chatTypes';
 import { getActivePersonaInstructions } from '../lib/personas';
 import ChatMessage from './ChatMessage';
@@ -484,6 +484,25 @@ export default function AIPanel({
       setIndexLogs(prev => [...prev, `✅ ${pads} pads indexés (${totalChunks} chunks)`]);
     } catch (e) {
       setIndexLogs(prev => [...prev, `❌ ${e instanceof Error ? e.message : String(e)}`]);
+    } finally { setIndexing(false); }
+  };
+
+  const handleIndexCurrentPad = async () => {
+    if (!padId || indexing) return;
+    setIndexing(true);
+    setIndexLogs([]);
+    setShowIndexLogs(true);
+    try {
+      let displayName = padTitle || t('ai.ragCurrentPad', 'Ce pad');
+      const chunks = await indexPad(padId, (progress) => {
+        if (progress.displayName) displayName = progress.displayName;
+        if (progress.status === 'embedding' || progress.status === 'storing') {
+          setIndexLogs([`${displayName} — ${t('ai.ragIndexing')}`]);
+        }
+      });
+      setIndexLogs([`✅ ${displayName} — ${chunks} chunks`]);
+    } catch (e) {
+      setIndexLogs([`❌ ${e instanceof Error ? e.message : String(e)}`]);
     } finally { setIndexing(false); }
   };
 
@@ -973,6 +992,18 @@ export default function AIPanel({
               <div className="ai-panel__rag-header">
                 <div className="ai-panel__rag-desc">{t('ai.ragDesc')}</div>
                 <PersonaPicker />
+                {padId && (
+                  <button
+                    className="ai-panel__rag-index-btn"
+                    onClick={handleIndexCurrentPad}
+                    disabled={indexing}
+                  >
+                    {indexing
+                      ? <><Loader size={11} className="ai-spin" /> {t('ai.ragIndexing')}</>
+                      : t('ai.ragIndexCurrent', 'Indexer ce pad')
+                    }
+                  </button>
+                )}
                 <button
                   className="ai-panel__rag-index-btn"
                   onClick={handleIndexAll}
@@ -989,7 +1020,7 @@ export default function AIPanel({
                       Logs {showIndexLogs ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
                     </button>
                     {showIndexLogs && (
-                      <div className="ai-panel__rag-log-box">
+                      <div className="ai-panel__rag-log-box" role="status" aria-live="polite" aria-atomic="true">
                         {indexLogs.map((l, i) => <div key={i} className="ai-panel__rag-log-line">{l}</div>)}
                       </div>
                     )}

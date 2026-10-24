@@ -82,6 +82,39 @@ describe('AIPanel', () => {
     });
   });
 
+  it('indexes only the open pad from RAG mode', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url === '/api/ai/rag/indexable-text/qa-pad') {
+        return jsonResponse({ display_name: 'QA RAG', text: 'ALCOVE-RAG-QA-20261024 isolated retrieval phrase.' });
+      }
+      if (url === '/api/ai/ollama/api/embed') {
+        return jsonResponse({ embeddings: [[0.25, 0.75]] });
+      }
+      if (url === '/api/ai/rag/index-chunks') {
+        return jsonResponse({ indexed: 1 });
+      }
+      return jsonResponse({ system: '', default_model: 'llama3.2', conversations: [], slots: [] });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const user = userEvent.setup();
+
+    render(<AIPanel onClose={vi.fn()} padId="qa-pad" padTitle="QA RAG" />);
+    await waitFor(() => expect(document.querySelectorAll('.ai-panel__mode-tab')).toHaveLength(3));
+    await user.click(document.querySelectorAll('.ai-panel__mode-tab')[1] as HTMLElement);
+    await user.click(screen.getByRole('button', { name: /Indexer ce pad|Index this pad/ }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('QA RAG — 1 chunks');
+    expect(fetchMock).toHaveBeenCalledWith('/api/ai/rag/indexable-text/qa-pad', { credentials: 'include' });
+    const indexCall = fetchMock.mock.calls.find(([input]) => String(input) === '/api/ai/rag/index-chunks');
+    expect(indexCall).toBeDefined();
+    expect(JSON.parse(String(indexCall?.[1]?.body))).toMatchObject({
+      pad_id: 'qa-pad',
+      chunks: [{ index: 0, text: 'ALCOVE-RAG-QA-20261024 isolated retrieval phrase.', embedding: [0.25, 0.75] }],
+    });
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/ai/rag/indexable-list', expect.anything());
+  });
+
   it('shows the setup wizard hook when Ollama is offline and not starting', async () => {
     // Override fetch to report unavailable.
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL) =>
