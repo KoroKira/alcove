@@ -52,6 +52,8 @@
   transition: color 0.12s;
 
   &:hover { color: var(--color-on-surface, var(--ap-text0)); }
+  &:focus-visible { outline: 2px solid var(--ap-accent2); outline-offset: 2px; }
+  &[aria-disabled='true'] { cursor: wait; opacity: 0.65; }
 }
 
 .obs-import__drop {
