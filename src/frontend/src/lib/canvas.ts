@@ -1,4 +1,10 @@
 import { DEFAULT_SETTINGS } from '../constants';
+import type { AppState } from '@atyrode/excalidraw/types';
+
+/** Keep Excalidraw's renderer-required collaborator collection on partial updates. */
+export function ensureCanvasCollaborators(appState: Partial<AppState>): Partial<AppState> {
+  return { ...appState, collaborators: appState.collaborators ?? new Map() };
+}
 
 function lightness(hex: string): number | null {
   const m = hex.replace('#', '').match(/.{2}/g);

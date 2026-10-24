@@ -14,6 +14,7 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { usePad } from "./hooks/usePadData";
 import { useStructuredPadData } from "./hooks/useStructuredPadData";
 import { snapshotCanvasPad } from "./lib/thumbnailSnapshot";
+import { ensureCanvasCollaborators } from "./lib/canvas";
 
 // Components
 import { MainMenuConfig } from './ui/MainMenu';
@@ -265,7 +266,12 @@ export default function App() {
     const wasDark = prevThemeDarkRef.current;
     const isDark = theme.dark;
 
-    const baseAppState = { theme: dark ? 'dark' : 'light', viewBackgroundColor: bg, currentItemStrokeColor: ink };
+    const baseAppState = ensureCanvasCollaborators({
+      theme: dark ? 'dark' : 'light',
+      viewBackgroundColor: bg,
+      currentItemStrokeColor: ink,
+      collaborators: excalidrawAPI.getAppState().collaborators,
+    });
 
     if (wasDark !== isDark) {
       const elements = excalidrawAPI.getSceneElements();
