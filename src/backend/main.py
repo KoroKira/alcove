@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import re
 from contextlib import asynccontextmanager
 from typing import Optional
 from uuid import UUID
@@ -98,6 +99,28 @@ HAS_STATIC_BUILD = bool(STATIC_DIR) and os.path.isfile(os.path.join(STATIC_DIR, 
 
 def mount_frontend_root_assets(app: FastAPI, static_dir: str) -> None:
     """Expose Vite's root-level public and PWA files at their referenced URLs."""
+    def current_worker() -> Response:
+        worker = os.path.join(static_dir, "sw.js")
+        if not os.path.isfile(worker):
+            return Response(status_code=404)
+        return FileResponse(
+            worker,
+            media_type="application/javascript",
+            headers={"Cache-Control": "no-store", "Service-Worker-Allowed": "/"},
+        )
+
+    @app.api_route("/sw.js", methods=["GET", "HEAD"], include_in_schema=False)
+    async def service_worker() -> Response:
+        return current_worker()
+
+    @app.api_route("/sw-{build_id}.js", methods=["GET", "HEAD"], include_in_schema=False)
+    async def legacy_service_worker(build_id: str) -> Response:
+        # Existing browsers registered a build-specific URL. Serve the current
+        # worker there so it can replace their old precache and load fresh HTML.
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", build_id):
+            return Response(status_code=404)
+        return current_worker()
+
     app.mount("/", StaticFiles(directory=static_dir), name="frontend-root")
 
 # CORS: `allow_origins=["*"]` with `allow_credentials=True` is silently unsafe
