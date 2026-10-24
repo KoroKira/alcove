@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeCanvasData } from './canvas';
+import { INITIAL_APP_DATA } from '../constants';
+
+describe('initial canvas data', () => {
+  it('provides Excalidraw a collaborator map before a pad scene loads', () => {
+    expect(INITIAL_APP_DATA.appState.collaborators).toBeInstanceOf(Map);
+  });
+});
 
 describe('normalizeCanvasData', () => {
   it.each([
