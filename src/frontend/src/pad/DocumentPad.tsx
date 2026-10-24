@@ -354,6 +354,10 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
   // (or successfully wrote) it. Sent on every save; server rejects with 409
   // if a peer (e.g. the same account on another device) has moved on since.
   const lastUpdatedAt = useRef<string | null>(null);
+  // Keep the last server body separate from the in-progress editor text. A
+  // rename, tag or folder change advances updated_at without changing this
+  // body; a real edit on another device must still be shown as a conflict.
+  const persistedContent = useRef('');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -445,6 +449,7 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
     setConflictResolutionError(null);
     setContent('');
     contentRef.current = '';
+    persistedContent.current = '';
     setBacklinks([]);
     setTranscluded({});
     setRecoveryDraft(null);
@@ -468,6 +473,7 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
           if (localDraft) clearLocalDocumentDraft(padId, localDraft.content);
         }
         contentRef.current = initial;
+        persistedContent.current = loaded;
         setContent(initial);
         lastUpdatedAt.current = padData?.updated_at ?? null;
         if (!loaded && pendingContent) scheduleSave(pendingContent);
@@ -572,17 +578,33 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
           const body = isLatex
             ? { data: { source: text }, expected_updated_at: lastUpdatedAt.current }
             : { content: text, format: 'markdown', expected_updated_at: lastUpdatedAt.current };
-          const res = await fetch(url, {
+          let res = await fetch(url, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
           });
+          if (res.status === 409 && padIdRef.current === padId) {
+            const latestResponse = await fetch(`/api/pad/${padId}`);
+            if (!latestResponse.ok) throw new Error(`Impossible de relire le document (${latestResponse.status}).`);
+            const latest = await latestResponse.json();
+            const latestContent = isLatex
+              ? (latest?.data?.source || latest?.content || '')
+              : (latest?.content || '');
+            if (latestContent === persistedContent.current && typeof latest?.updated_at === 'string') {
+              res = await fetch(url, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...body, expected_updated_at: latest.updated_at }),
+              });
+            }
+          }
           if (res.status === 409) {
             if (padIdRef.current === padId) setSaveStatus('conflict');
             return;
           }
           if (res.ok) {
             const j = await res.json().catch(() => null);
+            if (padIdRef.current === padId) persistedContent.current = text;
             if (j?.updated_at) {
               if (padIdRef.current === padId) lastUpdatedAt.current = j.updated_at;
               advanceLocalDocumentDraftVersion(padId, text, j.updated_at);
@@ -626,6 +648,7 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
       );
       if (padIdRef.current !== conflictPadId) return;
       lastUpdatedAt.current = updatedAt;
+      persistedContent.current = conflictedText;
       advanceLocalDocumentDraftVersion(conflictPadId, conflictedText, updatedAt);
       clearLocalDocumentDraft(conflictPadId, conflictedText);
       if (contentRef.current === conflictedText) setSaveStatus('saved');
@@ -1381,6 +1404,7 @@ ${renderedHtml}
               throw new Error('Restauration effectuée, mais des modifications locales sont arrivées pendant l’opération. Elles restent dans l’éditeur et le brouillon local. Exporte-les avant de recharger.');
             }
             lastUpdatedAt.current = restored.updatedAt;
+            persistedContent.current = restored.content;
             contentRef.current = restored.content;
             setContent(restored.content);
             clearLocalDocumentDraft(restoredPadId);

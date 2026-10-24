@@ -143,6 +143,37 @@ describe('KanbanPad mobile card movement', () => {
 });
 
 describe.each([
+  { name: 'database', Component: DatabasePad, data: firstPad, trigger: 'Nouvelle ligne' },
+  { name: 'kanban', Component: KanbanPad, data: { columns: [{ id: 'todo', title: 'Todo', cards: [] }], fieldSchema: [], updated_at: 'version-a' }, trigger: 'Ajouter' },
+  { name: 'gantt', Component: GanttPad, data: { tasks: [], fieldSchema: [], updated_at: 'version-a' }, trigger: 'Tâche' },
+])('$name metadata changes', ({ Component, data, trigger }) => {
+  it('saves the edit after a metadata-only rename', async () => {
+    const { updated_at: _version, ...serverData } = data;
+    let writes = 0;
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/pad/metadata-pad' && !init) {
+        return { ok: true, status: 200, json: async () => ({ updated_at: 'version-b', data: serverData }) } as Response;
+      }
+      if (url === '/api/pad/metadata-pad/data' && init?.method === 'PUT') {
+        writes += 1;
+        return writes === 1
+          ? { ok: false, status: 409 } as Response
+          : { ok: true, status: 200, json: async () => ({ updated_at: 'version-c' }) } as Response;
+      }
+      return { ok: true, status: 200, json: async () => ({}) } as Response;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const Pad = Component as React.ComponentType<{ padId: string; data: any; onDataChange: (data: any) => void }>;
+    render(<Pad padId="metadata-pad" data={data} onDataChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${trigger}$`) }));
+    await waitFor(() => expect(writes).toBe(2), { timeout: 2000 });
+    const attempts = fetchMock.mock.calls.filter(([url, init]) => url === '/api/pad/metadata-pad/data' && init?.method === 'PUT');
+    expect(attempts.map(([, init]) => JSON.parse(String(init?.body)).expected_updated_at)).toEqual(['version-a', 'version-b']);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
+describe.each([
   {
     name: 'KanbanPad',
     url: '/api/pad/pad-a/data',

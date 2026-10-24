@@ -200,6 +200,11 @@ test "$alcove_expected_image" = "$alcove_running_image"
 Si la comparaison échoue, corriger la configuration persistante avant de
 considérer le déploiement terminé. Vérifier aussi l'image après un redémarrage
 contrôlé lorsque les éditeurs sont fermés.
+Dans un navigateur ayant déjà installé la PWA, recharger l'application et
+vérifier que la nouvelle interface s'affiche. Le service worker utilise une URL
+stable (`/sw.js`) ; les anciennes URL `/sw-<version>.js` servent également le
+worker courant pour permettre la migration des sessions déjà ouvertes. Une
+seconde actualisation peut être nécessaire après son activation.
 
 Pour un rollback **applicatif sans changement de schéma**, remettre le compose
 précédent et `ALCOVE_IMAGE` à la valeur de `runtime-image.txt` de la sauvegarde

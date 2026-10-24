@@ -22,4 +22,7 @@ def test_frontend_root_mount_serves_pwa_files_without_shadowing_api(tmp_path):
     assert client.get("/manifest.webmanifest").json() == {"name": "Alcove"}
     assert client.get("/registerSW.js").text == "registerSW"
     assert client.get("/sw.js").text == "serviceWorker"
+    assert client.get("/sw.js").headers["cache-control"] == "no-store"
+    assert client.get("/sw-old-build.js").text == "serviceWorker"
+    assert client.get("/sw-old-build.js").headers["cache-control"] == "no-store"
     assert client.get("/api/health").json() == {"ok": True}

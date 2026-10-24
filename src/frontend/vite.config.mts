@@ -65,7 +65,9 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       VitePWA({
-        filename: `sw-${(process.env.ALCOVE_BUILD_ID || 'local').replace(/[^a-zA-Z0-9_-]/g, '')}.js`,
+        // Keep the registration URL stable: an old worker may serve an old
+        // index.html, which cannot discover a differently named new worker.
+        filename: 'sw.js',
         injectRegister: 'inline',
         registerType: 'autoUpdate',
         devOptions: { enabled: false },
