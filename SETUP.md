@@ -202,6 +202,101 @@ alcove_app_port=$(docker port "$alcove_pad_container" 8000/tcp | awk -F: 'NR == 
 curl --fail "http://127.0.0.1:${alcove_app_port}/api/app/config"
 ```
 
+### Installation par releases avec `/srv/alcove/current`
+
+Quand chaque version est conservée dans son propre répertoire, préparez une
+release candidate à partir de la configuration active. Cela garde le compose
+local, ses protections et les secrets existants ; seule l'image de `pad` change.
+Remplacez `<SHA_COMPLET>` par le commit dont la CI et la publication d'image
+sont réussies. Exécutez les commandes depuis un compte autorisé à gérer Docker :
+
+```sh
+set -eu
+release_sha=<SHA_COMPLET>
+image="ghcr.io/korokira/alcove:sha-${release_sha}"
+previous=$(sudo readlink -f /srv/alcove/current)
+candidate="/srv/alcove/releases/alcove-main-${release_sha}"
+sudo mkdir -m 700 "$candidate"
+sudo cp -a "$previous/." "$candidate/"
+sudo env ALCOVE_ENV="$candidate/.env" ALCOVE_IMAGE="$image" python3 - <<'PY'
+import os
+from pathlib import Path
+
+path = Path(os.environ["ALCOVE_ENV"])
+lines = path.read_text().splitlines(keepends=True)
+indexes = [i for i, line in enumerate(lines) if line.startswith("ALCOVE_IMAGE=")]
+if len(indexes) != 1:
+    raise SystemExit(f"Expected one ALCOVE_IMAGE entry, found {len(indexes)}")
+lines[indexes[0]] = f"ALCOVE_IMAGE={os.environ['ALCOVE_IMAGE']}\n"
+path.write_text("".join(lines))
+PY
+sudo docker compose --env-file "$candidate/.env" -p alcove \
+  -f "$candidate/docker-compose.codicam.yml" config --quiet
+sudo docker compose --env-file "$candidate/.env" -p alcove \
+  -f "$candidate/docker-compose.codicam.yml" pull pad
+```
+
+Fermez les éditeurs, attendez leur état « sauvegardé », puis arrêtez uniquement
+`pad` avant la sauvegarde cohérente. Si la sauvegarde ou sa vérification échoue,
+redémarrez l'ancienne release et arrêtez la mise à jour. Après une sauvegarde
+validée, basculez le symlink atomiquement et contrôlez l'image et la santé :
+
+```sh
+set -eu
+release_sha=<SHA_COMPLET>
+image="ghcr.io/korokira/alcove:sha-${release_sha}"
+previous=$(sudo readlink -f /srv/alcove/current)
+candidate="/srv/alcove/releases/alcove-main-${release_sha}"
+
+sudo docker compose --env-file "$previous/.env" -p alcove \
+  -f "$previous/docker-compose.codicam.yml" stop pad
+backup_dir=$(sudo env ALCOVE_PROJECT_DIR="$previous" ALCOVE_ENV_FILE="$previous/.env" \
+  ALCOVE_COMPOSE_FILE="$previous/docker-compose.codicam.yml" \
+  /srv/alcove/current/scripts/backup-codicam.sh | sed -n 's/^Backup complete: //p')
+if [ -z "$backup_dir" ] || ! sudo sh -c 'cd "$1" && sha256sum -c SHA256SUMS' sh "$backup_dir"; then
+  sudo docker compose --env-file "$previous/.env" -p alcove \
+    -f "$previous/docker-compose.codicam.yml" up -d --no-deps pad
+  echo 'Backup verification failed; old release restarted.' >&2
+  exit 1
+fi
+sudo ln -sfn "$candidate" /srv/alcove/current.next
+sudo mv -Tf /srv/alcove/current.next /srv/alcove/current
+restore_previous() {
+  sudo ln -sfn "$previous" /srv/alcove/current.rollback
+  sudo mv -Tf /srv/alcove/current.rollback /srv/alcove/current
+  sudo docker compose --env-file "$previous/.env" -p alcove \
+    -f "$previous/docker-compose.codicam.yml" up -d --no-deps pad
+}
+if ! sudo docker compose --env-file /srv/alcove/current/.env -p alcove \
+  -f /srv/alcove/current/docker-compose.codicam.yml up -d --no-deps pad; then
+  restore_previous
+  exit 1
+fi
+sudo docker compose --env-file /srv/alcove/current/.env -p alcove \
+  -f /srv/alcove/current/docker-compose.codicam.yml ps
+container=$(sudo docker compose --env-file /srv/alcove/current/.env -p alcove \
+  -f /srv/alcove/current/docker-compose.codicam.yml ps -q pad)
+running_image=$(sudo docker inspect --format '{{.Config.Image}}' "$container")
+health=starting
+for attempt in $(seq 1 30); do
+  health=$(sudo docker inspect --format '{{.State.Health.Status}}' "$container")
+  [ "$health" = healthy ] && break
+  [ "$health" = unhealthy ] && break
+  sleep 2
+done
+if [ "$running_image" != "$image" ] || [ "$health" != healthy ]; then
+  restore_previous
+  echo 'New release failed its image or health check; old release restored.' >&2
+  exit 1
+fi
+```
+
+Rollback applicatif : remettez le symlink sur `previous` avec le même couple
+`ln -sfn` / `mv -Tf`, puis relancez `pad` avec le compose et le `.env` de cette
+release. Vérifiez que l'image active correspond à `runtime-image.txt` dans la
+sauvegarde. Ne restaurez pas les bases pour ce rollback ; cela effacerait les
+écritures effectuées depuis la mise à jour.
+
 Comparer ensuite l'image prévue par ce fichier à celle du conteneur actif,
 sans afficher les secrets du compose. Adapter le chemin au fichier de référence :
 
