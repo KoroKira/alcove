@@ -10,10 +10,8 @@ interface State {
 }
 
 /**
- * App-wide crash barrier. A single unhandled render error used to blank the
- * whole screen (black page, no recovery). This catches it, shows a readable
- * panel with the message + stack, and offers a reload — the app degrades to a
- * dialog instead of dying.
+ * App-wide crash barrier for failures outside the isolated canvas. Canvas
+ * errors are handled by CanvasErrorBoundary so global navigation can remain.
  */
 export default class ErrorBoundary extends React.Component<Props, State> {
   constructor(props: Props) {
@@ -32,8 +30,6 @@ export default class ErrorBoundary extends React.Component<Props, State> {
   }
 
   private handleReload = () => window.location.reload();
-
-  private handleReset = () => this.setState({ error: null, info: null });
 
   render() {
     const { error, info } = this.state;
@@ -71,9 +67,8 @@ export default class ErrorBoundary extends React.Component<Props, State> {
             Une erreur a interrompu l'affichage
           </h1>
           <p style={{ fontSize: 13, color: 'var(--ap-text2, #a6adc8)', margin: '0 0 16px' }}>
-            Tes données ne sont pas perdues — elles sont sauvegardées côté serveur.
-            Recharge la page pour reprendre. Si le problème persiste, le détail
-            ci-dessous aide à le diagnostiquer.
+            Recharge la page pour reprendre. Les dernières modifications peuvent
+            ne pas avoir été enregistrées ; vérifie leur état après le rechargement.
           </p>
 
           <pre
@@ -111,21 +106,6 @@ export default class ErrorBoundary extends React.Component<Props, State> {
               }}
             >
               Recharger la page
-            </button>
-            <button
-              onClick={this.handleReset}
-              style={{
-                background: 'transparent',
-                color: 'var(--ap-text2, #a6adc8)',
-                border: '1px solid var(--ap-bg3, #45475a)',
-                borderRadius: 'var(--ap-radius-sm, 6px)',
-                padding: '8px 18px',
-                fontSize: 13,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              Réessayer sans recharger
             </button>
           </div>
         </div>
