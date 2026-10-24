@@ -93,7 +93,7 @@ describe('RAG answer evidence prompt', () => {
       throw new Error(`Unexpected request: ${url}`);
     });
 
-    await agenticRagChat('llama3.2:latest', 'What exact marker string appears in the note?', {
+    await agenticRagChat('llama3.2:latest', 'What exact value appears in the note?', {
       onChunk: vi.fn(),
     }, { lang: 'en' });
 
@@ -103,5 +103,29 @@ describe('RAG answer evidence prompt', () => {
     expect(systemPrompt).toContain('copy the value exactly as it appears in an EXCERPT');
     expect(systemPrompt).toContain('Titre de la note (référence uniquement, pas une preuve) : Test Alcove 24 oct — renommé');
     expect(systemPrompt).toContain('ALCOVE_SMOKE_20261024: autosave and retrieval verification.');
+  });
+
+  it('answers exact marker questions from the cited excerpt without relying on the model', async () => {
+    vi.mocked(oneShotLocalOllama).mockResolvedValueOnce('{"queries":[]}');
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === '/api/ai/ollama/api/embed') {
+        return new Response(JSON.stringify({ embeddings: [[0.1, 0.2]] }), { status: 200 });
+      }
+      if (url === '/api/ai/rag/knn') {
+        return new Response(JSON.stringify({ results: [
+          { score: 0.47, pad_id: 'pad-marker', pad_name: 'New document', chunk_text: 'ALCOVE_SMOKE_20261024: autosave and retrieval verification.' },
+        ] }), { status: 200 });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const chunks: string[] = [];
+
+    await agenticRagChat('llama3.2:latest', 'What exact marker string appears in the test note?', {
+      onChunk: chunk => chunks.push(chunk),
+    }, { lang: 'en' });
+
+    expect(chunks).toEqual(['The exact marker string is “ALCOVE_SMOKE_20261024: autosave and retrieval verification.” [[1]].']);
+    expect(streamLocalOllamaChat).not.toHaveBeenCalled();
   });
 });
