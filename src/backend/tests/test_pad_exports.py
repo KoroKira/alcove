@@ -28,7 +28,8 @@ def test_exports_each_pad_type_without_losing_content_or_colliding():
         _pad(id="a3333333-0000-0000-0000-000000000003", name="Sketch", pad_type="canvas", data={"elements": [{"id": "shape-1"}]}),
         _pad(id="a4444444-0000-0000-0000-000000000004", name="Sprint", pad_type="kanban", data={"columns": [{"id": "todo"}]}),
         _pad(id="a5555555-0000-0000-0000-000000000005", name="Timeline", pad_type="gantt", data={"tasks": [{"id": "task-1"}]}),
-        _pad(id="a6666666-0000-0000-0000-000000000006", name="Equation", pad_type="latex", data={"content": "x^2", "format": "latex"}),
+        _pad(id="a6666666-0000-0000-0000-000000000006", name="Equation", pad_type="latex", data={"source": "x^2"}),
+        _pad(id="a7777777-0000-0000-0000-000000000007", name="Legacy equation", pad_type="latex", data={"content": "legacy x^2", "format": "latex"}),
     ]
 
     files = dict(build_pad_export_files(pads))
@@ -46,6 +47,7 @@ def test_exports_each_pad_type_without_losing_content_or_colliding():
     gantt = json.loads(files["Timeline--a5555555-0000-0000-0000-000000000005.json"])
     assert gantt["data"] == pads[4].data
     assert files["Equation--a6666666-0000-0000-0000-000000000006.tex"] == "x^2"
+    assert files["Legacy_equation--a7777777-0000-0000-0000-000000000007.tex"] == "legacy x^2"
 
     manifest = json.loads(files["manifest.json"])
     assert manifest["schema"] == "alcove.export/v1"

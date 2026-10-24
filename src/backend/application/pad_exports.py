@@ -40,7 +40,16 @@ def build_pad_export_files(pads: Iterable[Any]) -> list[tuple[str, str]]:
         if pad_type in {"document", "latex"}:
             is_latex = pad_type == "latex" or format_name == "latex"
             extension = ".tex" if is_latex else ".md"
-            body = data.get("content", "") if isinstance(data, dict) else data
+            if isinstance(data, dict):
+                # LaTeXPad stores its editor buffer under `source`; older
+                # imported pads may still have the legacy `content` field.
+                body = (
+                    data.get("source", data.get("content", ""))
+                    if pad_type == "latex"
+                    else data.get("content", "")
+                )
+            else:
+                body = data
             if not isinstance(body, str):
                 body = json.dumps(body, ensure_ascii=False, indent=2)
             archive_path = prefix + extension
