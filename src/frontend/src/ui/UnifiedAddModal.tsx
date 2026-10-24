@@ -72,7 +72,7 @@ export default function UnifiedAddModal({
       key: 'obsidian',
       icon: <Import size={20} />,
       title: 'Importer un vault Obsidian',
-      hint: 'Batch import de .md et assets',
+      hint: 'Notes Markdown importées avec leurs dossiers',
       onClick: closeAfter(onImportObsidian),
       accent: 'ingest',
     },
