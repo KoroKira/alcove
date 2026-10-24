@@ -30,6 +30,25 @@ afterEach(() => {
 });
 
 describe('DatabasePad autosave', () => {
+  it('retries an unsaved database edit after network reconnection', async () => {
+    let attempts = 0;
+    const fetchMock = vi.fn(async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('offline');
+      return { ok: true, status: 200, json: async () => ({ updated_at: 'version-b' }) } as Response;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<DatabasePad padId="offline-database" data={firstPad} onDataChange={vi.fn()} />);
+
+    act(() => window.dispatchEvent(new Event('offline')));
+    fireEvent.click(screen.getByRole('button', { name: 'Nouvelle ligne' }));
+    await waitFor(() => expect(attempts).toBe(1), { timeout: 2000 });
+    act(() => window.dispatchEvent(new Event('online')));
+
+    await waitFor(() => expect(attempts).toBe(2), { timeout: 3000 });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('does not show an old pad save conflict after switching to another database pad', async () => {
     const pending = deferred<Response>();
     const fetchMock = vi.fn(() => pending.promise);

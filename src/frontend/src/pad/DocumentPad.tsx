@@ -17,6 +17,7 @@ import katex from 'katex';
 import mermaid from 'mermaid';
 import { Link, History, Bookmark, Download, FileText, List, Maximize2, Minimize2, BookOpen, Save, Play, Globe, Terminal, Sparkles, ExternalLink } from 'lucide-react';
 import { useRelatedPads } from '../hooks/useRelatedPads';
+import { useRetryOnReconnect } from '../hooks/useRetryOnReconnect';
 import { findTransclusionTargets, parseWikiLink, resolveWikiLink } from '../lib/wikilinks';
 import { enqueueSerializedSave } from '../lib/saveQueue';
 import { saveDocumentAfterConflict } from '../lib/conflictSave';
@@ -623,6 +624,11 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
       });
     }, SAVE_DEBOUNCE_MS);
   }, [padId, isLatex]);
+
+  useRetryOnReconnect(
+    saveStatus === 'unsaved' && !recoveryDraft && !conflictResolving,
+    () => scheduleSave(contentRef.current),
+  );
 
   const handleChange = (value: string | undefined) => {
     const text = value ?? '';

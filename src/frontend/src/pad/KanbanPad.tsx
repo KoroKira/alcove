@@ -9,6 +9,7 @@ import { uid, PRIORITY_LABELS, PRIORITY_COLORS, FIELD_TYPE_LABELS } from './fiel
 import { snapshotDomPad } from '../lib/thumbnailSnapshot';
 import { enqueueSerializedSave } from '../lib/saveQueue';
 import { retryStructuredSaveAfterMetadataChange } from '../lib/metadataConflict';
+import { useRetryOnReconnect } from '../hooks/useRetryOnReconnect';
 import { advanceStructuredPadDraftVersion, clearStructuredPadDraft, fetchAndSnapshotStructuredPadVersion, hasStructuredPadDraft, isStructuredPadDraftStale, readStructuredPadDraftRecord, removeStructuredPadDraft, UNKNOWN_STRUCTURED_DRAFT_BASELINE, writeStructuredPadDraft } from '../lib/structuredPadDraft';
 import './KanbanPad.scss';
 
@@ -574,6 +575,8 @@ export default function KanbanPad({ padId, data, onDataChange }: Props) {
       });
     }, SAVE_DEBOUNCE);
   }, [padId, onDataChange]);
+
+  useRetryOnReconnect(Boolean(saveError) && !conflict, () => save(columns, schema, templates));
 
   const discardDraftAndLoadServer = () => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
