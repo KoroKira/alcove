@@ -109,7 +109,11 @@ async def callback(
 ):
     pending = await session_domain.consume_oauth_state(state)
     if not pending or not pending.get("session_id"):
-        raise HTTPException(status_code=400, detail="Invalid authentication state")
+        # A browser callback is a navigation, so returning FastAPI's raw JSON
+        # error leaves users with no way to recover. Send them back to the app
+        # with a non-sensitive, actionable message; a new login will issue a
+        # fresh one-time state value.
+        return RedirectResponse("/?auth_error=state", status_code=303)
     session_id = pending["session_id"]
     return_mode = pending.get("return_mode", "default")
     
