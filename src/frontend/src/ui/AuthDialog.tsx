@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect } from "react";
+import React, { useMemo, useEffect, useState } from "react";
 
 import { Dialog } from "@atyrode/excalidraw";
 
@@ -19,6 +19,7 @@ export const AuthDialog = ({
   children,
 }: AuthDialogProps) => {
   const { config } = useAppConfig();
+  const [authError, setAuthError] = useState(false);
   const logoMessages = [
     "Hello there!",
     "Welcome to Alcove!",
@@ -54,11 +55,25 @@ export const AuthDialog = ({
     };
   }, []);
 
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("auth_error") !== "state") return;
+
+    setAuthError(true);
+    url.searchParams.delete("auth_error");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
+
   const dialogContent = (
     <div className="auth-modal__content">
       <p className="auth-modal__description">{description}</p>
 
       <div className="auth-modal__buttons">
+        {authError && (
+          <p role="alert">
+            La connexion a expiré ou a déjà été utilisée. Relancez-la avec le bouton ci-dessous.
+          </p>
+        )}
         <button onClick={() => window.open("/api/auth/login?popup=1", "authPopup", "width=520,height=720")}>
           <span>Se connecter</span>
         </button>
