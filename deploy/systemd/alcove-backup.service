@@ -1,0 +1,11 @@
+[Unit]
+Description=Create and verify the daily Alcove backup
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+Nice=10
+ExecStart=/srv/alcove/current/scripts/backup-codicam.sh

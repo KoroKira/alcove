@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Alcove backup schedule
+
+[Timer]
+OnCalendar=*-*-* 03:17:00
+Persistent=true
+RandomizedDelaySec=5m
+Unit=alcove-backup.service
+
+[Install]
+WantedBy=timers.target
