@@ -410,6 +410,32 @@ async function followupQuestions(
  * token context without pushing the answer against num_predict. */
 const AGENTIC_MAX_SOURCES = 8;
 
+/** Exact marker questions are simple extraction tasks. Small local models can
+ * incorrectly deny that a marker is present even when retrieval returned it;
+ * answer these directly from a retrieved excerpt and cite that excerpt. */
+function exactMarkerAnswer(
+  question: string,
+  sources: AgenticSource[],
+  lang: 'fr' | 'en',
+): string | null {
+  const asksForExactMarker = lang === 'fr'
+    ? /\b(?:marqueur|marker)\b.{0,60}\bexact(?:e|ement)?\b|\bexact(?:e|ement)?\b.{0,60}\b(?:marqueur|marker)\b/i.test(question)
+    : /\bmarker\b.{0,60}\bexact(?:ly)?\b|\bexact(?:ly)?\b.{0,60}\bmarker\b/i.test(question);
+  if (!asksForExactMarker) return null;
+
+  for (const source of sources) {
+    const line = source.chunk_text.split(/\r?\n/).find(candidate =>
+      /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/.test(candidate),
+    )?.trim();
+    if (line) {
+      return lang === 'fr'
+        ? `Le marqueur exact est « ${line} » [[${source.n}]].`
+        : `The exact marker string is “${line}” [[${source.n}]].`;
+    }
+  }
+  return null;
+}
+
 export async function agenticRagChat(
   chatModel: string,
   question: string,
@@ -485,6 +511,12 @@ export async function agenticRagChat(
     detail: lang === 'fr' ? `${sources.length} sources trouvées` : `${sources.length} sources found`,
   };
   callbacks.onSteps?.([...steps]);
+
+  const exactMarker = exactMarkerAnswer(question, sources, lang);
+  if (exactMarker) {
+    callbacks.onChunk(exactMarker);
+    return;
+  }
 
   // 3. Memory preamble (best-effort)
   const { fetchChatPreamble } = await import('../hooks/useOllama');
