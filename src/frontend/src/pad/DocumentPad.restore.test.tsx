@@ -24,6 +24,30 @@ function response(body: unknown): Response {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); });
 
 describe('DocumentPad restored revision', () => {
+  it('retries an unsaved document after network reconnection', async () => {
+    let attempts = 0;
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/backlinks')) return response({ backlinks: [] });
+      if (init?.method === 'PUT') {
+        attempts += 1;
+        if (attempts === 1) throw new Error('offline');
+        return response({ updated_at: 'version-2' });
+      }
+      return response({ content: 'Original document', updated_at: 'version-1' });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<DocumentPad padId="offline-document" />);
+    const editor = await screen.findByDisplayValue('Original document');
+
+    window.dispatchEvent(new Event('offline'));
+    fireEvent.change(editor, { target: { value: 'Saved after reconnect' } });
+    await waitFor(() => expect(attempts).toBe(1), { timeout: 2000 });
+    window.dispatchEvent(new Event('online'));
+
+    await waitFor(() => expect(attempts).toBe(2), { timeout: 3000 });
+    expect(screen.getByText('editor.saved')).toBeInTheDocument();
+  });
+
   it('retries a save after a rename advances only the server timestamp', async () => {
     let serverVersion = 'version-1';
     let serverContent = 'Original document';

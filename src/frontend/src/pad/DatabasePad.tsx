@@ -3,6 +3,7 @@ import { Plus, Trash2, Table2, Columns3, X } from 'lucide-react';
 import { snapshotDomPad } from '../lib/thumbnailSnapshot';
 import { enqueueSerializedSave } from '../lib/saveQueue';
 import { retryStructuredSaveAfterMetadataChange } from '../lib/metadataConflict';
+import { useRetryOnReconnect } from '../hooks/useRetryOnReconnect';
 import { advanceStructuredPadDraftVersion, clearStructuredPadDraft, fetchAndSnapshotStructuredPadVersion, hasStructuredPadDraft, isStructuredPadDraftStale, readStructuredPadDraftRecord, removeStructuredPadDraft, UNKNOWN_STRUCTURED_DRAFT_BASELINE, writeStructuredPadDraft } from '../lib/structuredPadDraft';
 import './DatabasePad.scss';
 
@@ -107,6 +108,8 @@ export default function DatabasePad({ padId, data, onDataChange }: Props) {
       });
     }, 400);
   }, [padId, onDataChange]);
+
+  useRetryOnReconnect(Boolean(saveError) && !conflict, () => commit(local));
 
   const discardDraftAndLoadServer = () => {
     if (saveTimer.current) clearTimeout(saveTimer.current);

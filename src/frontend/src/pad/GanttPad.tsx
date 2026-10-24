@@ -6,6 +6,7 @@ import { uid, PRIORITY_LABELS, PRIORITY_COLORS, FIELD_TYPE_LABELS } from './fiel
 import { snapshotDomPad } from '../lib/thumbnailSnapshot';
 import { enqueueSerializedSave } from '../lib/saveQueue';
 import { retryStructuredSaveAfterMetadataChange } from '../lib/metadataConflict';
+import { useRetryOnReconnect } from '../hooks/useRetryOnReconnect';
 import { advanceStructuredPadDraftVersion, clearStructuredPadDraft, fetchAndSnapshotStructuredPadVersion, hasStructuredPadDraft, isStructuredPadDraftStale, readStructuredPadDraftRecord, removeStructuredPadDraft, UNKNOWN_STRUCTURED_DRAFT_BASELINE, writeStructuredPadDraft } from '../lib/structuredPadDraft';
 import './GanttPad.scss';
 
@@ -527,6 +528,8 @@ export default function GanttPad({ padId, data, onDataChange }: Props) {
       });
     }, SAVE_DEBOUNCE);
   }, [padId, onDataChange]);
+
+  useRetryOnReconnect(Boolean(saveError) && !conflict, () => save(tasks, schema, templates));
 
   const discardDraftAndLoadServer = () => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
