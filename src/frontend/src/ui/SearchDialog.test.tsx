@@ -1,4 +1,6 @@
+import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiV1, type ApiSearchResult } from '../api/client';
 import SearchDialog from './SearchDialog';
@@ -23,6 +25,32 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => { vi.useRealTimers(); vi.clearAllMocks(); });
 
 describe('SearchDialog', () => {
+  it('keeps keyboard focus inside the dialog and restores it to the opener', () => {
+    function Harness() {
+      const [open, setOpen] = React.useState(false);
+      return (
+        <>
+          <button onClick={() => setOpen(true)}>Open search</button>
+          {open && <SearchDialog onClose={() => setOpen(false)} onSelectPad={vi.fn()} />}
+        </>
+      );
+    }
+
+    render(<Harness />);
+    const opener = screen.getByRole('button', { name: 'Open search' });
+    opener.focus();
+    fireEvent.click(opener);
+
+    const input = screen.getByRole('textbox');
+    expect(input).toHaveFocus();
+    fireEvent.keyDown(input, { key: 'Tab', shiftKey: true });
+    expect(input).toHaveFocus();
+
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+  });
+
   it('shows a useful error instead of a false no-results state', async () => {
     vi.mocked(apiV1.search).mockRejectedValueOnce(new Error('offline'));
     render(<SearchDialog onClose={vi.fn()} onSelectPad={vi.fn()} />);
@@ -75,7 +103,13 @@ describe('SearchDialog', () => {
     });
 
     expect(screen.getByRole('dialog', { name: 'search.placeholder' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /A matching excerpt/ }));
+    const excerpt = screen.getByRole('button', { name: /A matching excerpt/ });
+    vi.useRealTimers();
+    const user = userEvent.setup();
+    await user.tab();
+    await user.tab();
+    expect(excerpt).toHaveFocus();
+    await user.keyboard('{Enter}');
     expect(onSelectPad).toHaveBeenCalledWith('pad-1');
     expect(onClose).toHaveBeenCalledOnce();
   });
