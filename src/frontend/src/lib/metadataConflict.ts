@@ -16,7 +16,10 @@ export async function retryStructuredSaveAfterMetadataChange(
     const { updated_at: _version, ...body } = value as Record<string, unknown>;
     return body;
   };
-  if (JSON.stringify(withoutVersion(latest.data)) !== JSON.stringify(withoutVersion(persistedData))) return null;
+  // Structured endpoints wrap content under `data`; the LaTeX endpoint
+  // returns its single-field body at the top level for historical clients.
+  const latestData = latest?.data ?? (typeof latest?.source === 'string' ? { source: latest.source } : undefined);
+  if (JSON.stringify(withoutVersion(latestData)) !== JSON.stringify(withoutVersion(persistedData))) return null;
   return request(`/api/pad/${padId}/data`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },

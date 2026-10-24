@@ -31,4 +31,19 @@ describe('structured pad metadata conflicts', () => {
     expect(result).toBeNull();
     expect(request).toHaveBeenCalledTimes(1);
   });
+
+  it('recognizes the legacy top-level LaTeX response shape after a rename', async () => {
+    const request = vi.fn()
+      .mockResolvedValueOnce(response({ source: 'saved source', updated_at: 'version-2' }))
+      .mockResolvedValueOnce(response({ updated_at: 'version-3' }));
+    const result = await retryStructuredSaveAfterMetadataChange(
+      'latex-pad', { source: 'saved source' }, { source: 'new source' }, request,
+    );
+
+    expect(result?.ok).toBe(true);
+    expect(request).toHaveBeenLastCalledWith('/api/pad/latex-pad/data', expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify({ data: { source: 'new source' }, expected_updated_at: 'version-2' }),
+    }));
+  });
 });

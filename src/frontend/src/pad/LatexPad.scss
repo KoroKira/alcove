@@ -30,6 +30,35 @@
   gap: 8px;
 }
 
+.latex-pad__save-alert {
+  align-items: center;
+  background: var(--color-surface-mid, var(--ap-bg2));
+  border-bottom: 1px solid var(--color-surface-high, var(--ap-bg3));
+  color: var(--color-on-surface, var(--ap-text0));
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 8px;
+  padding: 8px 12px;
+
+  button {
+    background: transparent;
+    border: 1px solid var(--color-surface-high, var(--ap-bg3));
+    border-radius: var(--ap-radius-sm);
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    min-height: 36px;
+    padding: 5px 10px;
+
+    &:focus-visible {
+      outline: 2px solid currentColor;
+      outline-offset: 2px;
+    }
+  }
+}
+
 .latex-pad__title {
   color: var(--color-on-surface-low, var(--ap-text2));
   font-size: 12px;
