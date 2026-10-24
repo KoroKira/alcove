@@ -2,6 +2,7 @@ from typing import Optional, Dict, Any, Tuple
 import json
 import logging
 import time
+import hashlib
 import jwt
 from jwt.jwks_client import PyJWKClient
 import httpx
@@ -84,6 +85,41 @@ class Session:
         except Exception:
             logger.exception("Error deleting session")
             return False
+
+    @staticmethod
+    def _oauth_state_key(state: str) -> str:
+        # Keep the bearer-like state value out of Redis key names and logs.
+        digest = hashlib.sha256(state.encode("utf-8")).hexdigest()
+        return f"oauth_state:{digest}"
+
+    async def set_oauth_state(self, state: str, session_id: str, return_mode: str) -> bool:
+        """Store one short-lived OIDC flow, independent of the browser session cookie.
+
+        Browsers share cookies across tabs. A second login attempt can therefore
+        replace session_id while the first tab is at the identity provider. The
+        callback must resolve the session from its own one-time state instead.
+        """
+        try:
+            await self.redis_client.setex(
+                self._oauth_state_key(state),
+                600,
+                json.dumps({"session_id": session_id, "return_mode": return_mode}),
+            )
+            return True
+        except Exception:
+            logger.exception("Error storing OIDC state")
+            return False
+
+    async def consume_oauth_state(self, state: str) -> Optional[Dict[str, Any]]:
+        """Atomically retrieve and delete a short-lived OIDC state record."""
+        try:
+            value = await self.redis_client.getdel(self._oauth_state_key(state))
+            return json.loads(value) if value else None
+        except json.JSONDecodeError:
+            logger.exception("Error decoding OIDC state")
+        except Exception:
+            logger.exception("Error consuming OIDC state")
+        return None
 
     def get_auth_url(self, state: str) -> str:
         """
