@@ -27,10 +27,27 @@ describe('Obsidian wikilinks', () => {
     });
   });
 
+  it('prefers the current folder when a title exists in multiple folders', () => {
+    expect(resolveWikiLink('Overview', tabs, 'Projects/Design')?.id).toBe('two');
+    expect(resolveWikiLink('Overview', tabs, 'Projects/Research')).toBeUndefined();
+    const withRoot = [...tabs, { id: 'root', title: 'Overview', folder: '' }];
+    expect(resolveWikiLink('Overview', withRoot, '')?.id).toBe('root');
+  });
+
+  it('resolves relative vault paths and rejects traversal above the vault root', () => {
+    expect(resolveWikiLink('../Design/Overview', tabs, 'Projects/Launch')?.id).toBe('two');
+    expect(resolveWikiLink('./Overview', tabs, 'Projects/Design')?.id).toBe('two');
+    expect(resolveWikiLink('../../../Overview', tabs, 'Projects/Launch')).toBeUndefined();
+  });
+
   it('finds folder-qualified transclusions and deduplicates repeated references', () => {
     expect(findTransclusionTargets(
       '![[Projects/Design/Overview#Architecture|Design]] and ![[Projects/Design/Overview]]',
       tabs,
     ).map(tab => tab.id)).toEqual(['two']);
+  });
+
+  it('uses the source folder when selecting a same-named transclusion', () => {
+    expect(findTransclusionTargets('![[Overview]]', tabs, 'Projects/Design').map(tab => tab.id)).toEqual(['two']);
   });
 });
