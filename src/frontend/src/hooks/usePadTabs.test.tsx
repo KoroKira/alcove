@@ -120,4 +120,40 @@ describe('usePadTabs pad creation', () => {
     unmount();
     queryClient.clear();
   });
+
+  it('preserves the folder list and selects the daily note', async () => {
+    const dailyPad = {
+      id: 'pad-daily',
+      display_name: '2026-10-24',
+      owner_id: 'user-1',
+      sharing_policy: SharingPolicy.PRIVATE,
+      created_at: '2026-10-24T00:00:00Z',
+      updated_at: '2026-10-24T00:00:00Z',
+      pad_type: 'document',
+      folder: 'Journal',
+    };
+    const serverPads = [existingPad];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/users/me') {
+        return response({ pads: serverPads, folders: ['Projects', 'Journal'], last_selected_pad: 'pad-existing' });
+      }
+      if (url === '/api/pad/daily') return response(dailyPad);
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { queryClient, wrapper } = makeWrapper();
+    const { result, unmount } = renderHook(() => usePadTabs(true), { wrapper });
+
+    await waitFor(() => expect(result.current.folders).toEqual(['Projects', 'Journal']));
+    serverPads.push(dailyPad);
+    await act(async () => { await result.current.createDailyNote(); });
+
+    await waitFor(() => expect(result.current.tabs.some(tab => tab.id === 'pad-daily')).toBe(true));
+    expect(result.current.selectedTabId).toBe('pad-daily');
+    expect(result.current.folders).toEqual(['Projects', 'Journal']);
+
+    unmount();
+    queryClient.clear();
+  });
 });
