@@ -105,6 +105,22 @@ describe('ObsidianImport', () => {
     opener.remove();
   });
 
+  it('returns focus to the stable Add control when the opener was unmounted', () => {
+    const opener = document.createElement('button');
+    const fallback = document.createElement('button');
+    fallback.dataset.focusReturn = 'add';
+    document.body.append(opener, fallback);
+    opener.focus();
+    const { unmount } = render(<ObsidianImport onClose={vi.fn()} onImported={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: 'Fermer l’import' })).toHaveFocus();
+    opener.remove();
+    unmount();
+
+    expect(fallback).toHaveFocus();
+    fallback.remove();
+  });
+
   it('prevents accidental dismissal while files are being imported', async () => {
     let resolveFetch: ((value: Response) => void) | undefined;
     const fetchMock = vi.fn(() => new Promise<Response>(resolve => { resolveFetch = resolve; }));
