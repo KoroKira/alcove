@@ -27,7 +27,7 @@ export default function ObsidianImport({ onClose, onImported }: Props) {
     const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeRef.current?.focus();
     return () => {
-      const destination = trigger?.isConnected
+      const destination = trigger?.isConnected && trigger !== document.body && trigger !== document.documentElement
         ? trigger
         : document.querySelector<HTMLElement>('[data-focus-return="add"]');
       destination?.focus();
