@@ -127,6 +127,8 @@
     "edit": "Edit",
     "split": "Split",
     "preview": "Preview",
+    "markdownEditorLabel": "Markdown editor",
+    "latexEditorLabel": "LaTeX editor",
     "words": "{{count}} word",
     "words_plural": "{{count}} words",
     "readingTime": "{{min}} min read",
