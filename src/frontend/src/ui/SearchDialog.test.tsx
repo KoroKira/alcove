@@ -63,6 +63,7 @@ describe('SearchDialog', () => {
     });
 
     expect(screen.getByRole('alert')).toHaveTextContent('Recherche indisponible');
+    expect(screen.getByRole('textbox', { name: 'search.placeholder' })).toBeInTheDocument();
     expect(screen.queryByText('search.noResults')).not.toBeInTheDocument();
   });
 
@@ -103,6 +104,7 @@ describe('SearchDialog', () => {
     });
 
     expect(screen.getByRole('dialog', { name: 'search.placeholder' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('search.matches');
     const excerpt = screen.getByRole('button', { name: /A matching excerpt/ });
     vi.useRealTimers();
     const user = userEvent.setup();

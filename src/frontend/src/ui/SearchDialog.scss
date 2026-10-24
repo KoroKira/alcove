@@ -38,10 +38,16 @@
     padding: 4px 0;
   }
 
-  &__loading, &__empty {
+  &__loading, &__empty, &__count {
     padding: 16px 20px;
     color: var(--ap-overlay0);
     font-size: 14px;
+  }
+
+  &__count {
+    padding-block: 8px;
+    font-size: 12px;
+    border-bottom: 1px solid var(--ap-bg2);
   }
 
   &__error {
