@@ -14,13 +14,49 @@ export default function ObsidianImport({ onClose, onImported }: Props) {
   const [progress, setProgress] = useState(0);
   const [total, setTotal] = useState(0);
   const [done, setDone] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [emptyError, setEmptyError] = useState('');
   const importKeys = useRef<WeakMap<File, string>>(new WeakMap());
   const fileRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  React.useEffect(() => {
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    closeRef.current?.focus();
+    return () => { if (trigger?.isConnected) trigger.focus(); };
+  }, []);
+
+  const close = () => {
+    if (!importing) onClose();
+  };
+
+  const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), a[href], input:not(:disabled):not([type="file"]), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]',
+    ) ?? []);
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
+    }
+  };
 
   const runImport = async (files: File[], retry = false) => {
+    if (importing) return;
     const mdFiles = files.filter(file => {
       if (!/\.md$/i.test(file.name)) return false;
       const path = (file as File & { webkitRelativePath?: string }).webkitRelativePath || '';
@@ -40,21 +76,27 @@ export default function ObsidianImport({ onClose, onImported }: Props) {
       setResults([]);
       setFailedFiles([]);
     }
-    const imported = await importObsidianFiles(mdFiles, setProgress, fetch, importKeys.current);
-    const fileByIdempotencyKey = new Map(mdFiles.map(file => [importKeys.current.get(file), file]));
-    setFailedFiles(imported.flatMap(result => result.error && result.idempotencyKey && fileByIdempotencyKey.has(result.idempotencyKey)
-      ? [fileByIdempotencyKey.get(result.idempotencyKey)!]
-      : []));
-    setResults(current => {
-      if (!retry) return imported;
-      const bySource = new Map(current.map(result => [result.idempotencyKey || result.sourceKey, result]));
-      imported.forEach(result => bySource.set(result.idempotencyKey || result.sourceKey, result));
-      return [...bySource.values()];
-    });
+    setImporting(true);
+    closeRef.current?.focus();
+    try {
+      const imported = await importObsidianFiles(mdFiles, setProgress, fetch, importKeys.current);
+      const fileByIdempotencyKey = new Map(mdFiles.map(file => [importKeys.current.get(file), file]));
+      setFailedFiles(imported.flatMap(result => result.error && result.idempotencyKey && fileByIdempotencyKey.has(result.idempotencyKey)
+        ? [fileByIdempotencyKey.get(result.idempotencyKey)!]
+        : []));
+      setResults(current => {
+        if (!retry) return imported;
+        const bySource = new Map(current.map(result => [result.idempotencyKey || result.sourceKey, result]));
+        imported.forEach(result => bySource.set(result.idempotencyKey || result.sourceKey, result));
+        return [...bySource.values()];
+      });
 
-    setDone(true);
-    const ids = imported.flatMap(result => result.id ? [result.id] : []);
-    if (ids.length) onImported(ids);
+      setDone(true);
+      const ids = imported.flatMap(result => result.id ? [result.id] : []);
+      if (ids.length) onImported(ids);
+    } finally {
+      setImporting(false);
+    }
   };
 
   const handleFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -73,11 +115,19 @@ export default function ObsidianImport({ onClose, onImported }: Props) {
   const pct = total ? Math.round((progress / total) * 100) : 0;
 
   return (
-    <div className="obs-import__backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="obs-import__panel" role="dialog" aria-modal="true" aria-labelledby="obs-import-title">
+    <div className="obs-import__backdrop" onClick={e => { if (e.target === e.currentTarget) close(); }}>
+      <div ref={dialogRef} onKeyDown={handleDialogKeyDown} className="obs-import__panel" role="dialog" aria-modal="true" aria-busy={importing} aria-labelledby="obs-import-title">
         <div className="obs-import__header">
           <span id="obs-import-title" className="obs-import__header-title"><Upload size={13} /> Importer depuis Obsidian</span>
-          <button className="obs-import__close" aria-label="Fermer l’import" onClick={onClose}><X size={14} /></button>
+          <button
+            ref={closeRef}
+            className="obs-import__close"
+            type="button"
+            aria-label={importing ? 'Import en cours, fermeture indisponible' : 'Fermer l’import'}
+            aria-disabled={importing}
+            title={importing ? 'Attends la fin de l’import pour fermer cette fenêtre.' : undefined}
+            onClick={close}
+          ><X size={14} /></button>
         </div>
 
         {!total ? (
@@ -154,7 +204,7 @@ export default function ObsidianImport({ onClose, onImported }: Props) {
                 Réessayer les {failedFiles.length} échec{failedFiles.length > 1 ? 's' : ''}
               </button>
             )}
-            <button className="obs-import__btn" onClick={onClose}>Fermer</button>
+            <button className="obs-import__btn" type="button" onClick={close}>Fermer</button>
           </div>
         )}
       </div>

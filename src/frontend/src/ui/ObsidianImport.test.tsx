@@ -82,6 +82,57 @@ describe('ObsidianImport', () => {
     expect(screen.getByRole('button', { name: 'Fermer l’import' })).toBeInTheDocument();
   });
 
+  it('keeps keyboard focus inside the dialog and restores the opener when closed', () => {
+    const opener = document.createElement('button');
+    document.body.appendChild(opener);
+    opener.focus();
+    const onClose = vi.fn();
+    const { unmount } = render(<ObsidianImport onClose={onClose} onImported={vi.fn()} />);
+    const close = screen.getByRole('button', { name: 'Fermer l’import' });
+    const folder = screen.getByRole('button', { name: 'Sélectionner un dossier' });
+    const dialog = screen.getByRole('dialog', { name: 'Importer depuis Obsidian' });
+
+    expect(close).toHaveFocus();
+    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+    expect(folder).toHaveFocus();
+    fireEvent.keyDown(dialog, { key: 'Tab' });
+    expect(close).toHaveFocus();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    unmount();
+    expect(opener).toHaveFocus();
+    opener.remove();
+  });
+
+  it('prevents accidental dismissal while files are being imported', async () => {
+    let resolveFetch: ((value: Response) => void) | undefined;
+    const fetchMock = vi.fn(() => new Promise<Response>(resolve => { resolveFetch = resolve; }));
+    vi.stubGlobal('fetch', fetchMock);
+    const onClose = vi.fn();
+    const { container } = render(<ObsidianImport onClose={onClose} onImported={vi.fn()} />);
+    const folderInput = container.querySelector('input[webkitdirectory]')!;
+    fireEvent.change(folderInput, {
+      target: { files: [note('Vault/Only.md', '# Test')] },
+    });
+
+    const dialog = screen.getByRole('dialog', { name: 'Importer depuis Obsidian' });
+    const close = await screen.findByRole('button', { name: 'Import en cours, fermeture indisponible' });
+    expect(dialog).toHaveAttribute('aria-busy', 'true');
+    expect(close).toHaveAttribute('aria-disabled', 'true');
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(container.querySelector('.obs-import__backdrop')!);
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    fireEvent.click(close);
+    expect(onClose).not.toHaveBeenCalled();
+
+    resolveFetch?.(response('pad-only'));
+    expect(await screen.findByText('1 note importée ✓')).toBeInTheDocument();
+    expect(dialog).toHaveAttribute('aria-busy', 'false');
+    expect(screen.getByRole('button', { name: 'Fermer l’import' })).toHaveAttribute('aria-disabled', 'false');
+  });
+
   it('continues after a failed note and shows the per-note error', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({
