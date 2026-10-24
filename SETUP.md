@@ -358,13 +358,34 @@ ne sont pas pris dans une transaction commune. Pour un point de restauration
 avant migration, arrêter `pad`; pour une copie strictement cohérente incluant
 l'administration des identités, suspendre aussi les modifications Keycloak.
 
-Pour programmer une sauvegarde, adapter les chemins réels et le compte qui a
-accès à Docker; vérifier manuellement le premier passage avant d'ajouter un cron.
-Exemple avec un checkout fixe :
+Pour programmer une sauvegarde quotidienne sur l'installation par releases,
+utiliser les unités systemd fournies. Elles lancent le script avec le compte
+root, nécessaire ici pour accéder à Docker, et conservent les journaux dans
+journalctl. Le timer rattrape une échéance manquée au redémarrage et ajoute un
+retard aléatoire de cinq minutes pour éviter un démarrage simultané avec d'autres
+tâches.
 
-```cron
-17 3 * * * /srv/alcove/scripts/backup-codicam.sh >> /srv/backups/alcove/backup.log 2>&1
+Après avoir adapté `ExecStart` dans `deploy/systemd/alcove-backup.service` si le
+chemin d'installation diffère, sauvegarder les éventuelles unités déjà présentes,
+puis installer et valider :
+
+```sh
+sudo install -o root -g root -m 644 deploy/systemd/alcove-backup.service /etc/systemd/system/alcove-backup.service
+sudo install -o root -g root -m 644 deploy/systemd/alcove-backup.timer /etc/systemd/system/alcove-backup.timer
+sudo systemd-analyze verify /etc/systemd/system/alcove-backup.service /etc/systemd/system/alcove-backup.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now alcove-backup.timer
+sudo systemctl start alcove-backup.service
+sudo systemctl --no-pager status alcove-backup.timer alcove-backup.service
 ```
+
+Vérifier que la dernière sauvegarde est complète avec `sha256sum -c SHA256SUMS`
+depuis son répertoire. Surveiller `sudo journalctl -u alcove-backup.service` et
+l'espace libre. Pour désactiver le calendrier, exécuter
+`sudo systemctl disable --now alcove-backup.timer`; pour retirer les unités,
+supprimer leurs fichiers sous `/etc/systemd/system/` puis lancer
+`sudo systemctl daemon-reload`. Restaurer les copies préalablement sauvegardées
+si des unités existaient avant l'installation.
 
 Tester une restauration sur **de nouveaux chemins de données et un projet
 Compose isolé**, sans toucher aux volumes d'origine :
