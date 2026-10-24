@@ -86,10 +86,8 @@ async def login(
     session_id = secrets.token_urlsafe(32)
     state_nonce = secrets.token_urlsafe(32)
     return_mode = "popup" if popup == "1" else "default"
-    await session_domain.set(session_id, {
-        "oauth_state": state_nonce,
-        "return_mode": return_mode,
-    }, 600)
+    if not await session_domain.set_oauth_state(state_nonce, session_id, return_mode):
+        raise HTTPException(status_code=500, detail="Could not start authentication")
 
     auth_url = session_domain.get_auth_url(state_nonce)
 
@@ -109,12 +107,10 @@ async def callback(
     state: str,
     session_domain: Session = Depends(get_session_domain)
 ):
-    session_id = request.cookies.get('session_id')
-    if not session_id:
-        raise HTTPException(status_code=400, detail="No session")
-    pending = await session_domain.get(session_id)
-    if not pending or not secrets.compare_digest(str(pending.get("oauth_state", "")), state):
+    pending = await session_domain.consume_oauth_state(state)
+    if not pending or not pending.get("session_id"):
         raise HTTPException(status_code=400, detail="Invalid authentication state")
+    session_id = pending["session_id"]
     return_mode = pending.get("return_mode", "default")
     
     # Exchange code for token
