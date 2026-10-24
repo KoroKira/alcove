@@ -58,6 +58,7 @@ interface Props {
 /* ─── Constants ─── */
 
 const CARD_COLORS = ['', '#f38ba8', '#fab387', '#f9e2af', '#a6e3a1', '#89dceb', '#89b4fa', '#cba6f7'];
+const CARD_COLOR_LABELS = ['Aucune', 'Rose', 'Orange', 'Jaune', 'Vert', 'Cyan', 'Bleu', 'Violet'];
 const SAVE_DEBOUNCE = 600;
 const PRIORITIES: Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
 
@@ -90,6 +91,7 @@ interface CardModalProps {
 }
 
 function CardModal({ card, columns, currentColumnId, schema, templates, onSave, onMoveColumn, onDelete, onSaveAsTemplate, onSchemaChange, onClose }: CardModalProps) {
+  const modalRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<KanbanCard>({ ...card });
   const [saveTplName, setSaveTplName] = useState('');
   const [showSaveTpl, setShowSaveTpl] = useState(false);
@@ -107,7 +109,31 @@ function CardModal({ card, columns, currentColumnId, schema, templates, onSave, 
   };
 
   useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') handleSave(); };
+    const h = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleSave();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+
+      const focusable = modalRef.current?.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable?.length) {
+        e.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || !modalRef.current?.contains(active))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (active === last || !modalRef.current?.contains(active))) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [draft]);
@@ -126,23 +152,32 @@ function CardModal({ card, columns, currentColumnId, schema, templates, onSave, 
 
   return (
     <div className="card-modal__backdrop" onClick={handleBackdrop}>
-      <div className="card-modal" onClick={e => e.stopPropagation()}>
+      <div
+        className="card-modal"
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={draft.title.trim() ? `Modifier la carte ${draft.title}` : 'Nouvelle carte'}
+        onClick={e => e.stopPropagation()}
+      >
         {/* Header: priority + close */}
         <div className="card-modal__header">
           <select
             className="card-modal__priority-sel"
+            aria-label="Priorité de la carte"
             value={draft.priority ?? 'none'}
             onChange={e => upd({ priority: e.target.value as Priority })}
             style={{ borderLeftColor: PRIORITY_COLORS[draft.priority ?? 'none'] }}
           >
             {PRIORITIES.map(p => <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>)}
           </select>
-          <button className="card-modal__close" onClick={handleSave}><X size={15} /></button>
+          <button className="card-modal__close" aria-label="Enregistrer et fermer la carte" onClick={handleSave}><X size={15} /></button>
         </div>
 
         {/* Title */}
         <textarea
           className="card-modal__title"
+          aria-label="Titre de la carte"
           value={draft.title}
           onChange={e => upd({ title: e.target.value })}
           placeholder="Titre de la carte"
@@ -164,10 +199,13 @@ function CardModal({ card, columns, currentColumnId, schema, templates, onSave, 
 
         {/* Color strip */}
         <div className="card-modal__colors">
-          {CARD_COLORS.map(c => (
+          {CARD_COLORS.map((c, index) => (
             <button
               key={c || 'none'}
               className={`card-modal__color-dot${draft.color === c ? ' card-modal__color-dot--active' : ''}`}
+              type="button"
+              aria-label={`Couleur ${CARD_COLOR_LABELS[index]}`}
+              aria-pressed={draft.color === c || (!draft.color && !c)}
               style={{ background: c || 'var(--color-surface-high, #45475a)' }}
               onClick={() => upd({ color: c || undefined })}
             />
@@ -179,6 +217,7 @@ function CardModal({ card, columns, currentColumnId, schema, templates, onSave, 
           <div className="card-modal__section-label">Description</div>
           <textarea
             className="card-modal__desc"
+            aria-label="Description de la carte"
             value={draft.desc ?? ''}
             onChange={e => upd({ desc: e.target.value })}
             placeholder="Ajouter une description…"
@@ -192,12 +231,13 @@ function CardModal({ card, columns, currentColumnId, schema, templates, onSave, 
           <div className="card-modal__due-row">
             <input
               type="date"
+              aria-label="Échéance de la carte"
               className={`card-modal__date-input${overdue ? ' card-modal__date-input--overdue' : ''}`}
               value={draft.dueDate ?? ''}
               onChange={e => upd({ dueDate: e.target.value || undefined })}
             />
             {draft.dueDate && (
-              <button className="card-modal__date-clear" onClick={() => upd({ dueDate: undefined })}><X size={10} /></button>
+              <button className="card-modal__date-clear" aria-label="Effacer l’échéance" onClick={() => upd({ dueDate: undefined })}><X size={10} /></button>
             )}
           </div>
         </div>
@@ -221,13 +261,14 @@ function CardModal({ card, columns, currentColumnId, schema, templates, onSave, 
             <div className="card-modal__add-field-form">
               <input
                 autoFocus
+                aria-label="Nom de la propriété"
                 placeholder="Nom de la propriété"
                 value={newFieldName}
                 onChange={e => setNewFieldName(e.target.value)}
                 className="card-modal__field-input"
                 onKeyDown={e => { if (e.key === 'Enter') commitNewField(); if (e.key === 'Escape') setAddingField(false); }}
               />
-              <select value={newFieldType} onChange={e => setNewFieldType(e.target.value as FieldType)} className="card-modal__field-type">
+              <select aria-label="Type de propriété" value={newFieldType} onChange={e => setNewFieldType(e.target.value as FieldType)} className="card-modal__field-type">
                 {(Object.keys(FIELD_TYPE_LABELS) as FieldType[]).map(t => (
                   <option key={t} value={t}>{FIELD_TYPE_LABELS[t]}</option>
                 ))}
@@ -235,6 +276,7 @@ function CardModal({ card, columns, currentColumnId, schema, templates, onSave, 
               {newFieldType === 'select' && (
                 <input
                   placeholder="Options séparées par virgule"
+                  aria-label="Options de la propriété"
                   value={newFieldOptions}
                   onChange={e => setNewFieldOptions(e.target.value)}
                   className="card-modal__field-input"
@@ -267,7 +309,7 @@ function CardModal({ card, columns, currentColumnId, schema, templates, onSave, 
             {showSaveTpl ? (
               <div className="card-modal__save-tpl">
                 <input
-                  autoFocus placeholder="Nom du modèle" value={saveTplName}
+                  autoFocus aria-label="Nom du modèle" placeholder="Nom du modèle" value={saveTplName}
                   onChange={e => setSaveTplName(e.target.value)}
                   className="card-modal__tpl-input"
                   onKeyDown={e => {
@@ -315,19 +357,27 @@ function Card({
   return (
     <div
       className="kanban__card"
+      role="group"
+      aria-label={`Carte : ${card.title || 'Sans titre'}`}
       style={{
         borderLeftColor: card.color || (priority !== 'none' ? priorityColor : 'transparent'),
       }}
       draggable
       onDragStart={e => { e.stopPropagation(); onDragStart(card.id, colId); }}
       onDragEnd={onDragEnd}
-      onClick={onEdit}
     >
       <div className="kanban__card-top">
         <GripVertical size={12} className="kanban__card-grip" onClick={e => e.stopPropagation()} />
-        <span className="kanban__card-title">{card.title}</span>
+        <button
+          type="button"
+          className="kanban__card-title kanban__card-title-button"
+          aria-label={`Modifier la carte ${card.title || 'Sans titre'}`}
+          onClick={onEdit}
+        >{card.title || 'Sans titre'}</button>
         <button
           className="kanban__card-del"
+          type="button"
+          aria-label={`Supprimer la carte ${card.title || 'Sans titre'}`}
           onClick={e => { e.stopPropagation(); onDelete(); }}
           title="Supprimer"
         >
@@ -415,6 +465,7 @@ function Column({
         {editTitle ? (
           <input
             autoFocus
+            aria-label={`Nom de la colonne ${col.title}`}
             className="kanban__col-title kanban__inline-input"
             value={titleDraft}
             onChange={e => setTitleDraft(e.target.value)}
@@ -425,7 +476,7 @@ function Column({
           <span className="kanban__col-title" onDoubleClick={() => setEditTitle(true)}>{col.title}</span>
         )}
         <span className="kanban__col-count">{col.cards.length}</span>
-        <button className="kanban__col-del" onClick={onDelete} title="Supprimer">
+        <button className="kanban__col-del" type="button" aria-label={`Supprimer la colonne ${col.title}`} onClick={onDelete} title="Supprimer">
           <Trash2 size={12} />
         </button>
       </div>
@@ -453,6 +504,9 @@ function Column({
           <div className="kanban__tpl-wrap">
             <button
               className="kanban__tpl-btn"
+              type="button"
+              aria-label={`Modèles pour la colonne ${col.title}`}
+              aria-expanded={showTplMenu}
               onClick={() => setShowTplMenu(v => !v)}
               title="Depuis un modèle"
             >

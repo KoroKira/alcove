@@ -147,7 +147,15 @@ describe('KanbanPad mobile card movement', () => {
       />,
     );
 
-    fireEvent.click(screen.getByText('Préparer la démo'));
+    fireEvent.click(screen.getByRole('button', { name: 'Modifier la carte Préparer la démo' }));
+    expect(screen.getByRole('dialog', { name: 'Modifier la carte Préparer la démo' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Enregistrer et fermer la carte' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Couleur Rose' })).toHaveAttribute('aria-pressed', 'false');
+    const dialog = screen.getByRole('dialog', { name: 'Modifier la carte Préparer la démo' });
+    const lastAction = screen.getByRole('button', { name: 'Supprimer la carte Préparer la démo' });
+    lastAction.focus();
+    fireEvent.keyDown(lastAction, { key: 'Tab' });
+    expect(dialog.querySelector('select')).toHaveFocus();
     fireEvent.change(screen.getByRole('combobox', { name: 'Colonne' }), { target: { value: 'done' } });
 
     expect(screen.queryByRole('combobox', { name: 'Colonne' })).not.toBeInTheDocument();
@@ -158,6 +166,27 @@ describe('KanbanPad mobile card movement', () => {
     const saved = JSON.parse(fetchMock.mock.calls[0][0] && (fetchMock.mock.calls[0][1]?.body as string)).data;
     expect(saved.columns[0].cards).toHaveLength(0);
     expect(saved.columns[1].cards).toEqual([{ id: 'card-1', title: 'Préparer la démo' }]);
+  });
+});
+
+describe('GanttPad keyboard access', () => {
+  it('opens task details with the keyboard and names the details panel', () => {
+    render(
+      <GanttPad
+        padId="gantt-keyboard"
+        data={{
+          tasks: [{ id: 'task-1', name: 'Préparer la démo', start: '2026-10-24', end: '2026-10-25', progress: 0 }],
+          updated_at: 'version-a',
+        }}
+        onDataChange={vi.fn()}
+      />,
+    );
+
+    const task = screen.getByRole('button', { name: 'Ouvrir les détails de la tâche Préparer la démo' });
+    fireEvent.keyDown(task, { key: 'Enter' });
+
+    expect(screen.getByRole('region', { name: 'Détails de la tâche Préparer la démo' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fermer les détails de la tâche' })).toBeInTheDocument();
   });
 });
 

@@ -125,7 +125,7 @@ export default function LatexPad({ padId, globalThemeDark = true }: Props) {
         </div>
         <div className="latex-pad__toolbar-right">
           {status !== 'idle' && (
-            <span className={`latex-pad__status latex-pad__status${statusMod}`}>{statusLabel}</span>
+            <span className={`latex-pad__status latex-pad__status${statusMod}`} role="status" aria-live="polite">{statusLabel}</span>
           )}
         </div>
       </div>
@@ -140,6 +140,7 @@ export default function LatexPad({ padId, globalThemeDark = true }: Props) {
             language="latex"
             theme={monacoTheme}
             options={{
+              ariaLabel: 'Code source LaTeX',
               fontSize: 13,
               minimap: { enabled: false },
               wordWrap: 'on',
@@ -168,7 +169,7 @@ export default function LatexPad({ padId, globalThemeDark = true }: Props) {
             <div className="latex-pad__log">
               <div className="latex-pad__log-header">
                 <span>Log de compilation</span>
-                <button className="latex-pad__log-close" onClick={() => setLogOpen(false)}><X size={13} /></button>
+                <button className="latex-pad__log-close" type="button" aria-label="Fermer le journal de compilation" onClick={() => setLogOpen(false)}><X size={13} /></button>
               </div>
               <div className="latex-pad__log-body">{log}</div>
             </div>

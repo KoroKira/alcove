@@ -179,6 +179,11 @@
 
   &:hover { background: rgba(var(--ap-bg2-rgb), 0.7); }
 
+  &:focus-visible {
+    outline: 2px solid var(--ap-accent, #cba6f7);
+    outline-offset: -2px;
+  }
+
   &--selected {
     background: rgba(var(--ap-accent-rgb, 203,166,247), 0.08);
     border-left: 3px solid var(--ap-accent, var(--ap-accent));
