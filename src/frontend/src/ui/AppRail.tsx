@@ -23,7 +23,7 @@ const AppRail: React.FC<Props> = ({ active, sidebarCollapsed, reviewCount = 0, o
   return (
     <nav className="app-rail" aria-label="Navigation principale">
       <div className="app-rail__brand" title="Alcove"><LinkIcon size={20} /></div>
-      <button className="app-rail__add" onClick={onAdd} title="Ajouter à Alcove" aria-label="Ajouter à Alcove"><Plus size={21} /></button>
+      <button className="app-rail__add" onClick={onAdd} title="Ajouter à Alcove" aria-label="Ajouter à Alcove" data-focus-return="add"><Plus size={21} /></button>
       <div className="app-rail__group">
         {item('home', 'Accueil', <Home size={19} />, onHome)}
         {item('search', 'Rechercher', <Search size={19} />, onSearch)}

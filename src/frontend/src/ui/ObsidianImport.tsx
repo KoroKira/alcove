@@ -26,7 +26,12 @@ export default function ObsidianImport({ onClose, onImported }: Props) {
   React.useEffect(() => {
     const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeRef.current?.focus();
-    return () => { if (trigger?.isConnected) trigger.focus(); };
+    return () => {
+      const destination = trigger?.isConnected
+        ? trigger
+        : document.querySelector<HTMLElement>('[data-focus-return="add"]');
+      destination?.focus();
+    };
   }, []);
 
   const close = () => {
