@@ -83,12 +83,14 @@ export default defineConfig(({ mode }) => {
           navigateFallback: null,
           runtimeCaching: [
             {
-              urlPattern: /^\/api\/users\/me/,
+              // Workbox route callbacks receive the full URL. Match its
+              // same-origin path explicitly so private API responses are cached.
+              urlPattern: ({ url }) => url.origin === self.location.origin && /^\/api\/users\/me(?:\/|$)/.test(url.pathname),
               handler: 'NetworkFirst',
               options: { cacheName: 'api-user', networkTimeoutSeconds: 3 },
             },
             {
-              urlPattern: /^\/api\/pad\//,
+              urlPattern: ({ url }) => url.origin === self.location.origin && /^\/api\/pad\//.test(url.pathname),
               handler: 'NetworkFirst',
               options: { cacheName: 'api-pads', networkTimeoutSeconds: 3 },
             },
