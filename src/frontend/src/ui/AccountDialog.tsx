@@ -2,6 +2,7 @@ import React, { useState, useCallback } from "react";
 import { Dialog } from "@atyrode/excalidraw";
 import md5 from 'crypto-js/md5';
 import "./AccountDialog.scss";
+import McpConnections from './McpConnections';
 
 // Hooks
 import { useAuthStatus } from "../hooks/useAuthStatus";
@@ -35,23 +36,24 @@ const AccountDialog: React.FC<AccountDialogProps> = ({
   const dialogContent = (
     <div className="account-dialog__content">
       {isLoading && (
-        <div className="account-dialog__loading">
-          Loading account information...
+        <div className="account-dialog__loading" role="status">
+          Chargement du compte…
         </div>
       )}
       
       {isError && (
-        <div className="account-dialog__error">
-          Error loading account information. Please try again later.
+        <div className="account-dialog__error" role="alert">
+          Impossible de charger le compte. Réessayez dans quelques instants.
         </div>
       )}
+      {profile && !isLoading && !isError && <McpConnections />}
       
       {profile && !isLoading && !isError && (
         <div className="account-dialog__profile">
           <div className="account-dialog__avatar">
             <img 
               src={getGravatarUrl(profile.email)} 
-              alt={profile.username} 
+              alt=""
               className="account-dialog__gravatar" 
             />
           </div>
@@ -61,19 +63,13 @@ const AccountDialog: React.FC<AccountDialogProps> = ({
             </h2>
             <p className="account-dialog__username">{profile.username}</p>
             <p className="account-dialog__user-id">{profile.id}</p>
-            <button
-              type="button"
-              onClick={() => window.open('/api/auth/account', '_blank', 'noopener,noreferrer')}
-            >
-              Gérer le profil et le mot de passe
-            </button>
+            <a href="/api/auth/account" target="_blank" rel="noreferrer">
+              Gérer le profil et le mot de passe (nouvel onglet)
+            </a>
             {profile.isAdmin && (
-              <button
-                type="button"
-                onClick={() => window.open('/api/auth/admin', '_blank', 'noopener,noreferrer')}
-              >
-                Gérer les comptes utilisateurs
-              </button>
+              <a href="/api/auth/admin" target="_blank" rel="noreferrer">
+                Gérer les comptes utilisateurs (nouvel onglet)
+              </a>
             )}
           </div>
         </div>
@@ -91,7 +87,7 @@ const AccountDialog: React.FC<AccountDialogProps> = ({
             onCloseRequest={handleClose}
             title={
               <div className="account-dialog__title-container">
-                <h2 className="account-dialog__title">Account</h2>
+                <h2 className="account-dialog__title">Compte et connexions</h2>
               </div>
             }
             closeOnClickOutside={true}

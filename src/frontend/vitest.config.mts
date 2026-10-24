@@ -26,9 +26,10 @@ const stubStylesPlugin = (): Plugin => ({
 export default defineConfig({
   plugins: [stubStylesPlugin()],
   resolve: {
-    alias: {
-      '@': path.resolve(HERE, 'src'),
-    },
+    alias: [
+      { find: '@', replacement: path.resolve(HERE, 'src') },
+      { find: /^monaco-editor\/esm\//, replacement: path.resolve(HERE, 'node_modules/monaco-editor/esm') + '/' },
+    ],
   },
   test: {
     environment: 'jsdom',

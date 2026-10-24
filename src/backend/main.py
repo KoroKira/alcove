@@ -211,8 +211,11 @@ app.include_router(ai_router)
 app.include_router(ingest_router)
 app.include_router(research_router)
 app.include_router(latex_router)
-from routers.mcp_router import mcp_router
+from routers.mcp_router import mcp_router, mcp_metadata_router
+from routers.mcp_keys_router import mcp_keys_router
 app.include_router(mcp_router)
+app.include_router(mcp_metadata_router)
+app.include_router(mcp_keys_router)
 from api.v1.router import v1_router
 app.include_router(v1_router)
 

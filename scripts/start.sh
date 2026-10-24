@@ -1,33 +1,25 @@
 #!/usr/bin/env bash
-# start.sh — Start (or restart) Alcove after initial setup
+# Start the authenticated server stack after its first installation.
 set -euo pipefail
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(dirname "$SCRIPT_DIR")"
-cd "$ROOT"
-
-CYAN='\033[0;36m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
-
-[ -f .env ] || { echo "Run scripts/setup.sh first."; exit 1; }
-set -a; source .env; set +a
-
-APP_PORT_VAL="${APP_PORT:-8000}"
-
-echo -e "${CYAN}▶ Starting all services…${NC}"
-docker compose up -d
-
-echo -n "  Waiting for pad"
-for i in $(seq 1 30); do
-  if curl -sf "http://localhost:${APP_PORT_VAL}/" >/dev/null 2>&1; then
-    echo; break
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+ENV_FILE="${ALCOVE_ENV_FILE:-$PROJECT_DIR/.env}"
+COMPOSE_FILE="${ALCOVE_COMPOSE_FILE:-$PROJECT_DIR/docker-compose.codicam.yml}"
+[ -r "$ENV_FILE" ] || { printf '%s\n' 'Configure .env and run scripts/setup.sh first. See SETUP.md.' >&2; exit 1; }
+set -a
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+set +a
+COMPOSE_PROJECT="${ALCOVE_COMPOSE_PROJECT:-${COMPOSE_PROJECT_NAME:-alcove}}"
+compose() { docker compose --env-file "$ENV_FILE" -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" "$@"; }
+compose config --quiet
+compose up -d
+for ((attempt=0; attempt<60; attempt++)); do
+  if curl --fail --silent --max-time 3 "http://127.0.0.1:${APP_PORT:-8000}/api/app/config" >/dev/null; then
+    printf 'Alcove responds at %s\n' "${FRONTEND_URL:?Set FRONTEND_URL}"
+    exit 0
   fi
-  echo -n "."; sleep 2
+  sleep 2
 done
-
-echo ""
-echo -e "${GREEN}✓ Alcove is up → http://localhost:${APP_PORT_VAL}${NC}"
-echo ""
-echo -e "  Keycloak admin : http://localhost:${KEYCLOAK_PORT:-8080}"
-echo -e "  Coder          : http://localhost:${CODER_PORT:-7080}"
-echo ""
-echo -e "${YELLOW}Stop with: docker compose down${NC}"
+printf '%s\n' 'Alcove did not become ready. Inspect the pad and database logs; no data was removed.' >&2
+exit 1

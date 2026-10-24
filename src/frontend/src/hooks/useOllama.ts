@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-// Client-side Ollama URL. Ollama is expected to run on each user's own device;
-// the Alcove server never touches it. Override for special setups by setting
+// Same-origin Ollama proxy; an operator can opt into a device-local URL by setting
 // `localStorage.setItem('alcove_ollama_url', 'http://...')`.
 // Explicit 127.0.0.1 (not "localhost") to avoid IPv6-first resolution stalls
 // on macOS where Ollama binds v4-only.
@@ -47,9 +46,8 @@ export function pickChatModel(modelNames: string[], preferred = 'llama3.2'): str
 }
 
 /**
- * Poll the user's local Ollama for its installed models. Runs entirely in the
- * browser — no server round-trip — so it works even when the Alcove server
- * has no Ollama of its own (the normal self-host setup).
+ * Poll Ollama through Alcove's authenticated proxy, or an explicit device-local
+ * URL override. The server configuration selects the default inference host.
  *
  * `defaultModel` is fetched once from the server's preamble endpoint so admin
  * config (OLLAMA_DEFAULT_MODEL) still drives the initial pick.
@@ -145,7 +143,7 @@ export async function streamLocalOllamaChat(
   });
 
   if (!resp.ok || !resp.body) {
-    throw new Error(`Ollama chat failed (${resp.status}) — check that Ollama is running on this device and that OLLAMA_ORIGINS allows this origin.`);
+    throw new Error(`L’assistant IA est indisponible (${resp.status}). Vérifiez le service Ollama configuré pour Alcove et le modèle choisi, puis réessayez.`);
   }
 
   // Ollama streams NDJSON — one JSON object per line, no `data:` prefix.

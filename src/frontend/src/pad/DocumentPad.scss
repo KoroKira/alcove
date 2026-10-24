@@ -872,3 +872,44 @@
 
   &:hover { opacity: 0.8; }
 }
+
+// Keep toolbar controls operable with a keyboard and with touch without changing the palette.
+.document-pad {
+  &__toolbar-btn,
+  &__view-btn,
+  &__focus-exit {
+    min-width: 28px;
+    min-height: 28px;
+
+    &:focus-visible {
+      outline: 2px solid currentColor;
+      outline-offset: 2px;
+    }
+  }
+}
+
+@media (pointer: coarse), (max-width: 640px) {
+  .document-pad {
+    &__toolbar {
+      height: auto;
+      min-height: 44px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    &__toolbar-right {
+      max-width: 100%;
+      overflow-x: auto;
+      padding: 2px;
+      scrollbar-width: thin;
+      > * { flex-shrink: 0; }
+    }
+
+    &__toolbar-btn,
+    &__view-btn,
+    &__focus-exit {
+      min-width: 44px;
+      min-height: 44px;
+    }
+  }
+}
