@@ -411,7 +411,7 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
           <span className="pad-sidebar__section-label">{t('sidebar.files').toUpperCase()}</span>
           {isAuthenticated && (
             <div className="pad-sidebar__section-actions">
-              {onCreateFolder && <button className="pad-sidebar__icon-btn" onClick={() => setNewFolderOpen(v => !v)} title="Nouveau dossier"><FolderPlus size={14} /></button>}
+              {onCreateFolder && <button className="pad-sidebar__icon-btn" onClick={() => setNewFolderOpen(v => !v)} title="Nouveau dossier" aria-label="Nouveau dossier"><FolderPlus size={14} /></button>}
               <button
                 className="pad-sidebar__icon-btn"
                 onClick={() => onNewNote()}
@@ -433,12 +433,12 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
         </div>
 
         {newFolderOpen && (
-          <div className="pad-sidebar__new-folder">
+          <div className="pad-sidebar__new-folder" role="group" aria-label="Créer un dossier">
             <Folder size={13} />
-            <input autoFocus value={newFolderName} onChange={e => setNewFolderName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submitFolder(); if (e.key === 'Escape') setNewFolderOpen(false); }} placeholder="Nom du dossier" maxLength={80} />
-            <button onClick={submitFolder} disabled={!newFolderName.trim() || creatingFolder} title="Créer"><Check size={13} /></button>
-            <button onClick={() => setNewFolderOpen(false)} title="Annuler"><X size={13} /></button>
-            {folderError && <span>{folderError}</span>}
+            <input autoFocus value={newFolderName} onChange={e => setNewFolderName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submitFolder(); if (e.key === 'Escape') setNewFolderOpen(false); }} placeholder="Nom du dossier" aria-label="Nom du dossier" maxLength={80} />
+            <button onClick={submitFolder} disabled={!newFolderName.trim() || creatingFolder} title="Créer" aria-label="Créer le dossier"><Check size={13} /></button>
+            <button onClick={() => setNewFolderOpen(false)} title="Annuler" aria-label="Annuler la création du dossier"><X size={13} /></button>
+            {folderError && <span role="alert">{folderError}</span>}
           </div>
         )}
 
