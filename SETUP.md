@@ -78,8 +78,11 @@ Configurer le proxy :
 
 | Origine publique | Proxy sur l'hôte | Proxy dans le réseau Docker ingress |
 |---|---|---|
-| Alcove | `http://127.0.0.1:8000` | `http://pad:8000` |
+| Alcove | `http://127.0.0.1:<APP_PORT>` (8000 par défaut) | `http://pad:8000` |
 | Keycloak | `http://127.0.0.1:8080` | `http://keycloak:8080` |
+
+`APP_PORT` est le port hôte défini dans `.env`; il peut différer de la valeur
+par défaut lorsque le port 8000 est déjà utilisé.
 
 Conserver les en-têtes `Host`, `X-Forwarded-Proto` et `X-Forwarded-For` corrects;
 ne rendre le réseau ingress accessible qu'au proxy de confiance. PostgreSQL,
@@ -125,7 +128,9 @@ gestion des comptes sans donner l'administration globale, suivre
 docker compose --env-file .env -p alcove -f docker-compose.codicam.yml exec ollama ollama pull llama3.2
 docker compose --env-file .env -p alcove -f docker-compose.codicam.yml exec ollama ollama pull nomic-embed-text
 docker compose --env-file .env -p alcove -f docker-compose.codicam.yml ps
-curl --fail http://127.0.0.1:8000/api/app/config
+alcove_pad_container=$(docker compose --env-file .env -p alcove -f docker-compose.codicam.yml ps -q pad)
+alcove_app_port=$(docker port "$alcove_pad_container" 8000/tcp | awk -F: 'NR == 1 {print $NF}')
+curl --fail "http://127.0.0.1:${alcove_app_port}/api/app/config"
 ```
 
 `OLLAMA_DEFAULT_MODEL` doit désigner un modèle installé. L'IA passe par le
@@ -183,7 +188,9 @@ docker compose --env-file .env -p alcove -f docker-compose.codicam.yml config --
 docker compose --env-file .env -p alcove -f docker-compose.codicam.yml pull pad
 docker compose --env-file .env -p alcove -f docker-compose.codicam.yml up -d --no-deps pad
 docker compose --env-file .env -p alcove -f docker-compose.codicam.yml ps
-curl --fail http://127.0.0.1:8000/api/app/config
+alcove_pad_container=$(docker compose --env-file .env -p alcove -f docker-compose.codicam.yml ps -q pad)
+alcove_app_port=$(docker port "$alcove_pad_container" 8000/tcp | awk -F: 'NR == 1 {print $NF}')
+curl --fail "http://127.0.0.1:${alcove_app_port}/api/app/config"
 ```
 
 Comparer ensuite l'image prévue par ce fichier à celle du conteneur actif,
