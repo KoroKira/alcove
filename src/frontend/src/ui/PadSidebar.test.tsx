@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PadSidebar from './PadSidebar';
 import { SharingPolicy, type Tab } from '../hooks/usePadTabs';
@@ -100,6 +100,19 @@ describe('PadSidebar', () => {
     // as visible text. The sidebar itself is still in the DOM.
     const sidebar = document.querySelector('.pad-sidebar');
     expect(sidebar?.className).toMatch(/collapsed/);
+  });
+
+  it('labels folder creation controls and announces creation errors', async () => {
+    const user = userEvent.setup();
+    const onCreateFolder = vi.fn().mockRejectedValue(new Error('Dossier indisponible'));
+    render(<PadSidebar {...baseProps({ onCreateFolder })} />);
+
+    await user.click(screen.getByRole('button', { name: 'Nouveau dossier' }));
+    await user.type(screen.getByRole('textbox', { name: 'Nom du dossier' }), 'Projets');
+    await user.click(screen.getByRole('button', { name: 'Créer le dossier' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Dossier indisponible');
+    await waitFor(() => expect(onCreateFolder).toHaveBeenCalledWith('Projets'));
   });
 
   it('groups scratch pads first', () => {
