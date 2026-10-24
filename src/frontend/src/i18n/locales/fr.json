@@ -131,6 +131,8 @@
     "edit": "Édition",
     "split": "Split",
     "preview": "Aperçu",
+    "markdownEditorLabel": "Éditeur Markdown",
+    "latexEditorLabel": "Éditeur LaTeX",
     "words": "{{count}} mot",
     "words_plural": "{{count}} mots",
     "readingTime": "{{min}} min de lecture",

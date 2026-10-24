@@ -4,8 +4,8 @@ import DocumentPad from './DocumentPad';
 
 vi.mock('@monaco-editor/react', () => ({
   loader: { config: vi.fn() },
-  default: ({ value, onChange, options }: { value: string; onChange: (value: string) => void; options: { readOnly?: boolean } }) => (
-    <textarea aria-label="Isolated document editor" value={value} readOnly={options.readOnly} onChange={event => onChange(event.target.value)} />
+  default: ({ value, onChange, options }: { value: string; onChange: (value: string) => void; options: { readOnly?: boolean; ariaLabel?: string } }) => (
+    <textarea aria-label={options.ariaLabel} value={value} readOnly={options.readOnly} onChange={event => onChange(event.target.value)} />
   ),
 }));
 vi.mock('monaco-editor/esm/vs/editor/editor.api', () => ({}));
@@ -24,6 +24,23 @@ function response(body: unknown): Response {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); });
 
 describe('DocumentPad restored revision', () => {
+  it('provides a translated accessible name for the Markdown editor', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('/backlinks')) return response({ backlinks: [] });
+      return response({ content: 'Accessible document', updated_at: 'version-1' });
+    }));
+    render(<DocumentPad padId="accessible-document" />);
+
+    expect(await screen.findByRole('textbox', { name: 'editor.markdownEditorLabel' })).toBeInTheDocument();
+  });
+
+  it('provides a translated accessible name for the LaTeX editor', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => response({ data: { source: '\\begin{document}\\end{document}' }, updated_at: 'version-1' })));
+    render(<DocumentPad padId="accessible-latex" format="latex" />);
+
+    expect(await screen.findByRole('textbox', { name: 'editor.latexEditorLabel' })).toBeInTheDocument();
+  });
+
   it('retries an unsaved document after network reconnection', async () => {
     let attempts = 0;
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {

@@ -317,7 +317,9 @@ export default function App() {
 
   // Auto-collapse sidebar in canvas mode so Excalidraw panels have full viewport
   useEffect(() => {
-    setSidebarCollapsed(!isStructuredMode);
+    // On phone-width screens the file sidebar is a slide-over drawer. Keep it
+    // closed when opening a structured pad so it cannot cover the editor.
+    setSidebarCollapsed(!isStructuredMode || window.innerWidth < 768);
   }, [isStructuredMode]);
 
   // Offline indicator

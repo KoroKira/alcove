@@ -1439,6 +1439,7 @@ ${renderedHtml}
               language={isLatex ? 'latex' : 'markdown'}
               theme={monacoTheme}
               options={{
+                ariaLabel: t(isLatex ? 'editor.latexEditorLabel' : 'editor.markdownEditorLabel'),
                 readOnly: versionRestoring,
                 wordWrap: 'on',
                 minimap: { enabled: false },
