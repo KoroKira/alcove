@@ -64,7 +64,7 @@ Lancer ensuite `codex mcp login alcove --scopes alcove:read`, puis
 `codex mcp list`. Une session déjà ouverte peut nécessiter la réouverture du
 chat pour charger les nouveaux outils.
 
-## Clé personnelle : Codex, Hermes et autres clients Bearer
+## Clé personnelle : Hermes et autres clients Bearer
 
 Dans Alcove, ouvrir **Compte et connexions → Connecter un assistant** :
 
@@ -74,6 +74,38 @@ Dans Alcove, ouvrir **Compte et connexions → Connecter un assistant** :
    en clair dans la base. La conserver dans un gestionnaire de mots de passe.
 4. Configurer l'en-tête `Authorization: Bearer <clé>` dans le client MCP.
 5. Révoquer une connexion perdue ou inutilisée depuis le même écran.
+
+### Configuration Hermes en lecture seule
+
+Pour le profil `default`, placer la clé dans `~/.hermes/.env` sous le nom
+`ALCOVE_MCP_TOKEN`, avec des permissions accessibles uniquement à ton compte.
+Ne pas la coller dans une conversation, un dépôt ou la configuration YAML.
+Hermes résout les variables référencées dans les en-têtes depuis ses secrets
+locaux. La [référence officielle Hermes](https://hermes-agent.nousresearch.com/docs/reference/mcp-config-reference)
+documente cette syntaxe.
+
+Ajouter à `~/.hermes/config.yaml` :
+
+```yaml
+mcp_servers:
+  alcove:
+    url: "https://alcove.codicam.fr/mcp"
+    headers:
+      Authorization: "Bearer ${ALCOVE_MCP_TOKEN}"
+    tools:
+      include:
+        - search_pads
+        - read_pad
+        - list_recent
+```
+
+Cette liste expose la recherche et la lecture uniquement; elle n'inclut pas
+`write_note`. Recharger les MCP (`/reload-mcp`) ou redémarrer Hermes, puis
+exécuter `hermes mcp test alcove` et `hermes mcp list`. Vérifier ensuite une
+recherche et la lecture d'un pad connu. Révoquer la clé depuis Alcove si elle
+est perdue ou n'est plus nécessaire. La [documentation Hermes sur les serveurs
+HTTP](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp)
+décrit le transport et le rechargement.
 
 Codex accepte une variable d'environnement :
 
