@@ -156,6 +156,15 @@ réellement lu par le service, le cron et les commandes de redémarrage. Si c'es
 un fichier extérieur au dépôt, remplacer `--env-file .env` dans les commandes
 ci-dessous par ce chemin exact et fournir `ALCOVE_ENV_FILE` aux scripts.
 
+Le compose actif d'un serveur peut contenir des protections et réglages propres
+à son exploitation qui ne sont pas dans le compose versionné : images épinglées
+par digest, système de fichiers en lecture seule, capacités supprimées, réseaux,
+limites de ressources ou service de sauvegarde. Avant une mise à jour, comparer
+les deux fichiers. Ne pas remplacer le compose de production par celui du dépôt
+sans reprendre et vérifier chaque réglage local. Pour une mise à jour limitée à
+l'application, conserver le compose actif et ne changer que `ALCOVE_IMAGE` dans
+la copie de release, sauf si une modification compose est explicitement requise.
+
 Écrire l'image épinglée dans **ce même fichier persistant**. Une commande telle
 que `ALCOVE_IMAGE=... docker compose up` ne modifie pas sa valeur : au prochain
 redémarrage, l'ancienne image du fichier peut être relancée. Retirer les anciens
