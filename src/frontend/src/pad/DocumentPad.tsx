@@ -148,7 +148,7 @@ function extractToc(md: string): TocItem[] {
 }
 
 // Render markdown + KaTeX math (no transclusion / callouts — for transcluded content)
-const renderInner = (text: string, tabs: Tab[]): string => {
+const renderInner = (text: string, tabs: Tab[], sourceFolder?: string): string => {
   if (!text) return '';
   const callouts: string[] = [];
   let p = extractCallouts(text, callouts);
@@ -166,7 +166,7 @@ const renderInner = (text: string, tabs: Tab[]): string => {
     return `MI_${id}_`;
   });
   p = p.replace(/\[\[([^\]]+)\]\]/g, (_, name) => {
-    const target = resolveWikiLink(name, tabs);
+    const target = resolveWikiLink(name, tabs, sourceFolder);
     const { label } = parseWikiLink(name);
     return target
       ? `<a class="wikilink wikilink--found" data-pad-id="${target.id}">${label}</a>`
@@ -178,7 +178,7 @@ const renderInner = (text: string, tabs: Tab[]): string => {
   return html;
 };
 
-const renderContent = (text: string, tabs: Tab[], transcluded: Transcluded = {}): string => {
+const renderContent = (text: string, tabs: Tab[], transcluded: Transcluded = {}, sourceFolder?: string): string => {
   if (!text) return '';
 
   // === Flashcards Q:/A: blocks (extract before markdown) ===
@@ -239,10 +239,11 @@ const renderContent = (text: string, tabs: Tab[], transcluded: Transcluded = {})
 
   // === Transclusion ![[name]] ===
   processed = processed.replace(/!\[\[([^\]]+)\]\]/g, (_, name) => {
-    const target = resolveWikiLink(name, tabs);
+    const target = resolveWikiLink(name, tabs, sourceFolder);
     const { label } = parseWikiLink(name);
     if (target && transcluded[target.id]) {
-      const inner = renderInner(transcluded[target.id], tabs);
+      const targetFolder = tabs.find(tab => tab.id === target.id)?.folder;
+      const inner = renderInner(transcluded[target.id], tabs, targetFolder);
       return `<TRANSCLUSION_${target.id}_START>${inner}</TRANSCLUSION_${target.id}_END>`;
     }
     if (target) return `<span class="transclusion transclusion--loading">↗ ${label}…</span>`;
@@ -251,7 +252,7 @@ const renderContent = (text: string, tabs: Tab[], transcluded: Transcluded = {})
 
   // === Wikilinks [[name]] ===
   processed = processed.replace(/\[\[([^\]]+)\]\]/g, (_, name) => {
-    const target = resolveWikiLink(name, tabs);
+    const target = resolveWikiLink(name, tabs, sourceFolder);
     const { label } = parseWikiLink(name);
     return target
       ? `<a class="wikilink wikilink--found" data-pad-id="${target.id}">${label}</a>`
@@ -279,7 +280,7 @@ const renderContent = (text: string, tabs: Tab[], transcluded: Transcluded = {})
   Object.entries(transcluded).forEach(([padId]) => {
     const target = tabs.find(t => t.id === padId);
     if (!target) return;
-    const inner = renderInner(transcluded[padId], tabs);
+    const inner = renderInner(transcluded[padId], tabs, target.folder);
     const block = `<div class="transclusion"><div class="transclusion__header"><span class="transclusion__arrow">↗</span><span class="transclusion__title" data-pad-id="${padId}">${target.title}</span></div><div class="transclusion__body">${inner}</div></div>`;
     html = html.replace(new RegExp(`<p>\\s*<TRANSCLUSION_${padId}_START>[\\s\\S]*?</TRANSCLUSION_${padId}_END>\\s*</p>`, 'g'), block);
     html = html.replace(new RegExp(`<TRANSCLUSION_${padId}_START>[\\s\\S]*?</TRANSCLUSION_${padId}_END>`, 'g'), block);
@@ -339,6 +340,8 @@ Bienvenue dans l'éditeur \\LaTeX{} intégré.
 `;
 
 const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark = true, format = 'markdown', tabs = [], onSelectPad, focusMode = false, onToggleFocus, pendingContent, onContentLoaded, onContentChange, contentToAppend, onContentAppended, sourceUrl }) => {
+  const currentTab = tabs.find(tab => tab.id === padId);
+  const sourceFolder = currentTab ? currentTab.folder ?? '' : undefined;
   const isLatex = format === 'latex';
   const { t, i18n } = useTranslation();
   const [content, setContent] = useState('');
@@ -427,7 +430,7 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
 
   // Fetch transcluded pads referenced via ![[name]]
   useEffect(() => {
-    const targets = findTransclusionTargets(content, tabs);
+    const targets = findTransclusionTargets(content, tabs, sourceFolder);
     if (targets.length === 0) return;
     targets.forEach(target => {
       if (transcluded[target.id] !== undefined) return;
@@ -437,7 +440,7 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
         .then(d => setTranscluded(prev => ({ ...prev, [target.id]: d.content || '' })))
         .catch(() => setTranscluded(prev => ({ ...prev, [target.id]: '' })));
     });
-  }, [content, tabs]);
+  }, [content, tabs, sourceFolder]);
 
   // Load pad content + backlinks
   useEffect(() => {
@@ -849,7 +852,7 @@ const DocumentPad: React.FC<Props> = ({ padId, theme = 'dark', globalThemeDark =
   // occasionally break them across paragraphs during transclusion).
   const renderedHtml = renderContent(
     videoMeta ? stripVideoMeta(content) : content,
-    tabs, transcluded,
+    tabs, transcluded, sourceFolder,
   );
   const monacoTheme = (theme === 'light' || !globalThemeDark) ? 'light' : 'vs-dark';
 
