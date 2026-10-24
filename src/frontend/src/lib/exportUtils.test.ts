@@ -22,7 +22,7 @@ describe('Markdown export', () => {
     expect(markdownFilename(' ... ')).toBe('document.md');
   });
 
-  it('attaches a download link and releases its object URL only after the click', () => {
+  it('exports the exact current Markdown and releases its object URL only after the click', async () => {
     vi.useFakeTimers();
     const createObjectURL = vi.fn().mockReturnValue('blob:isolated-export');
     const revokeObjectURL = vi.fn();
@@ -31,9 +31,11 @@ describe('Markdown export', () => {
       expect(this.isConnected).toBe(true);
       expect(this.download).toBe('Réunion.md');
     });
-    downloadMarkdown('Brouillon non encore sauvegardé', 'Réunion');
+    const unsavedMarkdown = '# Réunion\n\nBrouillon non encore sauvegardé — déjà récupéré.';
+    downloadMarkdown(unsavedMarkdown, 'Réunion');
     expect(click).toHaveBeenCalledOnce();
     expect(createObjectURL.mock.calls[0][0].type).toBe('text/markdown;charset=utf-8');
+    await expect(createObjectURL.mock.calls[0][0].text()).resolves.toBe(unsavedMarkdown);
     expect(document.querySelector('a[download]')).toBeNull();
     expect(revokeObjectURL).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1000);
