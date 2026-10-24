@@ -18,6 +18,7 @@ import { ensureCanvasCollaborators } from "./lib/canvas";
 
 // Components
 import { MainMenuConfig } from './ui/MainMenu';
+import CanvasErrorBoundary from './ui/CanvasErrorBoundary';
 import AuthDialog from './ui/AuthDialog';
 import Collab from './lib/collab/Collab';
 import SearchDialog from './ui/SearchDialog';
@@ -555,6 +556,11 @@ export default function App() {
         className="app-canvas-wrap"
         style={{ display: isStructuredMode ? 'none' : undefined }}
       >
+        <CanvasErrorBoundary onOpenLibrary={() => {
+          closeGlobalViews();
+          setDashboardInitialView('pads');
+          setDashboardOpen(true);
+        }}>
         <Excalidraw
           excalidrawAPI={excalidrawRefCallback}
           initialData={INITIAL_APP_DATA}
@@ -614,6 +620,7 @@ export default function App() {
             />
           )}
         </Excalidraw>
+        </CanvasErrorBoundary>
         {canvasEmpty && isAuthenticated && !dashboardOpen && !onboardingOpen && (
           <div className="canvas-empty" aria-live="polite">
             <div className="canvas-empty__mark"><Sparkles size={19} /></div>
