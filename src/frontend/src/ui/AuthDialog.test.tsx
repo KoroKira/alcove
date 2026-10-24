@@ -31,4 +31,16 @@ describe('AuthDialog', () => {
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
+
+  it('distinguishes an unavailable session check from a confirmed signed-out state', () => {
+    const retry = vi.fn();
+    render(<AuthDialog verificationUnavailable onRetryVerification={retry} />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Vous n’êtes pas forcément déconnecté');
+    expect(screen.getByRole('button', { name: 'Réessayer' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Se connecter' })).not.toBeInTheDocument();
+
+    screen.getByRole('button', { name: 'Réessayer' }).click();
+    expect(retry).toHaveBeenCalledOnce();
+  });
 });

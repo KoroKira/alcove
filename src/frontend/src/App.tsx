@@ -125,7 +125,13 @@ export default function App() {
   const { t, i18n } = useTranslation();
   const excalidrawLang = i18n.language.startsWith('fr') ? 'fr-FR' : 'en-EN';
   const { config, configError } = useAppConfig();
-  const { isAuthenticated, isLoading: isLoadingAuth, user } = useAuthStatus();
+  const {
+    isAuthenticated,
+    isLoading: isLoadingAuth,
+    isError: isAuthStatusError,
+    refetchAuthStatus,
+    user,
+  } = useAuthStatus();
 
   const {
     tabs,
@@ -608,7 +614,13 @@ export default function App() {
             onChat={() => setChatViewOpen(true)}
           />
 
-          {!isLoadingAuth && !isAuthenticated && <AuthDialog />}
+          {!isLoadingAuth && isAuthenticated === false && !isAuthStatusError && <AuthDialog />}
+          {!isLoadingAuth && isAuthStatusError && isAuthenticated !== true && (
+            <AuthDialog
+              verificationUnavailable
+              onRetryVerification={() => { void refetchAuthStatus(); }}
+            />
+          )}
 
           {excalidrawAPI && user && (
             <Collab

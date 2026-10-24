@@ -11,12 +11,16 @@ interface AuthDialogProps {
   description?: React.ReactNode;
   warningText?: React.ReactNode;
   children?: React.ReactNode;
+  verificationUnavailable?: boolean;
+  onRetryVerification?: () => void;
 }
 
 export const AuthDialog = ({
   description = <>Welcome to your <strong className="highlight">whiteboard IDE</strong>. <br /><br /> Open <strong className="highlight">terminals</strong>, <strong className="highlight">VSCode</strong>, or <strong className="highlight">Cursor</strong> in your pad, and start coding right away.</>,
   warningText = <>This is an open-source project in beta.<br /> Back up your work!</>,
   children,
+  verificationUnavailable = false,
+  onRetryVerification,
 }: AuthDialogProps) => {
   const { config } = useAppConfig();
   const [authError, setAuthError] = useState(false);
@@ -69,14 +73,22 @@ export const AuthDialog = ({
       <p className="auth-modal__description">{description}</p>
 
       <div className="auth-modal__buttons">
-        {authError && (
+        {verificationUnavailable && (
+          <div role="alert">
+            <p>Impossible de vérifier votre session. Vous n’êtes pas forcément déconnecté ; vérifiez la connexion puis réessayez.</p>
+            <button type="button" onClick={onRetryVerification}>Réessayer</button>
+          </div>
+        )}
+        {authError && !verificationUnavailable && (
           <p role="alert">
             La connexion a expiré ou a déjà été utilisée. Relancez-la avec le bouton ci-dessous.
           </p>
         )}
-        <button onClick={() => window.open("/api/auth/login?popup=1", "authPopup", "width=520,height=720")}>
-          <span>Se connecter</span>
-        </button>
+        {!verificationUnavailable && (
+          <button onClick={() => window.open("/api/auth/login?popup=1", "authPopup", "width=520,height=720")}>
+            <span>Se connecter</span>
+          </button>
+        )}
         {config?.registrationContactEmail && (
           <p className="auth-modal__registration-contact">
             Pour demander un compte, envoyez un message à{' '}
