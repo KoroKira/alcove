@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { capture } from "../lib/posthog";
 
 export enum SharingPolicy {
@@ -167,6 +167,12 @@ const createNewPad = async (padType: PadType = 'canvas'): Promise<Tab> => {
 export const usePadTabs = (isAuthenticated?: boolean) => {
     const queryClient = useQueryClient();
     const [selectedTabId, setSelectedTabId] = useState<string>('');
+    const selectedTabIdRef = useRef(selectedTabId);
+    selectedTabIdRef.current = selectedTabId;
+    const updateSelectedTabId = (id: string) => {
+        selectedTabIdRef.current = id;
+        setSelectedTabId(id);
+    };
 
     const { data, isLoading, error, isError } = useQuery<PadResponse, Error>({
         queryKey: ['padTabs'],
@@ -182,23 +188,24 @@ export const usePadTabs = (isAuthenticated?: boolean) => {
 
         // If we don't have a selectedTabId yet, use the server's activeTabId
         if (!selectedTabId && data.activeTabId) {
-            setSelectedTabId(data.activeTabId);
+            updateSelectedTabId(data.activeTabId);
             return;
         }
 
         // Only set a tab if we don't have a valid selection
         if (data.tabs.length > 0 && (!selectedTabId || !data.tabs.some(tab => tab.id === selectedTabId))) {
-            setSelectedTabId(data.tabs[0].id);
+            updateSelectedTabId(data.tabs[0].id);
         } else if (data.tabs.length === 0) {
-            setSelectedTabId('');
+            updateSelectedTabId('');
         }
     }, [data, isLoading]);
 
-    const createPadMutation = useMutation<Tab, Error, PadType | void, { previousTabsResponse?: PadResponse, tempTabId?: string }>({
+    const createPadMutation = useMutation<Tab, Error, PadType | void, { previousTabsResponse?: PadResponse, tempTabId?: string, previousSelectedTabId: string }>({
         mutationFn: (padType) => createNewPad((padType as PadType) || 'canvas'),
         onMutate: async (padType) => {
             await queryClient.cancelQueries({ queryKey: ['padTabs'] });
             const previousTabsResponse = queryClient.getQueryData<PadResponse>(['padTabs']);
+            const previousSelectedTabId = selectedTabIdRef.current;
 
             const tempTabId = `temp-${Date.now()}`;
             const tempTab: Tab = {
@@ -216,28 +223,29 @@ export const usePadTabs = (isAuthenticated?: boolean) => {
                 return {
                     tabs: newTabs,
                     activeTabId: old?.activeTabId || tempTab.id, // Keep old active or use new if first
+                    folders: old?.folders ?? [],
                 };
             });
-            setSelectedTabId(tempTabId);
+            updateSelectedTabId(tempTabId);
 
-            return { previousTabsResponse, tempTabId };
+            return { previousTabsResponse, tempTabId, previousSelectedTabId };
         },
         onError: (err, variables, context) => {
             if (context?.previousTabsResponse) {
                 queryClient.setQueryData<PadResponse>(['padTabs'], context.previousTabsResponse);
             }
             // Revert selectedTabId if it was the temporary one
-            if (selectedTabId === context?.tempTabId && context?.previousTabsResponse?.activeTabId) {
-                setSelectedTabId(context.previousTabsResponse.activeTabId);
-            } else if (selectedTabId === context?.tempTabId && context?.previousTabsResponse?.tabs && context.previousTabsResponse.tabs.length > 0) {
-                setSelectedTabId(context.previousTabsResponse.tabs[0].id);
-            } else if (selectedTabId === context?.tempTabId) {
-                setSelectedTabId('');
+            if (selectedTabIdRef.current === context?.tempTabId) {
+                const previousSelection = context.previousSelectedTabId
+                    || context.previousTabsResponse?.activeTabId
+                    || context.previousTabsResponse?.tabs[0]?.id
+                    || '';
+                updateSelectedTabId(previousSelection);
             }
         },
         onSuccess: (newlyCreatedTab, variables, context) => {
             queryClient.setQueryData<PadResponse>(['padTabs'], (old) => {
-                if (!old) return { tabs: [newlyCreatedTab], activeTabId: newlyCreatedTab.id };
+                if (!old) return { tabs: [newlyCreatedTab], activeTabId: newlyCreatedTab.id, folders: [] };
                 const newTabs = old.tabs.map(tab =>
                     tab.id === context?.tempTabId ? newlyCreatedTab : tab
                 );
@@ -247,10 +255,11 @@ export const usePadTabs = (isAuthenticated?: boolean) => {
                 return {
                     tabs: newTabs,
                     activeTabId: old.activeTabId === context?.tempTabId ? newlyCreatedTab.id : old.activeTabId,
+                    folders: old.folders ?? [],
                 };
             });
-            if (selectedTabId === context?.tempTabId) {
-                setSelectedTabId(newlyCreatedTab.id);
+            if (selectedTabIdRef.current === context?.tempTabId) {
+                updateSelectedTabId(newlyCreatedTab.id);
             }
         },
         onSettled: () => {
@@ -331,7 +340,7 @@ export const usePadTabs = (isAuthenticated?: boolean) => {
                     } else {
                         newSelectedTabId = '';
                     }
-                    setSelectedTabId(newSelectedTabId);
+                    updateSelectedTabId(newSelectedTabId);
                 }
 
                 return {
@@ -346,7 +355,7 @@ export const usePadTabs = (isAuthenticated?: boolean) => {
                 queryClient.setQueryData<PadResponse>(['padTabs'], context.previousTabsResponse);
             }
             if (context?.previousSelectedTabId) {
-                setSelectedTabId(context.previousSelectedTabId);
+                updateSelectedTabId(context.previousSelectedTabId);
             }
         },
         onSettled: () => {
@@ -431,7 +440,7 @@ export const usePadTabs = (isAuthenticated?: boolean) => {
                     } else {
                         newSelectedTabId = '';
                     }
-                    setSelectedTabId(newSelectedTabId);
+                    updateSelectedTabId(newSelectedTabId);
                 }
 
                 return {
@@ -452,7 +461,7 @@ export const usePadTabs = (isAuthenticated?: boolean) => {
                 queryClient.setQueryData<PadResponse>(['padTabs'], context.previousTabsResponse);
             }
             if (context?.previousSelectedTabId) {
-                setSelectedTabId(context.previousSelectedTabId);
+                updateSelectedTabId(context.previousSelectedTabId);
             }
             alert(`Error leaving pad: ${err.message}`);
         },
@@ -462,7 +471,7 @@ export const usePadTabs = (isAuthenticated?: boolean) => {
     });
 
     const selectTab = async (tabId: string) => {
-        setSelectedTabId(tabId);
+        updateSelectedTabId(tabId);
     };
 
     const updateThemeAPI = async ({ padId, theme }: { padId: string; theme: 'light' | 'dark' | null }): Promise<void> => {
@@ -582,14 +591,15 @@ export const usePadTabs = (isAuthenticated?: boolean) => {
             folder: data.folder || undefined,
         };
         queryClient.setQueryData<PadResponse>(['padTabs'], (old) => {
-            if (!old) return { tabs: [dailyTab], activeTabId: dailyTab.id };
+            if (!old) return { tabs: [dailyTab], activeTabId: dailyTab.id, folders: [] };
             const existing = old.tabs.find(t => t.id === dailyTab.id);
             return {
                 tabs: existing ? old.tabs : [...old.tabs, dailyTab],
                 activeTabId: old.activeTabId,
+                folders: old.folders ?? [],
             };
         });
-        setSelectedTabId(dailyTab.id);
+        updateSelectedTabId(dailyTab.id);
         queryClient.invalidateQueries({ queryKey: ['padTabs'] });
     };
 
