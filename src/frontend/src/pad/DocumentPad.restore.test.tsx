@@ -24,6 +24,56 @@ function response(body: unknown): Response {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); });
 
 describe('DocumentPad restored revision', () => {
+  it('retries a save after a rename advances only the server timestamp', async () => {
+    let serverVersion = 'version-1';
+    let serverContent = 'Original document';
+    const saves: Array<{ content: string; expected_updated_at: string }> = [];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/backlinks')) return response({ backlinks: [] });
+      if (init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body));
+        saves.push(body);
+        if (body.expected_updated_at !== serverVersion) return { ok: false, status: 409 } as Response;
+        serverContent = body.content;
+        serverVersion = 'version-3';
+        return response({ updated_at: serverVersion });
+      }
+      return response({ content: serverContent, updated_at: serverVersion });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<DocumentPad padId="renamed-pad" />);
+    const editor = await screen.findByDisplayValue('Original document');
+    serverVersion = 'version-2'; // Metadata-only rename after the initial read.
+    fireEvent.change(editor, { target: { value: 'Edited after rename' } });
+    await waitFor(() => expect(saves).toHaveLength(2), { timeout: 2000 });
+    expect(saves.map(save => save.expected_updated_at)).toEqual(['version-1', 'version-2']);
+    await waitFor(() => expect(serverContent).toBe('Edited after rename'));
+    expect(screen.queryByText('⚠️ Modifié ailleurs — résolution nécessaire')).not.toBeInTheDocument();
+  });
+
+  it('keeps a real concurrent content edit as a conflict', async () => {
+    let serverVersion = 'version-1';
+    let serverContent = 'Original document';
+    const saves: Array<{ content: string; expected_updated_at: string }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/backlinks')) return response({ backlinks: [] });
+      if (init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body));
+        saves.push(body);
+        return { ok: false, status: 409 } as Response;
+      }
+      return response({ content: serverContent, updated_at: serverVersion });
+    }));
+    render(<DocumentPad padId="concurrent-pad" />);
+    const editor = await screen.findByDisplayValue('Original document');
+    serverVersion = 'version-2';
+    serverContent = 'Changed on another device';
+    fireEvent.change(editor, { target: { value: 'My local draft' } });
+    await screen.findByText('⚠️ Modifié ailleurs — résolution nécessaire', {}, { timeout: 2000 });
+    expect(saves).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Garder mon brouillon' })).toBeInTheDocument();
+  });
+
   it('saves the next edit against the restored version and updates the assistant context', async () => {
     let restored = false;
     const onContentChange = vi.fn();

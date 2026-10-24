@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Plus, Trash2, Table2, Columns3, X } from 'lucide-react';
 import { snapshotDomPad } from '../lib/thumbnailSnapshot';
 import { enqueueSerializedSave } from '../lib/saveQueue';
+import { retryStructuredSaveAfterMetadataChange } from '../lib/metadataConflict';
 import { advanceStructuredPadDraftVersion, clearStructuredPadDraft, fetchAndSnapshotStructuredPadVersion, hasStructuredPadDraft, isStructuredPadDraftStale, readStructuredPadDraftRecord, removeStructuredPadDraft, UNKNOWN_STRUCTURED_DRAFT_BASELINE, writeStructuredPadDraft } from '../lib/structuredPadDraft';
 import './DatabasePad.scss';
 
@@ -29,6 +30,8 @@ export default function DatabasePad({ padId, data, onDataChange }: Props) {
   const initialConflict = Boolean(initialDraft && isStructuredPadDraftStale(initialDraft, data.updated_at ?? null));
   const baselineUnknownRef = useRef(baselineUnknown);
   const lastUpdatedAt = useRef<string | null>(initialDraft ? (initialDraft.baselineKnown ? initialDraft.expectedUpdatedAt : UNKNOWN_STRUCTURED_DRAFT_BASELINE) : (data.updated_at ?? null));
+  const persistedData = useRef<DatabaseData>(data);
+  const allowMetadataRetry = useRef(!initialDraft);
   const [conflict, setConflict] = useState(initialConflict);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [draftRestored, setDraftRestored] = useState(() => hasStructuredPadDraft(padId));
@@ -39,6 +42,8 @@ export default function DatabasePad({ padId, data, onDataChange }: Props) {
   // Reset local state when switching to a different database pad.
   useEffect(() => {
     const draft = readStructuredPadDraftRecord<DatabaseData>(padId);
+    persistedData.current = data;
+    allowMetadataRetry.current = !draft;
     const restored = draft?.data ?? data;
     setLocal(restored);
     const isBaselineUnknown = Boolean(draft && (!draft.baselineKnown || !draft.expectedUpdatedAt));
@@ -67,10 +72,13 @@ export default function DatabasePad({ padId, data, onDataChange }: Props) {
       // not part of pad.data. Sending it inside `data` would poison the DB.
       const { updated_at: _u, ...payload } = next;
       try {
-        const res = await fetch(`/api/pad/${savePadId}/data`, {
+        let res = await fetch(`/api/pad/${savePadId}/data`, {
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ data: payload, expected_updated_at: expectedUpdatedAt }),
         });
+        if (res.status === 409 && padIdRef.current === savePadId && allowMetadataRetry.current) {
+          res = await retryStructuredSaveAfterMetadataChange(savePadId, persistedData.current, payload) ?? res;
+        }
         if (res.status === 409) {
           if (padIdRef.current === savePadId) setConflict(true);
           return;
@@ -84,6 +92,8 @@ export default function DatabasePad({ padId, data, onDataChange }: Props) {
           }
           clearStructuredPadDraft(savePadId, next);
           if (padIdRef.current !== savePadId) return;
+          persistedData.current = next;
+          allowMetadataRetry.current = true;
           setConflict(false);
           setSaveError(null);
           setDraftRestored(false);

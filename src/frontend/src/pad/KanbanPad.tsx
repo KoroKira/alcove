@@ -8,6 +8,7 @@ import type { FieldDef, FieldValue, FieldType, Attachment, Priority } from './fi
 import { uid, PRIORITY_LABELS, PRIORITY_COLORS, FIELD_TYPE_LABELS } from './fieldTypes';
 import { snapshotDomPad } from '../lib/thumbnailSnapshot';
 import { enqueueSerializedSave } from '../lib/saveQueue';
+import { retryStructuredSaveAfterMetadataChange } from '../lib/metadataConflict';
 import { advanceStructuredPadDraftVersion, clearStructuredPadDraft, fetchAndSnapshotStructuredPadVersion, hasStructuredPadDraft, isStructuredPadDraftStale, readStructuredPadDraftRecord, removeStructuredPadDraft, UNKNOWN_STRUCTURED_DRAFT_BASELINE, writeStructuredPadDraft } from '../lib/structuredPadDraft';
 import './KanbanPad.scss';
 
@@ -496,6 +497,8 @@ export default function KanbanPad({ padId, data, onDataChange }: Props) {
   const initialConflict = Boolean(initialDraft && isStructuredPadDraftStale(initialDraft, data.updated_at ?? null));
   const baselineUnknownRef = useRef(baselineUnknown);
   const lastUpdatedAt = useRef<string | null>(initialDraft ? (initialDraft.baselineKnown ? initialDraft.expectedUpdatedAt : UNKNOWN_STRUCTURED_DRAFT_BASELINE) : (data.updated_at ?? null));
+  const persistedData = useRef<KanbanData>(data);
+  const allowMetadataRetry = useRef(!initialDraft);
   const [conflict, setConflict] = useState(initialConflict);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [draftRestored, setDraftRestored] = useState(() => hasStructuredPadDraft(padId));
@@ -506,6 +509,8 @@ export default function KanbanPad({ padId, data, onDataChange }: Props) {
   useEffect(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     const draft = readStructuredPadDraftRecord<KanbanData>(padId);
+    persistedData.current = data;
+    allowMetadataRetry.current = !draft;
     const restored = draft?.data ?? data;
     setColumns(restored.columns ?? []);
     setSchema(restored.fieldSchema ?? []);
@@ -531,11 +536,14 @@ export default function KanbanPad({ padId, data, onDataChange }: Props) {
       const expectedUpdatedAt = lastUpdatedAt.current;
       onDataChange(d);
       try {
-        const res = await fetch(`/api/pad/${savePadId}/data`, {
+        let res = await fetch(`/api/pad/${savePadId}/data`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ data: d, expected_updated_at: expectedUpdatedAt }),
         });
+        if (res.status === 409 && padIdRef.current === savePadId && allowMetadataRetry.current) {
+          res = await retryStructuredSaveAfterMetadataChange(savePadId, persistedData.current, d) ?? res;
+        }
         if (res.status === 409) {
           if (padIdRef.current === savePadId) setConflict(true);
           return;
@@ -549,6 +557,8 @@ export default function KanbanPad({ padId, data, onDataChange }: Props) {
           }
           clearStructuredPadDraft(savePadId, d);
           if (padIdRef.current !== savePadId) return;
+          persistedData.current = d;
+          allowMetadataRetry.current = true;
           setConflict(false);
           setSaveError(null);
           setDraftRestored(false);
