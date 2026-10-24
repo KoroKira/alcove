@@ -23,18 +23,19 @@ describe('normalizeCanvasData', () => {
   it.each([
     ['missing', undefined],
     ['null', null],
+    ['array', []],
     ['invalid object', {}],
-  ])('normalizes %s searchMatches to an array', (_label, searchMatches) => {
+  ])('normalizes %s searchMatches to null', (_label, searchMatches) => {
     const appState = searchMatches === undefined ? {} : { searchMatches };
     const normalized = normalizeCanvasData({ elements: [], appState });
 
-    expect(normalized.appState.searchMatches).toEqual([]);
+    expect(normalized.appState.searchMatches).toBeNull();
   });
 
   it('preserves existing search matches', () => {
-    const matches = [{ id: 'shape-1', focus: 0 }];
-    const normalized = normalizeCanvasData({ elements: [], appState: { searchMatches: matches } });
+    const searchMatches = { focusedId: null, matches: [{ id: 'shape-1', focus: false, matchedLines: [] }] };
+    const normalized = normalizeCanvasData({ elements: [], appState: { searchMatches } });
 
-    expect(normalized.appState.searchMatches).toBe(matches);
+    expect(normalized.appState.searchMatches).toBe(searchMatches);
   });
 });

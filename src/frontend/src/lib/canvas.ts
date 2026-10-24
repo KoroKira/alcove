@@ -89,10 +89,11 @@ export function normalizeCanvasData(data: any) {
   // Reset collaborators (https://github.com/excalidraw/excalidraw/issues/8637)
   appState.collaborators = new Map();
   
-  // Excalidraw iterates this UI-state field while rendering. Older scenes may
-  // omit it, but `null` crashes the canvas in newer Excalidraw versions.
-  if (!Array.isArray(appState.searchMatches)) {
-    appState.searchMatches = [];
+  // Excalidraw expects either null or { matches: [...] } here. A scene with
+  // an array (or a missing/legacy value) makes its renderer call
+  // `searchMatches.matches.forEach` on undefined and crashes the canvas.
+  if (!appState.searchMatches || !Array.isArray(appState.searchMatches.matches)) {
+    appState.searchMatches = null;
   }
 
   return { ...data, appState };
