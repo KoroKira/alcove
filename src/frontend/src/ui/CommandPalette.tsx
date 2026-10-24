@@ -49,8 +49,15 @@ const CommandPalette: React.FC<Props> = ({
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    inputRef.current?.focus();
+    return () => {
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, []);
 
   const wrap = (fn: () => void) => () => { fn(); onClose(); };
 
@@ -106,6 +113,28 @@ const CommandPalette: React.FC<Props> = ({
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') { onClose(); return; }
+    if (e.key === 'Tab') {
+      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+        'input:not([disabled]), button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable?.length) {
+        e.preventDefault();
+      } else {
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (!dialogRef.current?.contains(document.activeElement)) {
+          e.preventDefault();
+          first.focus();
+        } else if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+      return;
+    }
     if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIndex(i => Math.min(i + 1, items.length - 1)); }
     if (e.key === 'ArrowUp')   { e.preventDefault(); setActiveIndex(i => Math.max(i - 1, 0)); }
     if (e.key === 'Enter') {
@@ -121,12 +150,20 @@ const CommandPalette: React.FC<Props> = ({
 
   return (
     <div className="command-palette-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="command-palette" onKeyDown={handleKeyDown}>
+      <div
+        ref={dialogRef}
+        className="command-palette"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('command.placeholder')}
+        onKeyDown={handleKeyDown}
+      >
         <div className="command-palette__input-wrap">
           <Search size={16} className="command-palette__icon" />
           <input
             ref={inputRef}
             className="command-palette__input"
+            aria-label={t('command.placeholder')}
             placeholder={t('command.placeholder')}
             value={query}
             onChange={e => setQuery(e.target.value)}
@@ -134,9 +171,9 @@ const CommandPalette: React.FC<Props> = ({
           <span className="command-palette__hint">↑↓ · ↵ · Esc</span>
         </div>
 
-        <div className="command-palette__results" ref={listRef}>
+        <div className="command-palette__results" ref={listRef} aria-live="polite">
           {items.length === 0 && (
-            <div className="command-palette__empty">{t('search.noResults')}</div>
+            <div className="command-palette__empty" role="status">{t('search.noResults')}</div>
           )}
 
           {items.map((item, idx) => {
