@@ -189,6 +189,8 @@
     "ragMode": "Suche",
     "ragDesc": "Semantische Suche in allen indizierten Pads.",
     "ragIndexAll": "Alle Pads indizieren",
+    "ragIndexCurrent": "Dieses Pad indizieren",
+    "ragCurrentPad": "Dieses Pad",
     "ragIndexing": "Indizierung läuft…",
     "ragPlaceholder": "Frage stellen — die KI durchsucht deine Notizen…",
     "ragInputPlaceholder": "Frage… (Enter zum Suchen)",
