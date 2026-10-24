@@ -122,12 +122,16 @@ const SearchDialog: React.FC<SearchDialogProps> = ({ onClose, onSelectPad }) => 
           value={query}
           onChange={handleChange}
           placeholder={t('search.placeholder')}
+          aria-label={t('search.placeholder')}
         />
-        <div className="search-dialog__results">
-          {loading && <div className="search-dialog__loading">{t('search.loading')}</div>}
+        <div className="search-dialog__results" aria-busy={loading}>
+          {loading && <div className="search-dialog__loading" role="status">{t('search.loading')}</div>}
           {error && <div className="search-dialog__error" role="alert">{error}</div>}
           {!loading && !error && query.trim().length >= 2 && results.length === 0 && (
-            <div className="search-dialog__empty">{t('search.noResults')}</div>
+            <div className="search-dialog__empty" role="status">{t('search.noResults')}</div>
+          )}
+          {!loading && !error && results.length > 0 && (
+            <div className="search-dialog__count" role="status">{t('search.matches', { count: results.length })}</div>
           )}
           {results.map(r => (
             <div key={r.pad_id} className="search-result">
