@@ -25,8 +25,11 @@ dialogue. Le serveur doit avoir été préparé par son administrateur ci-dessou
 2. Nom : **Alcove**. URL : `https://alcove.codicam.fr/mcp` pour Codicam.
 3. Authentification : **OAuth**. Utiliser le client préenregistré
    `alcove-chatgpt` et son secret fournis de façon privée par l'administrateur.
-4. Vérifier que l'URL de retour affichée par ChatGPT correspond exactement à
-   celle autorisée dans Keycloak. Ne pas ajouter de joker `*`.
+4. Copier l'URL de retour affichée par ChatGPT et la transmettre à
+   l'administrateur pour le provisionnement du client. Elle est propre à cette
+   connexion (par exemple `https://chatgpt.com/connector/oauth/<callback_id>`)
+   et doit être autorisée à l'identique dans Keycloak, sans joker `*` ni slash
+   ajouté à la fin.
 5. Créer puis installer le plugin. Au premier appel, se connecter avec son
    **compte Alcove** et autoriser la lecture de ses notes.
 6. Tester : « Utilise Alcove pour lister mes trois derniers pads. » Puis
@@ -142,13 +145,13 @@ python scripts/provision_mcp_oauth.py \
   --admin-token-file /CHEMIN/PRIVE/admin-token.json \
   provision --resource https://alcove.example.org/mcp \
   --codex-redirect-uri http://127.0.0.1:18765/callback \
-  --chatgpt-redirect-uri https://chatgpt.com/connector_platform_oauth_redirect \
+  --chatgpt-redirect-uri 'https://chatgpt.com/connector/oauth/COPIER_ICI_LE_CALLBACK_AFFICHE' \
   --backup-dir /CHEMIN/PRIVE/nouveau-backup-oauth \
   --credentials-file /CHEMIN/PRIVE/nouveaux-clients.json
 ```
 
-Vérifier l'URL de retour exacte dans ChatGPT : elle peut dépendre du mode de
-callback de la connexion. Utiliser cette valeur si elle diffère de l'exemple.
+Remplacer `COPIER_ICI_LE_CALLBACK_AFFICHE` par l'URL exacte fournie par la
+connexion ChatGPT en cours. Ne pas réutiliser le callback d'une autre connexion.
 Chaque client est optionnel, mais au moins une URL de retour est requise.
 Le fichier de clients contient le secret ChatGPT; ne pas le publier. Le script
 sauvegarde la configuration précédente dans
