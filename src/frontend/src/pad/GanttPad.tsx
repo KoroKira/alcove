@@ -59,6 +59,7 @@ const parseDate = (d: string) => new Date(d + 'T00:00:00').getTime();
 const daysBetween = (a: string, b: string) => Math.round((parseDate(b) - parseDate(a)) / 86400000);
 
 const TASK_COLORS = ['#89b4fa', '#cba6f7', '#a6e3a1', '#f9e2af', '#fab387', '#f38ba8', '#89dceb'];
+const TASK_COLOR_LABELS = ['Bleu', 'Violet', 'Vert', 'Jaune', 'Orange', 'Rose', 'Cyan'];
 const SAVE_DEBOUNCE = 600;
 const ROW_H = 42;
 const DAY_W = 28;
@@ -240,23 +241,24 @@ function TaskPanel({ task, schema, allTasks, templates, onUpdate, onDelete, onSa
   const otherTasks = allTasks.filter(t => t.id !== task.id);
 
   return (
-    <div className="gantt__detail">
+    <div className="gantt__detail" role="region" aria-label={`Détails de la tâche ${draft.name || 'sans nom'}`}>
       <div className="gantt__detail-header">
         <span className="gantt__detail-label">Détail</span>
-        <button className="gantt__detail-close" onClick={onClose}><X size={14} /></button>
+        <button className="gantt__detail-close" type="button" aria-label="Fermer les détails de la tâche" onClick={onClose}><X size={14} /></button>
       </div>
 
       <div className="gantt__detail-body">
         {/* Name */}
         <input
           className="gantt__detail-title"
+          aria-label="Nom de la tâche"
           value={draft.name}
           onChange={e => upd({ name: e.target.value })}
           placeholder="Nom de la tâche"
         />
 
         {/* Milestone toggle */}
-        <label className="gantt__detail-field">
+        <div className="gantt__detail-field">
           <span className="gantt__detail-field-label">Type</span>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <label className="gantt__milestone-toggle">
@@ -264,7 +266,7 @@ function TaskPanel({ task, schema, allTasks, templates, onUpdate, onDelete, onSa
               <Flag size={12} /> Jalon
             </label>
           </div>
-        </label>
+        </div>
 
         {/* Dates */}
         {!draft.milestone && (
@@ -282,7 +284,7 @@ function TaskPanel({ task, schema, allTasks, templates, onUpdate, onDelete, onSa
             <label className="gantt__detail-field">
               <span className="gantt__detail-field-label">Avancement</span>
               <div className="gantt__detail-progress">
-                <input type="range" min={0} max={100} step={5}
+                <input type="range" min={0} max={100} step={5} aria-label="Avancement de la tâche"
                   value={draft.progress} onChange={e => upd({ progress: Number(e.target.value) })}
                   className="gantt__progress-range" />
                 <span className="gantt__progress-label">{draft.progress}%</span>
@@ -321,12 +323,18 @@ function TaskPanel({ task, schema, allTasks, templates, onUpdate, onDelete, onSa
         <label className="gantt__detail-field">
           <span className="gantt__detail-field-label">Couleur</span>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {TASK_COLORS.map(c => (
+            {TASK_COLORS.map((c, index) => (
               <button key={c}
+                type="button"
+                aria-label={`Couleur ${TASK_COLOR_LABELS[index]}`}
+                aria-pressed={draft.color === c}
                 style={{ background: c, width: 18, height: 18, border: draft.color === c ? '2px solid white' : '2px solid transparent', borderRadius: '50%', cursor: 'pointer', padding: 0 }}
                 onClick={() => upd({ color: c })} />
             ))}
             <button
+              type="button"
+              aria-label="Sans couleur"
+              aria-pressed={!draft.color}
               style={{ background: 'var(--color-surface-high,#45475a)', width: 18, height: 18, border: !draft.color ? '2px solid white' : '2px solid transparent', borderRadius: '50%', cursor: 'pointer', padding: 0, fontSize: 10, color: 'var(--color-on-surface-low,#a6adc8)' }}
               onClick={() => upd({ color: undefined })}>
               ✕
@@ -357,7 +365,7 @@ function TaskPanel({ task, schema, allTasks, templates, onUpdate, onDelete, onSa
         {/* Description */}
         <div className="gantt__detail-field gantt__detail-field--col">
           <span className="gantt__detail-field-label">Description</span>
-          <textarea className="gantt__detail-textarea"
+          <textarea className="gantt__detail-textarea" aria-label="Description de la tâche"
             value={draft.desc ?? ''}
             onChange={e => upd({ desc: e.target.value || undefined })}
             placeholder="Notes…" rows={3} />
@@ -374,18 +382,18 @@ function TaskPanel({ task, schema, allTasks, templates, onUpdate, onDelete, onSa
             ))}
             {addingField ? (
               <div className="gantt__add-field-form">
-                <input autoFocus placeholder="Nom de la propriété"
+                <input autoFocus aria-label="Nom de la propriété" placeholder="Nom de la propriété"
                   value={newFieldName} onChange={e => setNewFieldName(e.target.value)}
                   className="gantt__detail-input"
                   onKeyDown={e => { if (e.key === 'Enter') commitNewField(); if (e.key === 'Escape') setAddingField(false); }} />
-                <select value={newFieldType} onChange={e => setNewFieldType(e.target.value as FieldType)}
+                <select aria-label="Type de propriété" value={newFieldType} onChange={e => setNewFieldType(e.target.value as FieldType)}
                   className="gantt__detail-sel" style={{ borderLeft: 'none' }}>
                   {(Object.keys(FIELD_TYPE_LABELS) as FieldType[]).map(t => (
                     <option key={t} value={t}>{FIELD_TYPE_LABELS[t]}</option>
                   ))}
                 </select>
                 {newFieldType === 'select' && (
-                  <input placeholder="Options, séparées par virgule"
+                  <input aria-label="Options de la propriété" placeholder="Options, séparées par virgule"
                     value={newFieldOptions} onChange={e => setNewFieldOptions(e.target.value)}
                     className="gantt__detail-input" />
                 )}
@@ -415,7 +423,7 @@ function TaskPanel({ task, schema, allTasks, templates, onUpdate, onDelete, onSa
       <div className="gantt__detail-footer">
         {showSaveTpl ? (
           <div style={{ display: 'flex', gap: 5, flex: 1 }}>
-            <input autoFocus placeholder="Nom du modèle" value={tplName}
+            <input autoFocus aria-label="Nom du modèle" placeholder="Nom du modèle" value={tplName}
               onChange={e => setTplName(e.target.value)} className="gantt__detail-input"
               style={{ flex: 1 }}
               onKeyDown={e => { if (e.key === 'Enter') saveTpl(); if (e.key === 'Escape') setShowSaveTpl(false); }} />
@@ -647,7 +655,17 @@ export default function GanttPad({ padId, data, onDataChange }: Props) {
             <div
               key={task.id}
               className={`gantt__row${selectedId === task.id ? ' gantt__row--selected' : ''}`}
+              role="button"
+              tabIndex={0}
+              aria-label={`Ouvrir les détails de la tâche ${task.name}`}
+              aria-pressed={selectedId === task.id}
               onClick={() => setSelectedId(task.id === selectedId ? null : task.id)}
+              onKeyDown={event => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  setSelectedId(task.id === selectedId ? null : task.id);
+                }
+              }}
             >
               <div className="gantt__row-info">
                 {task.milestone && <Flag size={11} className="gantt__milestone-icon" />}

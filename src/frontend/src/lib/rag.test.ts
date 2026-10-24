@@ -9,8 +9,14 @@ vi.mock('../hooks/useOllama', () => ({
   fetchChatPreamble: vi.fn().mockResolvedValue({ system: '', defaultModel: 'llama3.2' }),
 }));
 
+function restoreRagTestMocks() {
+  vi.restoreAllMocks();
+  vi.mocked(streamLocalOllamaChat).mockReset().mockResolvedValue(undefined);
+  vi.mocked(oneShotLocalOllama).mockReset().mockResolvedValue('{"queries":[]}');
+}
+
 describe('embedText', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(restoreRagTestMocks);
 
   it('uses Ollama /api/embed and reads the embeddings response', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
@@ -27,7 +33,7 @@ describe('embedText', () => {
 });
 
 describe('RAG indexing', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(restoreRagTestMocks);
 
   it('reports a failed empty-pad index cleanup instead of marking it done', async () => {
     const progress = vi.fn();
@@ -37,7 +43,13 @@ describe('RAG indexing', () => {
 
     await expect(indexPad('pad-empty', progress)).rejects.toThrow('index-chunks 503');
     expect(progress).not.toHaveBeenCalledWith(expect.objectContaining({ status: 'done' }));
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const padRequests = fetchMock.mock.calls
+      .map(([input]) => String(input))
+      .filter(url => url === '/api/ai/rag/indexable-text/pad-empty' || url === '/api/ai/rag/index-chunks');
+    expect(padRequests).toEqual([
+      '/api/ai/rag/indexable-text/pad-empty',
+      '/api/ai/rag/index-chunks',
+    ]);
   });
 
   it('continues indexing later pads when empty-pad cleanup fails', async () => {
@@ -73,8 +85,7 @@ describe('RAG indexing', () => {
 
 describe('RAG answer evidence prompt', () => {
   afterEach(() => {
-    vi.restoreAllMocks();
-    vi.clearAllMocks();
+    restoreRagTestMocks();
   });
 
   it('treats note titles as labels and requires exact values to come from excerpts', async () => {

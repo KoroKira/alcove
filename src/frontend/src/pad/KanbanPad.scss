@@ -244,6 +244,23 @@
   word-break: break-word;
 }
 
+.kanban__card-title-button {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+
+  &:focus-visible {
+    border-radius: 2px;
+    outline: 2px solid var(--ap-accent, #cba6f7);
+    outline-offset: 2px;
+  }
+}
+
 .kanban__card-del {
   background: none;
   border: none;
