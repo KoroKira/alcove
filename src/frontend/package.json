@@ -33,7 +33,7 @@
     "react-use-websocket": "^4.13.0",
     "rollup": "^4.59.0",
     "tesseract.js": "^7.0.0",
-    "zod": "^3.24.4"
+    "zod": "^4.6.6"
   },
   "resolutions": {
     "cytoscape": "3.31.2",
