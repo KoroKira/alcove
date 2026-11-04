@@ -43,6 +43,10 @@ async def compile_latex(
                 text=True,
                 timeout=30,
                 cwd=tmpdir,
+                # Paranoid file access: TeX may only read files under the
+                # working directory (default texmf.cnf allows any readable file,
+                # e.g. \input{/etc/passwd}) and write only below it.
+                env={**os.environ, "openin_any": "p", "openout_any": "p", "shell_escape": "f"},
             )
 
             pdf_path = os.path.join(tmpdir, "doc.pdf")
