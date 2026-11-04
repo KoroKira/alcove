@@ -20,6 +20,7 @@ import { useAgentMemory, MemoryProposal } from '../hooks/useAgentMemory';
 import OllamaSetup from './OllamaSetup';
 import ModelManager from './ModelManager';
 import './AIPanel.scss';
+import { pressable } from '../lib/a11y';
 
 /* ─── Types ─── */
 
@@ -720,7 +721,11 @@ export default function AIPanel({
                       onClick={() => loadConversation(c.id)}
                     >
                       <MessageSquare size={12} className="ai-panel__conv-item-icon" />
-                      <span className="ai-panel__conv-item-title">{c.title}</span>
+                      <span
+                        className="ai-panel__conv-item-title"
+                        {...pressable(() => loadConversation(c.id))}
+                        aria-current={c.id === activeConvId ? 'true' : undefined}
+                      >{c.title}</span>
                       <span className="ai-panel__conv-item-count">{c.message_count}</span>
                       <button
                         className="ai-panel__conv-item-action"

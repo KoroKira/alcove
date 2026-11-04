@@ -10,6 +10,13 @@
     left: 52px !important;
   }
 
+  /* …but a COLLAPSED sidebar stays visible (44px) and would cover the first
+     ~50px of every pad/dashboard (measured at 390px: "Table" rendered as "able").
+     Reserve its width; the expanded drawer still overlays by design. */
+  body:has(.pad-sidebar.pad-sidebar--collapsed) .app-doc-wrap {
+    left: 104px !important;
+  }
+
   .pad-sidebar { left: 52px; }
 
   /* Sidebar becomes a slide-over drawer with a drop shadow. */

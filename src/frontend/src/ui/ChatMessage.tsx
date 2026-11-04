@@ -7,7 +7,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Play, BookmarkPlus, ArrowDownToLine, Sigma, Check, Loader } from 'lucide-react';
-import { Message, renderWithCitations } from '../lib/chatTypes';
+import { Message, analyzeCitations, renderWithCitations } from '../lib/chatTypes';
 
 interface Props {
   msg: Message;
@@ -31,6 +31,21 @@ export default function ChatMessage({
     el.classList.add('ai-msg__source--flash');
     setTimeout(() => el.classList.remove('ai-msg__source--flash'), 1400);
   };
+
+  const citations = msg.role === 'assistant'
+    ? analyzeCitations(msg.content, msg.sources)
+    : { verifiable: false, valid: [] as number[], invalid: [] as number[] };
+  const knownSources = citations.verifiable
+    ? new Set((msg.sources ?? []).map(s => s.n).filter((n): n is number => typeof n === 'number'))
+    : undefined;
+  const settled = !(streaming && isLast);
+  const citationWarning = !citations.verifiable || !settled || msg.content.trim() === ''
+    ? null
+    : citations.invalid.length > 0
+      ? t('ai.citationInvalid', { defaultValue: 'Certaines références (?) ne correspondent à aucune source : ne leur faites pas confiance.' })
+      : citations.valid.length === 0
+        ? t('ai.citationNone', { defaultValue: 'Cette réponse ne cite aucune source : vérifiez-la dans les notes listées.' })
+        : null;
 
   return (
     <div className={`ai-msg ai-msg--${msg.role}`}>
@@ -77,9 +92,10 @@ export default function ChatMessage({
         <>
           <div className="ai-msg__content">
             {msg.role === 'assistant'
-              ? renderWithCitations(msg.content, scrollToSource)
+              ? renderWithCitations(msg.content, scrollToSource, knownSources)
               : msg.content}
           </div>
+          {citationWarning && <div className="ai-msg__citation-warning" role="note">{citationWarning}</div>}
           {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && (
             <div className="ai-msg__sources ai-msg__sources--numbered">
               <div className="ai-msg__sources-label">

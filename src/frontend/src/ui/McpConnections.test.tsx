@@ -31,6 +31,13 @@ describe('MCP connections', () => {
     await waitFor(() => expect(screen.getByLabelText('Nom de la connexion')).toHaveFocus());
   });
 
+  it('tells the user exactly what the write permission allows', async () => {
+    setup([{ ...key, scopes: ['read', 'write'] }]);
+    expect(await screen.findByLabelText(/création de notes et l’ajout de texte à la fin d’un document existant/)).not.toBeChecked();
+    expect(screen.getByText(/ne peut ni supprimer ni réécrire/)).toBeInTheDocument();
+    expect(screen.getByText(/Lecture, création et ajout/)).toBeInTheDocument();
+  });
+
   it('requires confirmation before revoking a connection', async () => {
     const fetchMock = setup([key]);
     fireEvent.click(await screen.findByRole('button', { name: 'Révoquer Codex personnel' }));

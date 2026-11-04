@@ -25,6 +25,7 @@ import ChatMessage from './ChatMessage';
 import PersonaPicker from './PersonaPicker';
 import './AIPanel.scss'; // ai-msg__* / ai-panel__empty rules — shared with ChatMessage
 import './ChatView.scss';
+import { pressable } from '../lib/a11y';
 
 interface ConvSummary {
   id: string;
@@ -284,7 +285,11 @@ export default function ChatView({ onClose }: Props) {
                   onClick={() => loadConversation(c.id)}
                 >
                   <MessageSquare size={12} className="chatview-sidebar__item-icon" />
-                  <span className="chatview-sidebar__item-title">{c.title}</span>
+                  <span
+                    className="chatview-sidebar__item-title"
+                    {...pressable(() => loadConversation(c.id))}
+                    aria-current={c.id === activeConvId ? 'true' : undefined}
+                  >{c.title}</span>
                   <button
                     className="chatview-sidebar__item-action"
                     onClick={e => { e.stopPropagation(); renameConversation(c.id, c.title); }}

@@ -108,6 +108,20 @@ jobs:
           TEST_REDIS_URL: redis://127.0.0.1:6379/15
         run: PYTHONPATH=. python -m pytest tests/ -m integration -v
 
+      - name: Verify a backup can be restored in isolation
+        run: |
+          # Dump AND restore with the clients of the postgres:16 image so their
+          # major version matches the PostgreSQL 16 service: a newer pg_dump or
+          # pg_restore emits settings (transaction_timeout) PostgreSQL 16 rejects.
+          mkdir -p "$RUNNER_TEMP/backup"
+          docker run --rm --network host -e PGPASSWORD=postgres postgres:16 \
+            pg_dump -Fc --no-owner --no-acl -h 127.0.0.1 -U postgres alcove_existing > "$RUNNER_TEMP/backup/alcove.dump"
+          (cd "$RUNNER_TEMP/backup" && sha256sum alcove.dump > SHA256SUMS)
+          docker run --rm --network host \
+            -e VERIFY_PG_HOST=127.0.0.1 -e VERIFY_PG_PASSWORD=postgres \
+            -v "$GITHUB_WORKSPACE/scripts:/scripts:ro" -v "$RUNNER_TEMP/backup:/backup:ro" \
+            postgres:16 sh /scripts/verify-restore.sh /backup
+
       - name: Verify migration rollback and re-upgrade
         working-directory: src/backend
         env:
@@ -117,6 +131,43 @@ jobs:
           alembic downgrade c8d1f2a3b4e5
           alembic upgrade head
           python ../../scripts/verify-existing-backfill.py
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: yarn
+          cache-dependency-path: src/frontend/yarn.lock
+      - run: yarn install --frozen-lockfile
+      - name: Typecheck
+        run: yarn typecheck
+      - name: Unit tests
+        run: yarn test
+      - name: Build
+        run: yarn build
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    # Advisory databases change daily: report, do not block unrelated PRs.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Python dependencies
+        run: |
+          pip install pip-audit
+          pip-audit -r src/backend/requirements.txt
+      - name: Frontend production dependencies
+        working-directory: src/frontend
+        run: yarn audit --groups dependencies --level high
 
   secret-scan:
     runs-on: ubuntu-latest

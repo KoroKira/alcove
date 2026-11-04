@@ -8,6 +8,7 @@ import { Tab } from '../hooks/usePadTabs';
 import { CANVAS_TEMPLATES, CanvasTemplate } from '../constants/templates';
 import { cardTint } from '../lib/cardTint';
 import './Dashboard.scss';
+import { pressable } from '../lib/a11y';
 
 interface Props {
   initialView?: 'pads' | 'templates' | 'favorites';
@@ -372,6 +373,9 @@ const Dashboard: React.FC<Props> = ({
                   key={tag}
                   className="dashboard__card-tag"
                   onClick={e => { e.stopPropagation(); setActiveTag(t => t === tag ? null : tag); }}
+                  {...pressable(() => setActiveTag(t => t === tag ? null : tag))}
+                  aria-pressed={activeTag === tag}
+                  title={`Filtrer par #${tag}`}
                 >{tag}</span>
               ))}
             </div>
