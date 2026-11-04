@@ -11,6 +11,7 @@ import {
   getActivePersonaId, setActivePersonaId,
 } from '../lib/personas';
 import './PersonaPicker.scss';
+import { pressable } from '../lib/a11y';
 
 interface Props {
   /** Called whenever the active persona changes (including to null). */
@@ -110,13 +111,20 @@ export default function PersonaPicker({ onChange }: Props) {
               <div
                 className={`persona-picker__item${!activeId ? ' active' : ''}`}
                 onClick={() => select(null)}
+                {...pressable(() => select(null))}
+                aria-current={!activeId ? 'true' : undefined}
               >
                 {!activeId && <Check size={12} />}
                 <span>{t('ai.personaNone', { defaultValue: 'Assistant' })}</span>
               </div>
               {personas.map(p => (
                 <div key={p.id} className={`persona-picker__item${p.id === activeId ? ' active' : ''}`}>
-                  <div className="persona-picker__item-main" onClick={() => select(p.id)}>
+                  <div
+                    className="persona-picker__item-main"
+                    onClick={() => select(p.id)}
+                    {...pressable(() => select(p.id))}
+                    aria-current={p.id === activeId ? 'true' : undefined}
+                  >
                     {p.id === activeId && <Check size={12} />}
                     <span>{p.name}</span>
                   </div>

@@ -37,6 +37,7 @@ import { getDueCounts } from '../lib/reviewActivity';
 import type { Tab } from '../hooks/usePadTabs';
 import TabContextMenu from './TabContextMenu';
 import './PadSidebar.scss';
+import { pressable } from '../lib/a11y';
 
 interface PadSidebarProps {
   tabs: Tab[];
@@ -583,6 +584,9 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
                 key={tab.id}
                 className={`pad-sidebar__item${selectedTabId === tab.id ? ' pad-sidebar__item--active' : ''}`}
                 onClick={() => onSelectPad(tab.id)}
+                {...pressable(() => onSelectPad(tab.id))}
+                aria-label={tab.title}
+                aria-current={selectedTabId === tab.id ? 'true' : undefined}
                 onContextMenu={e => openContextMenu(e, tab)}
                 title={tab.title}
               >
