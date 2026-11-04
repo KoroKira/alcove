@@ -105,6 +105,29 @@ describe('FlashcardStudio', () => {
     expect(screen.getByRole('button', { name: /Facile/i })).toBeInTheDocument();
   });
 
+  it('lets keyboard users reveal the answer with Enter or Space', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse({
+      decks: [{ padId: 'pad-1', padName: 'Doc A', cards: [{ q: 'Capitale de la France ?', a: 'Paris' }] }],
+    })) as unknown as typeof fetch;
+    const user = userEvent.setup();
+    render(<FlashcardStudio tabs={[tab({ id: 'pad-1', title: 'Doc A' })]} onClose={noop} onSelectPad={noop} />);
+    await user.click(screen.getByText('Doc A'));
+    await user.click(screen.getByRole('button', { name: /Extraire Q\/A/i }));
+
+    const card = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>('.fc-studio__card');
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    expect(card).toHaveAttribute('role', 'button');
+    expect(card).toHaveAttribute('tabindex', '0');
+    expect(screen.queryByRole('button', { name: /Raté/i })).not.toBeInTheDocument();
+
+    card.focus();
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(screen.getByRole('button', { name: /Raté/i })).toBeInTheDocument());
+  });
+
   it('answering "Bien" advances the queue and persists to localStorage', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse({
       decks: [{
