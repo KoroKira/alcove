@@ -141,20 +141,12 @@ else
   success "Bundle frontend à jour"
 fi
 
-# ── ttyd (terminal local) ─────────────────────────────────────────────────────
-TTYD_PID=""
-brew list ttyd &>/dev/null || { warn "Installation de ttyd…"; brew install ttyd; }
-if ! lsof -ti ":$TTYD_PORT" >/dev/null 2>&1; then
-  info "Démarrage de ttyd sur le port ${TTYD_PORT}…"
-  # -i lo0 : loopback uniquement — ttyd est un shell distant, il ne doit JAMAIS
-  # être accessible depuis le réseau (par défaut il écoute sur 0.0.0.0)
-  ttyd -p "$TTYD_PORT" -i lo0 -W zsh &>/tmp/pad-ttyd.log &
-  TTYD_PID=$!
-  sleep 1
-  success "ttyd prêt (PID $TTYD_PID)"
-else
-  warn "ttyd déjà en cours sur le port $TTYD_PORT"
-  TTYD_PID=""
+# ── Terminal local ────────────────────────────────────────────────────────────
+# Alcove ne démarre ni n'installe plus ttyd : c'est un shell accessible en
+# HTTP/WebSocket. Le pad « Terminal local » reste désactivé tant que TTYD_URL
+# est vide (voir SECURITY.md).
+if lsof -ti ":$TTYD_PORT" >/dev/null 2>&1; then
+  warn "Le port $TTYD_PORT est occupé (ttyd ?). Alcove ne l'utilise pas ; vérifiez que ce service n'est pas un shell non protégé."
 fi
 
 # ── Ollama (IA locale) ───────────────────────────────────────────────────────
@@ -198,7 +190,6 @@ cleanup() {
   echo ""
   info "Arrêt…"
   kill "$VITE_PID" 2>/dev/null || true
-  [ -n "$TTYD_PID" ] && kill "$TTYD_PID" 2>/dev/null || true
   [ -n "$OLLAMA_PID" ] && kill "$OLLAMA_PID" 2>/dev/null || true
   echo -e "${YELLOW}Services Homebrew toujours actifs. Pour les arrêter :${NC}"
   echo "  brew services stop postgresql@16 redis"
