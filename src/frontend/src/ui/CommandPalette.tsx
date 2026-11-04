@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Search, FileText, CalendarDays, Network,
-  Grid2X2, Grid3X3, Plus, Columns3, GanttChart, Zap, Upload, BookOpen, LifeBuoy, Link2, Telescope, Table2,
+  Grid2X2, Grid3X3, Plus, Columns3, GanttChart, Zap, Upload, BookOpen, LifeBuoy, Link2, Telescope, Table2, Sigma, Pencil,
 } from 'lucide-react';
 import { Tab } from '../hooks/usePadTabs';
 import { fuzzyFilter } from '../lib/fuzzy';
@@ -115,7 +115,7 @@ const CommandPalette: React.FC<Props> = ({
     if (e.key === 'Escape') { onClose(); return; }
     if (e.key === 'Tab') {
       const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
-        'input:not([disabled]), button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+        'input:not([disabled]), button:not([disabled]):not([tabindex="-1"]), a[href], [tabindex]:not([tabindex="-1"])',
       );
       if (!focusable?.length) {
         e.preventDefault();
@@ -146,7 +146,29 @@ const CommandPalette: React.FC<Props> = ({
     }
   };
 
-  const padTypeLabel = (type?: string) => type === 'document' ? t('command.typeDocument') : t('command.typeCanvas');
+  const padTypeMeta = (type?: string): { label: string; icon: React.ReactNode } => {
+    switch (type) {
+      case 'document': return { label: t('command.typeDocument'), icon: <FileText size={15} /> };
+      case 'kanban': return { label: t('command.typeKanban'), icon: <Columns3 size={15} /> };
+      case 'gantt': return { label: t('command.typeGantt'), icon: <GanttChart size={15} /> };
+      case 'latex': return { label: t('command.typeLatex'), icon: <Sigma size={15} /> };
+      case 'database': return { label: t('command.typeDatabase'), icon: <Table2 size={15} /> };
+      default: return { label: t('command.typeCanvas'), icon: <Pencil size={15} /> };
+    }
+  };
+
+  // Group contiguous items of the same kind; each option keeps its flat index
+  // so keyboard navigation (aria-activedescendant) and mouse hover agree.
+  const groups: { kind: Item['kind']; entries: { item: Item; idx: number }[] }[] = [];
+  items.forEach((item, idx) => {
+    const last = groups[groups.length - 1];
+    if (last && last.kind === item.kind) last.entries.push({ item, idx });
+    else groups.push({ kind: item.kind, entries: [{ item, idx }] });
+  });
+
+  const listboxId = 'command-palette-listbox';
+  const optionId = (idx: number) => `command-palette-option-${idx}`;
+  const activeOptionId = items.length > 0 ? optionId(Math.min(activeIndex, items.length - 1)) : undefined;
 
   return (
     <div className="command-palette-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
@@ -163,6 +185,11 @@ const CommandPalette: React.FC<Props> = ({
           <input
             ref={inputRef}
             className="command-palette__input"
+            role="combobox"
+            aria-expanded="true"
+            aria-controls={listboxId}
+            aria-autocomplete="list"
+            aria-activedescendant={activeOptionId}
             aria-label={t('command.placeholder')}
             placeholder={t('command.placeholder')}
             value={query}
@@ -171,58 +198,62 @@ const CommandPalette: React.FC<Props> = ({
           <span className="command-palette__hint">↑↓ · ↵ · Esc</span>
         </div>
 
-        <div className="command-palette__results" ref={listRef} aria-live="polite">
+        {/* Result count for screen readers; the highlighted option itself is
+            announced through aria-activedescendant. */}
+        <div role="status" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>
+          {items.length > 0 ? t('command.resultsCount', { count: items.length }) : ''}
+        </div>
+
+        <div className="command-palette__results" ref={listRef} role="listbox" id={listboxId} aria-label={t('command.placeholder')}>
           {items.length === 0 && (
             <div className="command-palette__empty" role="status">{t('search.noResults')}</div>
           )}
 
-          {items.map((item, idx) => {
-            const prev = items[idx - 1];
-            const showHeader = idx === 0 || prev?.kind !== item.kind;
-            const isActive = activeIndex === idx;
-            const groupLabel = item.kind === 'cmd' ? 'Commandes' : 'Pads';
-
-            if (item.kind === 'cmd') {
-              const cmd = item.cmd;
-              return (
-                <React.Fragment key={cmd.id}>
-                  {showHeader && <div className="command-palette__group-label">{groupLabel}</div>}
-                  <button
-                    className={`command-palette__item ${isActive ? 'command-palette__item--active' : ''}`}
-                    onClick={cmd.action}
-                    onMouseEnter={() => setActiveIndex(idx)}
-                  >
-                    <span className="command-palette__item-icon">{cmd.icon}</span>
-                    <span className="command-palette__item-label">{cmd.label}</span>
-                    <span className="command-palette__item-meta">
-                      {cmd.kbd && <span className="command-palette__item-kbd">{cmd.kbd}</span>}
-                    </span>
-                  </button>
-                </React.Fragment>
-              );
-            }
-
-            const tab = item.tab;
+          {groups.map(group => {
+            const labelId = `command-palette-group-${group.kind}`;
             return (
-              <React.Fragment key={tab.id}>
-                {showHeader && <div className="command-palette__group-label">{groupLabel}</div>}
-                <button
-                  className={`command-palette__item ${isActive ? 'command-palette__item--active' : ''}`}
-                  onClick={() => { onSelectPad(tab.id); onClose(); }}
-                  onMouseEnter={() => setActiveIndex(idx)}
-                >
-                  <span className="command-palette__item-icon">
-                    {tab.padType === 'document' ? <FileText size={15} /> : tab.padType === 'kanban' ? <Columns3 size={15} /> : tab.padType === 'gantt' ? <GanttChart size={15} /> : <FileText size={15} />}
-                  </span>
-                  <span className="command-palette__item-label">{tab.title}</span>
-                  <span className="command-palette__item-meta">
-                    <span className={`command-palette__item-badge command-palette__item-badge--${tab.padType || 'canvas'}`}>
-                      {padTypeLabel(tab.padType)}
-                    </span>
-                    {tab.isScratch && <span className="command-palette__item-kbd">Scratch</span>}
-                  </span>
-                </button>
-              </React.Fragment>
+              <div key={group.kind} role="group" aria-labelledby={labelId}>
+                <div id={labelId} className="command-palette__group-label">
+                  {group.kind === 'cmd' ? t('command.groupCommands') : t('command.groupPads')}
+                </div>
+                {group.entries.map(({ item, idx }) => {
+                  const isActive = activeIndex === idx;
+                  const common = {
+                    id: optionId(idx),
+                    role: 'option' as const,
+                    tabIndex: -1,
+                    'aria-selected': isActive,
+                    className: `command-palette__item ${isActive ? 'command-palette__item--active' : ''}`,
+                    onMouseEnter: () => setActiveIndex(idx),
+                  };
+                  if (item.kind === 'cmd') {
+                    const cmd = item.cmd;
+                    return (
+                      <button key={cmd.id} {...common} onClick={cmd.action}>
+                        <span className="command-palette__item-icon">{cmd.icon}</span>
+                        <span className="command-palette__item-label">{cmd.label}</span>
+                        <span className="command-palette__item-meta">
+                          {cmd.kbd && <span className="command-palette__item-kbd">{cmd.kbd}</span>}
+                        </span>
+                      </button>
+                    );
+                  }
+                  const tab = item.tab;
+                  const meta = padTypeMeta(tab.padType);
+                  return (
+                    <button key={tab.id} {...common} onClick={() => { onSelectPad(tab.id); onClose(); }}>
+                      <span className="command-palette__item-icon">{meta.icon}</span>
+                      <span className="command-palette__item-label">{tab.title}</span>
+                      <span className="command-palette__item-meta">
+                        <span className={`command-palette__item-badge command-palette__item-badge--${tab.padType || 'canvas'}`}>
+                          {meta.label}
+                        </span>
+                        {tab.isScratch && <span className="command-palette__item-kbd">Scratch</span>}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             );
           })}
         </div>
