@@ -183,6 +183,7 @@ class PadWriteService:
             metadata={"pad_type": pad_type},
         )
         await self.session.commit()
+        self._reindex(pad.id)
         return response, False
 
     async def update_data(
@@ -233,6 +234,7 @@ class PadWriteService:
         )
         await self.session.commit()
         await self._invalidate_cache(pad.id)
+        self._reindex(pad.id)
         return response, False
 
     async def update_metadata(
@@ -301,6 +303,12 @@ class PadWriteService:
         await self.session.commit()
         await self._invalidate_cache(pad.id)
         return response, False
+
+    @staticmethod
+    def _reindex(pad_id: UUID) -> None:
+        """Keep semantic search current for writes that have no browser to index them."""
+        from services.pad_indexing import schedule_pad_indexing
+        schedule_pad_indexing(pad_id)
 
     async def _invalidate_cache(self, pad_id: UUID) -> None:
         try:
