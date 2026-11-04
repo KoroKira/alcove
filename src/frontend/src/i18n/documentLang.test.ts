@@ -17,4 +17,11 @@ describe('document language', () => {
     applyDocumentLang(undefined);
     expect(document.documentElement.lang).toBe('es');
   });
+
+  it('restores the UI language when another library overwrites <html lang>', async () => {
+    await i18n.changeLanguage('de');
+    document.documentElement.lang = 'en-EN';   // what Excalidraw does after mounting
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(document.documentElement.lang).toBe('de');
+  });
 });
