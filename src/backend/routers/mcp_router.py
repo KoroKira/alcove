@@ -1,11 +1,17 @@
 """MCP (Model Context Protocol) server — expose Alcove's knowledge base
 to any MCP-capable client (Claude Desktop, Cursor, ChatGPT, custom agents).
 
-The user's KB becomes addressable from outside via 4 tools :
-  · search_pads(query, top_k)  — semantic (RAG) or text search
-  · read_pad(pad_id)           — full markdown content
-  · list_recent(limit)         — recent pads with metadata
-  · write_note(title, content) — create a new document pad
+The user's KB becomes addressable from outside via these tools :
+  read  · search_pads(query, top_k)        — semantic (RAG) or keyword search
+        · read_pad(pad_id)                 — text of any pad type + wikilinks
+        · list_recent(limit)               — recent pads with metadata
+        · list_pads(folder, tag, ...)      — filtered, paginated listing
+        · workspace_overview()             — folders, tags, pad-type counts
+  write · write_note(title, content)       — create a new document pad
+        · append_to_pad(pad_id, ...)       — append to a document (optimistic lock)
+
+There is deliberately no delete / overwrite tool. If one is ever added it must
+require the `write` scope AND an explicit `confirm` argument.
 
 Transport : JSON-RPC 2.0 over HTTP POST at /mcp/ — the Streamable HTTP
 transport spec'd by the MCP SDK. Single endpoint handles the whole
@@ -20,6 +26,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
@@ -31,12 +38,13 @@ from pydantic import BaseModel
 from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import ALLOWED_ORIGINS, PAD_DEV_MODE
+from config import ALLOWED_ORIGINS, FRONTEND_URL, OLLAMA_URL, PAD_DEV_MODE
 from database.database import async_session, get_session
 from database.models import PadStore
 from database.models.embedding_model import PadEmbedding
 from database.pad_serialization import serialize_pad
 from routers.ai.rag import rank_rows
+from services.rag_indexer import extract_text_from_pad
 from routers.auth_router import DEV_USER_ID
 from services.mcp_api_key_service import McpPrincipal, verify_api_key_principal
 from services.mcp_oauth import (
@@ -65,8 +73,22 @@ async def mcp_resource_metadata():
 _PROTOCOL_VERSION = "2025-06-18"
 _SERVER_INFO = {
     "name": "alcove",
-    "version": "1.0.0",
+    "title": "Alcove knowledge base",
+    "version": "1.1.0",
 }
+# Sent in `initialize` so any agent learns the intended workflow without
+# reading external documentation.
+_SERVER_INSTRUCTIONS = (
+    "Alcove is the user's personal knowledge base (documents, canvases, kanban, "
+    "gantt, LaTeX). Typical flow: workspace_overview to orient yourself, "
+    "search_pads or list_pads to find notes, read_pad to read one. Always cite "
+    "the `url` of every pad you rely on and never invent content that was not "
+    "returned. Results with `degraded: true` are keyword matches: say so. Write "
+    "only when the user asks: write_note creates a document, append_to_pad "
+    "adds to an existing one and needs the `updated_at` you got from read_pad; "
+    "on a conflict, read the pad again instead of retrying blindly. This server "
+    "has no delete or overwrite tool."
+)
 _SERVER_CAPABILITIES = {
     "tools": {},
 }
@@ -75,6 +97,10 @@ _SERVER_CAPABILITIES = {
 # ── Tool schemas — described in JSON Schema so any MCP client renders them
 #    cleanly. Descriptions matter : the calling LLM reads them to decide
 #    when to call which tool.
+_PAD_TYPES = frozenset({"canvas", "document", "kanban", "gantt", "latex", "database"})
+_MAX_APPEND_BYTES = 256_000
+_MAX_READ_CHARS = 200_000
+
 _TOOLS: List[Dict[str, Any]] = [
     {
         "name": "search_pads",
@@ -140,13 +166,64 @@ _TOOLS: List[Dict[str, Any]] = [
         },
     },
 ]
-_READ_TOOLS = frozenset({"search_pads", "read_pad", "list_recent"})
+_TOOLS.extend([
+    {
+        "name": "list_pads",
+        "description": (
+            "List pads with optional filters (folder, tag, pad_type), newest "
+            "first, with pagination. Use after workspace_overview when you "
+            "need every note of a folder or tag rather than a search."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "folder": {"type": "string", "description": "Exact folder name."},
+                "tag": {"type": "string", "description": "Exact tag."},
+                "pad_type": {"type": "string", "enum": sorted(_PAD_TYPES)},
+                "limit": {"type": "integer", "default": 50, "minimum": 1, "maximum": 100},
+                "offset": {"type": "integer", "default": 0, "minimum": 0, "maximum": 100000},
+            },
+        },
+    },
+    {
+        "name": "workspace_overview",
+        "description": (
+            "Summarize the workspace: number of pads per type, folders and "
+            "tags with their counts. Call this first to learn how the user "
+            "organizes their knowledge."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "append_to_pad",
+        "description": (
+            "Append Markdown to the end of an existing DOCUMENT pad. Never "
+            "rewrites or deletes existing text. Requires the `updated_at` "
+            "returned by read_pad: if the pad changed since, the call fails "
+            "with a conflict and you must read the pad again."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pad_id": {"type": "string", "description": "The pad UUID."},
+                "content": {"type": "string", "description": "Markdown to append."},
+                "expected_updated_at": {
+                    "type": "string",
+                    "description": "The `updated_at` value from your latest read_pad of this pad.",
+                },
+            },
+            "required": ["pad_id", "content", "expected_updated_at"],
+        },
+    },
+])
+_READ_TOOLS = frozenset({"search_pads", "read_pad", "list_recent", "list_pads", "workspace_overview"})
 for _tool in _TOOLS:
     _tool["inputSchema"]["additionalProperties"] = False
     _tool["annotations"] = {
         "readOnlyHint": _tool["name"] in _READ_TOOLS,
         "destructiveHint": False,
         "idempotentHint": _tool["name"] in _READ_TOOLS,
+        "openWorldHint": False,
     }
 
 
@@ -170,6 +247,24 @@ def _valid_tool_arguments(name: str, args: Any) -> bool:
         return isinstance(args.get("pad_id"), str) and len(args["pad_id"]) <= 64
     if name == "list_recent":
         return "limit" not in args or (type(args["limit"]) is int and 1 <= args["limit"] <= 100)
+    if name == "list_pads":
+        return (
+            all(isinstance(args.get(k), str) and 1 <= len(args[k]) <= 80 for k in ("folder", "tag") if k in args)
+            and ("pad_type" not in args or args["pad_type"] in _PAD_TYPES)
+            and ("limit" not in args or (type(args["limit"]) is int and 1 <= args["limit"] <= 100))
+            and ("offset" not in args or (type(args["offset"]) is int and 0 <= args["offset"] <= 100000))
+        )
+    if name == "workspace_overview":
+        return True
+    if name == "append_to_pad":
+        return (
+            isinstance(args.get("pad_id"), str) and len(args["pad_id"]) <= 64
+            and isinstance(args.get("content"), str)
+            and 1 <= len(args["content"].strip())
+            and len(args["content"].encode("utf-8")) <= _MAX_APPEND_BYTES
+            and isinstance(args.get("expected_updated_at"), str)
+            and len(args["expected_updated_at"]) <= 64
+        )
     if name == "write_note":
         tags = args.get("tags", [])
         return (
@@ -236,7 +331,6 @@ async def _resolve_principal(request: Request) -> McpPrincipal:
 
 # ── Ollama embedding for semantic search ───────────────────────────────────
 _EMBED_MODEL_DEFAULT = "nomic-embed-text"
-_OLLAMA_URL = "http://localhost:11434"
 
 
 async def _embed_query(text: str, model: str = _EMBED_MODEL_DEFAULT) -> Optional[List[float]]:
@@ -245,7 +339,7 @@ async def _embed_query(text: str, model: str = _EMBED_MODEL_DEFAULT) -> Optional
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             r = await client.post(
-                f"{_OLLAMA_URL}/api/embeddings",
+                f"{OLLAMA_URL.rstrip('/')}/api/embeddings",
                 json={"model": model, "prompt": text},
             )
             r.raise_for_status()
@@ -257,6 +351,12 @@ async def _embed_query(text: str, model: str = _EMBED_MODEL_DEFAULT) -> Optional
 
 
 # ── Tool implementations ───────────────────────────────────────────────────
+def _pad_url(pad_id: Any) -> str:
+    """Link an agent can cite; absolute when FRONTEND_URL is configured."""
+    base = (FRONTEND_URL or "").rstrip("/")
+    return f"{base}/pad/{pad_id}"
+
+
 async def _tool_search_pads(
     args: Dict[str, Any], user_id: UUID, session: AsyncSession,
 ) -> Dict[str, Any]:
@@ -264,10 +364,12 @@ async def _tool_search_pads(
     top_k = int(args.get("top_k") or 5)
     top_k = max(1, min(20, top_k))
     if not query:
-        return {"results": [], "mode": "empty"}
+        return {"results": [], "mode": "empty", "degraded": False, "notice": None}
 
-    # Semantic first — falls back to LIKE search if Ollama is offline or
-    # the KB has no embeddings.
+    # Semantic first. Any reason it cannot answer is reported to the caller
+    # instead of being swallowed, so an agent never presents keyword matches
+    # as semantic ones.
+    notice = None
     emb = await _embed_query(query)
     if emb:
         rows = await PadEmbedding.get_all_for_owner(session, user_id)
@@ -278,40 +380,71 @@ async def _tool_search_pads(
             if top:
                 return {
                     "mode": "semantic",
+                    "degraded": False,
+                    "notice": None,
                     "results": [
                         {
                             "pad_id": str(r.pad_id),
                             "pad_name": r.display_name,
+                            "url": _pad_url(r.pad_id),
                             "score": round(s, 4),
                             "chunk_text": r.chunk_text,
                         }
                         for s, r in top
                     ],
                 }
+            notice = "No semantic match above the relevance threshold; showing keyword matches."
+        else:
+            notice = "The workspace has no semantic index yet (open pads in Alcove to index them); showing keyword matches."
+    else:
+        notice = "Semantic search is unavailable (embedding service unreachable); showing keyword matches."
 
-    # Fallback : simple ILIKE on display_name + data.content.
-    like = f"%{query}%"
+    # Keyword fallback over titles AND content of every pad type, using the
+    # same matcher as the in-app search and the same read boundary.
     from application.pads import PadQueryService
-    stmt = (
-        sa_select(PadStore.id, PadStore.display_name, PadStore.tags, PadStore.updated_at)
-        .where(PadQueryService.readable_filter(user_id))
-        .where(PadStore.display_name.ilike(like))
-        .order_by(PadStore.updated_at.desc())
-        .limit(top_k)
-    )
-    rows = (await session.execute(stmt)).all()
+    found = await PadQueryService(session).search(user_id, query, limit=top_k)
     return {
         "mode": "text",
+        "degraded": True,
+        "notice": notice,
         "results": [
             {
-                "pad_id": str(r.id),
-                "pad_name": r.display_name,
-                "tags": list(r.tags or []),
-                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+                "pad_id": item["pad_id"],
+                "pad_name": item["pad_name"],
+                "url": _pad_url(item["pad_id"]),
+                "title_match": item["name_match"],
+                "excerpts": [m["excerpt"] for m in item["matches"] if m.get("excerpt")],
             }
-            for r in rows
+            for item in found
         ],
     }
+
+
+_WIKILINK_RE = re.compile(r"\[\[([^\]|#\n]{1,100})(?:[#|][^\]\n]*)?\]\]")
+
+
+async def _resolve_wikilinks(content: str, user_id: UUID, session: AsyncSession) -> List[Dict[str, Any]]:
+    """Wikilinks of a document, resolved to readable pads when the title matches."""
+    names: List[str] = []
+    for match in _WIKILINK_RE.finditer(content):
+        name = match.group(1).strip()
+        if name and name.lower() not in (n.lower() for n in names):
+            names.append(name)
+        if len(names) >= 100:
+            break
+    if not names:
+        return []
+    from application.pads import PadQueryService
+    rows = (await session.execute(
+        sa_select(PadStore.id, PadStore.display_name)
+        .where(PadQueryService.readable_filter(user_id))
+        .order_by(PadStore.updated_at.desc())
+        .limit(5000)
+    )).all()
+    by_name: Dict[str, str] = {}
+    for row in rows:
+        by_name.setdefault((row.display_name or "").strip().lower(), str(row.id))
+    return [{"target": n, "pad_id": by_name.get(n.lower())} for n in names]
 
 
 async def _tool_read_pad(
@@ -330,13 +463,33 @@ async def _tool_read_pad(
     if pad is None:
         raise ValueError("pad not found or access denied")
     data = pad.data if isinstance(pad.data, dict) else {}
-    content = data.get("content") or ""
+    pad_type = pad.pad_type or "canvas"
+    # Documents and LaTeX are returned verbatim; structured pads (kanban,
+    # gantt, database, canvas) are flattened to their user-authored text, the
+    # same text the search index uses, so no pad type reads back empty.
+    if pad_type == "document":
+        content, fmt = data.get("content") or "", "markdown"
+    elif pad_type == "latex":
+        content, fmt = data.get("source") or data.get("content") or "", "latex"
+    else:
+        content, fmt = extract_text_from_pad(pad), "text"
+    char_count = len(content)
+    truncated = char_count > _MAX_READ_CHARS
+    if truncated:
+        content = content[:_MAX_READ_CHARS]
+    links = await _resolve_wikilinks(content, user_id, session) if pad_type == "document" else []
     return {
         "pad_id": str(pad.id),
         "title": pad.display_name,
-        "pad_type": pad.pad_type,
+        "url": _pad_url(pad.id),
+        "pad_type": pad_type,
+        "folder": pad.folder,
         "tags": list(pad.tags or []),
         "content": content,
+        "content_format": fmt,
+        "char_count": char_count,
+        "truncated": truncated,
+        "links": links,
         "source_url": pad.source_url,
         "updated_at": pad.updated_at.isoformat() if pad.updated_at else None,
     }
@@ -351,25 +504,129 @@ async def _tool_list_recent(
     stmt = (
         sa_select(
             PadStore.id, PadStore.display_name, PadStore.pad_type,
-            PadStore.tags, PadStore.updated_at, PadStore.source_url,
+            PadStore.tags, PadStore.updated_at, PadStore.source_url, PadStore.folder,
         )
         .where(PadQueryService.readable_filter(user_id))
         .order_by(PadStore.updated_at.desc())
         .limit(limit)
     )
     rows = (await session.execute(stmt)).all()
+    return {"pads": [_pad_summary(r) for r in rows]}
+
+
+def _pad_summary(r: Any) -> Dict[str, Any]:
     return {
-        "pads": [
-            {
-                "pad_id": str(r.id),
-                "title": r.display_name,
-                "pad_type": r.pad_type,
-                "tags": list(r.tags or []),
-                "source_url": r.source_url,
-                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
-            }
-            for r in rows
-        ],
+        "pad_id": str(r.id),
+        "title": r.display_name,
+        "url": _pad_url(r.id),
+        "pad_type": r.pad_type,
+        "folder": r.folder,
+        "tags": list(r.tags or []),
+        "source_url": r.source_url,
+        "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+    }
+
+
+async def _tool_list_pads(
+    args: Dict[str, Any], user_id: UUID, session: AsyncSession,
+) -> Dict[str, Any]:
+    from sqlalchemy import func
+    from application.pads import PadQueryService
+    conditions = [PadQueryService.readable_filter(user_id)]
+    if "folder" in args:
+        conditions.append(PadStore.folder == args["folder"])
+    if "tag" in args:
+        conditions.append(PadStore.tags.any(args["tag"]))
+    if "pad_type" in args:
+        conditions.append(PadStore.pad_type == args["pad_type"])
+    limit = int(args.get("limit") or 50)
+    offset = int(args.get("offset") or 0)
+    total = (await session.execute(sa_select(func.count()).select_from(PadStore).where(*conditions))).scalar_one()
+    rows = (await session.execute(
+        sa_select(
+            PadStore.id, PadStore.display_name, PadStore.pad_type, PadStore.tags,
+            PadStore.updated_at, PadStore.source_url, PadStore.folder,
+        )
+        .where(*conditions)
+        .order_by(PadStore.updated_at.desc(), PadStore.id)
+        .limit(limit).offset(offset)
+    )).all()
+    return {
+        "total": total,
+        "offset": offset,
+        "has_more": offset + len(rows) < total,
+        "pads": [_pad_summary(r) for r in rows],
+    }
+
+
+async def _tool_workspace_overview(
+    args: Dict[str, Any], user_id: UUID, session: AsyncSession,
+) -> Dict[str, Any]:
+    from collections import Counter
+    from application.pads import PadQueryService
+    rows = (await session.execute(
+        sa_select(PadStore.pad_type, PadStore.folder, PadStore.tags)
+        .where(PadQueryService.readable_filter(user_id))
+        .limit(20000)
+    )).all()
+    types: Counter = Counter()
+    folders: Counter = Counter()
+    tags: Counter = Counter()
+    for pad_type, folder, pad_tags in rows:
+        types[pad_type or "canvas"] += 1
+        if folder:
+            folders[folder] += 1
+        tags.update(t for t in (pad_tags or []) if t)
+    return {
+        "total_pads": len(rows),
+        "pad_types": dict(types.most_common()),
+        "folders": [{"name": n, "pads": c} for n, c in folders.most_common()],
+        "tags": [{"name": n, "pads": c} for n, c in tags.most_common(50)],
+    }
+
+
+async def _tool_append_to_pad(
+    args: Dict[str, Any], user_id: UUID, session: AsyncSession,
+) -> Dict[str, Any]:
+    from application.errors import ApplicationError, ConflictError
+    from application.pad_writes import PadWriteService
+    from application.pads import PadQueryService
+    from application.principal import Principal
+
+    try:
+        pid = UUID(args["pad_id"])
+        expected = datetime.fromisoformat(args["expected_updated_at"])
+    except (ValueError, TypeError):
+        raise ValueError("invalid pad_id or expected_updated_at (use the ISO value returned by read_pad)")
+    if expected.tzinfo is None:
+        raise ValueError("expected_updated_at must include a timezone, as returned by read_pad")
+
+    pad = (await session.execute(
+        sa_select(PadStore).where(PadStore.id == pid, PadQueryService.readable_filter(user_id))
+    )).scalar_one_or_none()
+    if pad is None:
+        raise ValueError("pad not found or access denied")
+    if (pad.pad_type or "canvas") != "document":
+        raise ValueError("append_to_pad only supports document pads")
+
+    data = dict(pad.data) if isinstance(pad.data, dict) else {}
+    existing = data.get("content") or ""
+    addition = args["content"].strip()
+    data["content"] = f"{existing.rstrip()}\n\n{addition}\n" if existing.strip() else f"{addition}\n"
+    data.setdefault("format", "markdown")
+
+    principal = Principal(id=user_id, auth_type="api_token", scopes=frozenset({"pads:write"}))
+    try:
+        response, _ = await PadWriteService(session).update_data(principal, pid, data, expected)
+    except ConflictError:
+        raise ValueError("conflict: the pad changed since your last read_pad; read it again and retry with the new updated_at")
+    except ApplicationError as exc:
+        raise ValueError(exc.message)
+    return {
+        "pad_id": str(pid),
+        "url": _pad_url(pid),
+        "appended_chars": len(addition),
+        "updated_at": response["updated_at"],
     }
 
 
@@ -423,7 +680,7 @@ async def _tool_write_note(
     return {
         "pad_id": str(pad.id),
         "title": title,
-        "url": f"/pad/{pad.id}",
+        "url": _pad_url(pad.id),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -432,7 +689,10 @@ _TOOL_HANDLERS = {
     "search_pads": _tool_search_pads,
     "read_pad": _tool_read_pad,
     "list_recent": _tool_list_recent,
+    "list_pads": _tool_list_pads,
+    "workspace_overview": _tool_workspace_overview,
     "write_note": _tool_write_note,
+    "append_to_pad": _tool_append_to_pad,
 }
 
 
@@ -470,7 +730,7 @@ async def mcp_endpoint(request: Request) -> Response:
     Client typically calls in order :
       1. initialize          → we announce protocolVersion + capabilities
       2. notifications/initialized (no id, no response expected)
-      3. tools/list          → we return the 4 tools
+      3. tools/list          → we return the tools allowed by the token scopes
       4. tools/call          → we run the tool, return content
     """
     if not _origin_allowed(request):
@@ -509,6 +769,7 @@ async def mcp_endpoint(request: Request) -> Response:
                 "protocolVersion": client_version if client_version in {"2025-03-26", _PROTOCOL_VERSION} else _PROTOCOL_VERSION,
                 "capabilities": _SERVER_CAPABILITIES,
                 "serverInfo": _SERVER_INFO,
+                "instructions": _SERVER_INSTRUCTIONS,
             }))
 
         if method in ("notifications/initialized", "initialized"):
