@@ -528,6 +528,24 @@
   &:hover { filter: brightness(1.15); transform: translateY(-1px); }
 }
 
+/* A [[N]] marker with no matching source: visibly unverified, not clickable. */
+.ai-msg__cite--invalid {
+  background: transparent;
+  color: var(--ap-red, #d33);
+  border: 1px dashed currentColor;
+  cursor: help;
+  &:hover { filter: none; transform: none; }
+}
+.ai-msg__citation-warning {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-left: 3px solid var(--ap-red, #d33);
+  background: var(--color-surface-low, rgba(128, 128, 128, 0.08));
+  color: var(--ap-text, inherit);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 /* Numbered sources list (replaces the flat chip strip when the sources come
  * with excerpts from agenticRagChat). */
 .ai-msg__sources--numbered {
