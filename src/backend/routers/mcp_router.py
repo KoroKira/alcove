@@ -677,6 +677,9 @@ async def _tool_write_note(
     await worker.stop_processing_pad(pad.id, graceful=False)
     await pad.invalidate_cache()
 
+    from services.pad_indexing import schedule_pad_indexing
+    schedule_pad_indexing(pad.id)
+
     return {
         "pad_id": str(pad.id),
         "title": title,

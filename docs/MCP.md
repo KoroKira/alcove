@@ -63,6 +63,13 @@ alors de correspondances par mots-clés, pas de recherche sémantique.
    d'écriture) et garder les droits minimaux : un agent qui ne fait que lire et
    citer n'a pas besoin de `write_note` ni de `append_to_pad`.
 
+Indexation : les notes créées ou complétées par un agent (ou par l'API) sont
+indexées côté serveur pour la recherche sémantique, via l'Ollama configuré
+(`OLLAMA_URL`, modèle `RAG_EMBED_MODEL`, `nomic-embed-text` par défaut). Si
+Ollama est indisponible, l'écriture réussit quand même, l'ancien index est
+conservé et la recherche par mots-clés trouve la note immédiatement.
+`RAG_SERVER_INDEXING=false` désactive cette indexation serveur.
+
 Isolation : une clé ne voit que les pads de son propriétaire (et ceux partagés
 avec lui selon ses droits); les pads de la corbeille sont invisibles.
 

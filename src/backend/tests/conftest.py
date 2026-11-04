@@ -53,3 +53,10 @@ async def integration_redis(integration_redis_url: str) -> AsyncIterator[aioredi
         yield client
     finally:
         await client.aclose()
+
+
+@pytest.fixture(autouse=True)
+def _no_background_indexing(monkeypatch):
+    """Tests opt in to server-side indexing explicitly; never spawn stray tasks."""
+    import services.pad_indexing as pad_indexing
+    monkeypatch.setattr(pad_indexing, "ENABLED", False)
