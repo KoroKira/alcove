@@ -36,6 +36,13 @@ i18n
     interpolation: { escapeValue: false },
   });
 
+/** Keep <html lang> in sync with the UI language so screen readers pick the right voice. */
+export function applyDocumentLang(lang: string | undefined) {
+  if (typeof document !== 'undefined' && lang) document.documentElement.lang = lang.slice(0, 2);
+}
+applyDocumentLang(i18n.language);
+i18n.on('languageChanged', applyDocumentLang);
+
 export const setLanguage = (lang: LangCode) => {
   i18n.changeLanguage(lang);
   localStorage.setItem('pad-ws-lang', lang);
