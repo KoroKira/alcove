@@ -73,7 +73,7 @@ trap cleanup EXIT INT TERM
 
 pg -d postgres -c "CREATE DATABASE \"$DBNAME\"" || fail "cannot create scratch database"
 CREATED_DB=1
-restore || fail "pg_restore failed: the backup is NOT restorable"
+restore || fail "pg_restore failed: the backup is NOT restorable. If the error mentions an unrecognized configuration parameter, the dump was made by a newer pg_dump than this scratch server: use the same PostgreSQL major version for both."
 echo "restore: OK ($MODE)"
 
 count() { pg -d "$DBNAME" -Atc "SELECT count(*) FROM $SCHEMA.$1"; }

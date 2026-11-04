@@ -115,7 +115,10 @@ jobs:
           VERIFY_PG_PASSWORD: postgres
         run: |
           mkdir -p "$RUNNER_TEMP/backup"
-          pg_dump -Fc --no-owner --no-acl -h 127.0.0.1 -U postgres alcove_existing > "$RUNNER_TEMP/backup/alcove.dump"
+          # Dump with a client of the SAME major version as the server: a newer
+          # pg_dump writes settings (e.g. transaction_timeout) PostgreSQL 16 rejects.
+          docker run --rm --network host -e PGPASSWORD=postgres postgres:16 \
+            pg_dump -Fc --no-owner --no-acl -h 127.0.0.1 -U postgres alcove_existing > "$RUNNER_TEMP/backup/alcove.dump"
           (cd "$RUNNER_TEMP/backup" && sha256sum alcove.dump > SHA256SUMS)
           ./scripts/verify-restore.sh "$RUNNER_TEMP/backup"
 
