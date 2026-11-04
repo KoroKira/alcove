@@ -1,6 +1,22 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { agenticRagChat, embedText, indexAll, indexPad } from './rag';
-import { oneShotLocalOllama, streamLocalOllamaChat } from '../hooks/useOllama';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+
+// vitest.config.mts runs with `isolate: false`, so another test file may have
+// loaded the real ../hooks/useOllama (and rag.ts bound to it) first. Re-import
+// both after resetting the module registry so the mock below always applies.
+type RagModule = typeof import('./rag');
+type OllamaModule = typeof import('../hooks/useOllama');
+let agenticRagChat: RagModule['agenticRagChat'];
+let embedText: RagModule['embedText'];
+let indexAll: RagModule['indexAll'];
+let indexPad: RagModule['indexPad'];
+let oneShotLocalOllama: OllamaModule['oneShotLocalOllama'];
+let streamLocalOllamaChat: OllamaModule['streamLocalOllamaChat'];
+
+beforeAll(async () => {
+  vi.resetModules();
+  ({ agenticRagChat, embedText, indexAll, indexPad } = await import('./rag'));
+  ({ oneShotLocalOllama, streamLocalOllamaChat } = await import('../hooks/useOllama'));
+});
 
 vi.mock('../hooks/useOllama', () => ({
   getOllamaUrl: () => '/api/ai/ollama',
