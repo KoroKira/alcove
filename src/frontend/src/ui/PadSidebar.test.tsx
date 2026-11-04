@@ -79,6 +79,36 @@ describe('PadSidebar', () => {
     expect(onSelectPad).toHaveBeenCalledWith('pad-2');
   });
 
+  it('lets keyboard users open a pad and its actions menu', async () => {
+    const onSelectPad = vi.fn();
+    render(<PadSidebar {...baseProps({
+      tabs: [tab({ id: 'pad-1', title: 'Note A' }), tab({ id: 'pad-2', title: 'Note B' })],
+      selectedTabId: 'pad-1',
+      onSelectPad,
+    })} />);
+    const user = userEvent.setup();
+
+    const row = screen.getByRole('button', { name: 'Note B' });
+    expect(row).toHaveAttribute('tabindex', '0');
+    expect(screen.getByRole('button', { name: 'Note A' })).toHaveAttribute('aria-current', 'true');
+    expect(row).not.toHaveAttribute('aria-current');
+
+    row.focus();
+    await user.keyboard('{Enter}');
+    expect(onSelectPad).toHaveBeenLastCalledWith('pad-2');
+    onSelectPad.mockClear();
+    await user.keyboard(' ');
+    expect(onSelectPad).toHaveBeenCalledWith('pad-2');
+
+    expect(document.querySelector('.context-menu')).toBeNull();
+    fireEvent.keyDown(row, { key: 'ContextMenu' });
+    expect(document.querySelector('.context-menu')).not.toBeNull();
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    // Shift+F10 is the other standard way to open a context menu.
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Note A' }), { key: 'F10', shiftKey: true });
+    expect(document.querySelector('.context-menu')).not.toBeNull();
+  });
+
   it('marks the selected tab', () => {
     render(<PadSidebar {...baseProps({
       tabs: [
