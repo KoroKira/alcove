@@ -14,7 +14,9 @@ services:
     volumes:
       - alcove_local_postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      # Loopback only: this container accepts passwordless connections
+      # (POSTGRES_HOST_AUTH_METHOD=trust), so it must never listen on the LAN.
+      - "127.0.0.1:5432:5432"
     restart: unless-stopped
 
   redis:
@@ -23,7 +25,8 @@ services:
     volumes:
       - alcove_local_redis_data:/data
     ports:
-      - "6379:6379"
+      # Loopback only: Redis runs without a password and holds login sessions.
+      - "127.0.0.1:6379:6379"
     restart: unless-stopped
     command: redis-server --save 60 1 --loglevel warning
 
