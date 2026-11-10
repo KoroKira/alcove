@@ -44,3 +44,11 @@ def test_scratch_container_has_no_network_and_cleanup_precedes_start():
     start = text.index("docker run -d --rm --network none")
     assert trap < start
     assert "--network none" in text[start:text.index("\n", start)]
+
+
+def test_scratch_server_waits_for_final_postgres_process():
+    text = SCRIPT.read_text(encoding="utf-8")
+    marker = text.index("PostgreSQL init process complete; ready for start up.")
+    query = text.index('psql -X -q -U postgres -d postgres -c "SELECT 1"')
+    create = text.index("CREATE DATABASE", query)
+    assert marker < query < create

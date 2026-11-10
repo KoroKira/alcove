@@ -68,8 +68,17 @@ else
   trap cleanup EXIT INT TERM
   docker run -d --rm --network none --name "$CONTAINER" -e POSTGRES_PASSWORD="$SCRATCH_PW" postgres:16 >/dev/null
   i=0
-  until docker exec "$CONTAINER" pg_isready -U postgres >/dev/null 2>&1; do
+  # The official image briefly starts a temporary server to initialize the
+  # data directory, then shuts it down and launches the real server. `pg_isready`
+  # can succeed during that first phase, so wait for the entrypoint marker and
+  # then a successful SQL query before trying to create the scratch database.
+  until docker logs "$CONTAINER" 2>&1 | grep -Fq "PostgreSQL init process complete; ready for start up."; do
     i=$((i + 1)); [ "$i" -le 60 ] || fail "scratch PostgreSQL did not start"
+    sleep 1
+  done
+  i=0
+  until docker exec "$CONTAINER" psql -X -q -U postgres -d postgres -c "SELECT 1" >/dev/null 2>&1; do
+    i=$((i + 1)); [ "$i" -le 60 ] || fail "scratch PostgreSQL did not accept queries"
     sleep 1
   done
 fi
