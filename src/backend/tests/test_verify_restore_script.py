@@ -36,3 +36,11 @@ def test_tampered_backup_is_rejected_before_any_restore(tmp_path):
     dump.write_bytes(b"tampered")
     result = run(str(tmp_path))
     assert result.returncode == 1 and "checksum mismatch" in result.stderr
+
+
+def test_scratch_container_has_no_network_and_cleanup_precedes_start():
+    text = SCRIPT.read_text(encoding="utf-8")
+    trap = text.index("trap cleanup EXIT INT TERM")
+    start = text.index("docker run -d --rm --network none")
+    assert trap < start
+    assert "--network none" in text[start:text.index("\n", start)]
