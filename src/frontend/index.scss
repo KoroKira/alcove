@@ -164,6 +164,17 @@ body {
   .canvas-error__actions button { width: 100%; }
 }
 
+/* Narrow screens: Excalidraw's tool island plus these controls is wider than
+   the viewport (measured: 442px right edge at 390px wide, 901px at 820px), so
+   the PNG export and fit/present buttons ended up off-screen. Float them
+   instead of widening the toolbar row; on phones they sit above the bottom bar. */
+@media (max-width: 900px) {
+  .canvas-quick-controls { position: fixed; top: 64px; right: 12px; z-index: 6; }
+}
+@media (max-width: 600px) {
+  .canvas-quick-controls { top: auto; bottom: 84px; right: 8px; }
+}
+
 /* Document pad: fixed, slides right of sidebar */
 .app-doc-wrap {
   position: fixed;

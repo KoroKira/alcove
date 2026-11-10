@@ -6,14 +6,75 @@ La connexion donne accès aux pads du compte authentifié, jamais à ceux d'un a
 
 | Outil | Utilisation | Permission |
 |---|---|---|
-| `search_pads` | Rechercher dans ses pads; recherche textuelle disponible sans index IA | Lecture |
-| `read_pad` | Lire un pad identifié | Lecture |
+| `workspace_overview` | Comprendre l'organisation : types de pads, dossiers, tags | Lecture |
+| `search_pads` | Rechercher (sémantique si l'index IA existe, sinon mots-clés dans les titres **et** le contenu) | Lecture |
+| `read_pad` | Lire un pad de n'importe quel type (texte, wikilinks résolus, dossier, tags) | Lecture |
+| `list_pads` | Lister par dossier, tag ou type, avec pagination | Lecture |
 | `list_recent` | Retrouver ses derniers pads | Lecture |
-| `write_note` | Créer un nouveau document | Création, opt-in |
+| `write_note` | Créer un nouveau document | Écriture, opt-in |
+| `append_to_pad` | Ajouter du texte à la fin d'un document existant | Écriture, opt-in |
 
-Le MCP ne propose ni suppression ni réécriture des pads existants. Une réponse
-du modèle n'est pas une validation de ses sources : demander les liens des pads
-et vérifier les citations importantes.
+Il n'existe **aucun outil de suppression ni de réécriture** : un agent ne peut
+ni effacer ni remplacer du contenu. `append_to_pad` exige le `updated_at` obtenu
+par `read_pad` : si le pad a changé entre-temps, l'appel échoue avec un conflit
+et l'agent doit relire avant de réessayer. Il fonctionne seulement sur les
+documents et respecte les droits du compte (un simple lecteur d'un pad partagé
+ne peut pas y écrire). Un futur outil destructif devra exiger la permission
+d'écriture **et** un argument `confirm` explicite.
+
+Une réponse du modèle n'est pas une validation de ses sources : chaque résultat
+contient l'`url` du pad à citer, et `search_pads` indique `degraded: true`
+(avec un `notice`) quand Ollama est indisponible ou l'index absent : il s'agit
+alors de correspondances par mots-clés, pas de recherche sémantique.
+
+## Démarrage rapide pour un agent (Hermes, OpenBot, autre client MCP)
+
+1. Créer une clé personnelle (**Compte et connexions → Connecter un assistant**),
+   en **lecture seule** pour commencer, avec une durée courte. Un agent par clé :
+   chacune se révoque séparément.
+2. Pointer le client sur `https://VOTRE-ALCOVE/mcp` (transport HTTP « streamable »,
+   JSON-RPC en POST) avec l'en-tête `Authorization: Bearer <clé>`. Tout client
+   MCP qui accepte une URL et un en-tête convient; ne mettre la clé ni dans l'URL
+   ni dans un dépôt. Exemple générique (adapter la syntaxe à votre client) :
+
+   ```json
+   {
+     "mcpServers": {
+       "alcove": {
+         "url": "https://VOTRE-ALCOVE/mcp",
+         "headers": { "Authorization": "Bearer ${ALCOVE_MCP_TOKEN}" }
+       }
+     }
+   }
+   ```
+
+3. Vérifier la connexion sans client MCP :
+
+   ```sh
+   curl -sS https://VOTRE-ALCOVE/mcp -H "Authorization: Bearer $ALCOVE_MCP_TOKEN" \
+     -H 'Content-Type: application/json' \
+     -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+   ```
+
+   Une clé en lecture seule ne liste que les outils de lecture. Sans en-tête
+   valide, la réponse est `401`. Le message `initialize` renvoie aussi des
+   `instructions` d'usage que les agents reçoivent automatiquement.
+4. Ajouter l'écriture seulement si nécessaire (clé distincte avec la permission
+   d'écriture) et garder les droits minimaux : un agent qui ne fait que lire et
+   citer n'a pas besoin de `write_note` ni de `append_to_pad`.
+
+Indexation : les notes créées ou complétées par un agent (ou par l'API) sont
+indexées côté serveur pour la recherche sémantique, via l'Ollama configuré
+(`OLLAMA_URL`, modèle `RAG_EMBED_MODEL`, `nomic-embed-text` par défaut). Si
+Ollama est indisponible, l'écriture réussit quand même, l'ancien index est
+conservé et la recherche par mots-clés trouve la note immédiatement.
+Pour garder Ollama réactif sous charge, le serveur indexe un seul pad à la
+fois, fusionne les réécritures rapprochées du même pad et traite au plus 64
+chunks par pad par défaut. `RAG_SERVER_MAX_CHUNKS` peut régler cette limite
+entre 1 et 512. `RAG_SERVER_INDEXING=false` désactive l'indexation serveur.
+
+Isolation : une clé ne voit que les pads de son propriétaire (et ceux partagés
+avec lui selon ses droits); les pads de la corbeille sont invisibles.
 
 ## Connexion depuis ChatGPT / Work
 
@@ -48,7 +109,7 @@ Avec un client Codex préenregistré, compléter la configuration locale :
 [mcp_servers.alcove]
 url = "https://alcove.codicam.fr/mcp"
 scopes = ["alcove:read"]
-enabled_tools = ["search_pads", "read_pad", "list_recent"]
+enabled_tools = ["workspace_overview", "search_pads", "read_pad", "list_pads", "list_recent"]
 
 [mcp_servers.alcove.oauth]
 client_id = "alcove-codex"
@@ -97,8 +158,10 @@ mcp_servers:
       Authorization: "Bearer ${ALCOVE_MCP_TOKEN}"
     tools:
       include:
+        - workspace_overview
         - search_pads
         - read_pad
+        - list_pads
         - list_recent
 ```
 
@@ -193,8 +256,8 @@ La lecture reste la configuration initiale.
   la bonne URL de ressource. Il ne contient aucune donnée utilisateur.
 - Un POST JSON-RPC `initialize` sans authentification renvoie HTTP 401 et un
   `WWW-Authenticate` indiquant cette métadonnée.
-- Un client connecté en lecture découvre trois outils et ne peut pas créer
-  de notes; un compte n'accède qu'à ses propres pads.
+- Un client connecté en lecture découvre cinq outils (lecture) et ne peut pas
+  créer de notes ni ajouter de texte; un compte n'accède qu'à ses propres pads.
 - Une mauvaise audience, un autre émetteur, un autre client ou un jeton expiré
   doit être rejeté. Tester les appels réels après le consentement utilisateur.
 

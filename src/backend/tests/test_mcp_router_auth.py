@@ -178,7 +178,10 @@ def test_tools_list_works_without_auth_in_prod_mode(monkeypatch):
 
     assert response.status_code == 200
     names = {t["name"] for t in body["result"]["tools"]}
-    assert names == {"search_pads", "read_pad", "list_recent", "write_note"}
+    assert names == {
+        "search_pads", "read_pad", "list_recent", "list_pads", "workspace_overview",
+        "write_note", "append_to_pad",
+    }
 
 
 def test_tools_list_unaffected_by_dev_mode_either(monkeypatch):
@@ -188,7 +191,7 @@ def test_tools_list_unaffected_by_dev_mode_either(monkeypatch):
     response = _run(mcp_router.mcp_endpoint(request))
     body = json.loads(response.body)
 
-    assert len(body["result"]["tools"]) == 4
+    assert len(body["result"]["tools"]) == 7
 
 
 # ── endpoint dispatch : tools/call requires and uses auth ───────────────────
@@ -271,7 +274,9 @@ def test_readonly_key_catalog_and_direct_write_are_both_fenced(monkeypatch):
     listed = _run(mcp_router.mcp_endpoint(_FakeRequest({"jsonrpc": "2.0", "id": 1,
                   "method": "tools/list"}, headers)))
     tools = json.loads(listed.body)["result"]["tools"]
-    assert {tool["name"] for tool in tools} == {"search_pads", "read_pad", "list_recent"}
+    assert {tool["name"] for tool in tools} == {
+        "search_pads", "read_pad", "list_recent", "list_pads", "workspace_overview",
+    }
     assert all(tool["annotations"]["readOnlyHint"] for tool in tools)
     called = _run(mcp_router.mcp_endpoint(_FakeRequest({"jsonrpc": "2.0", "id": 2,
                   "method": "tools/call", "params": {"name": "write_note", "arguments": {
@@ -290,7 +295,7 @@ def test_write_only_key_catalog_exposes_only_write_tool(monkeypatch):
         {"authorization": "Bearer synthetic-writeonly"},
     )))
     tools = json.loads(response.body)["result"]["tools"]
-    assert {tool["name"] for tool in tools} == {"write_note"}
+    assert {tool["name"] for tool in tools} == {"write_note", "append_to_pad"}
     assert tools[0]["annotations"]["readOnlyHint"] is False
 
 

@@ -516,3 +516,12 @@
 
   &:hover { background: rgba(var(--ap-red-rgb, 243,139,168), 0.1); opacity: 1; }
 }
+
+/* Phones: the toolbar did not wrap, so the timeline navigation buttons
+   (-30d / Today / +30d) were pushed off-screen with no way to scroll to them. */
+@media (max-width: 768px) {
+  .gantt__toolbar,
+  .gantt__toolbar-left {
+    flex-wrap: wrap;
+  }
+}

@@ -142,7 +142,9 @@ def test_oauth_read_catalog_and_write_denial(configured, monkeypatch):
     headers = {"Authorization": "Bearer " + token(configured)}
     response = api.post("/mcp", headers=headers, json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
     tools = response.json()["result"]["tools"]
-    assert {item["name"] for item in tools} == {"search_pads", "read_pad", "list_recent"}
+    assert {item["name"] for item in tools} == {
+        "search_pads", "read_pad", "list_recent", "list_pads", "workspace_overview",
+    }
     assert all(item["securitySchemes"] == [{"type": "oauth2", "scopes": ["alcove:read"]}] for item in tools)
     response = api.post("/mcp", headers=headers, json={"jsonrpc": "2.0", "id": 2, "method": "tools/call",
                         "params": {"name": "write_note", "arguments": {"title": "Denied", "content": ""}}})

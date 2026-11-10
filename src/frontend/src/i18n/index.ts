@@ -36,6 +36,21 @@ i18n
     interpolation: { escapeValue: false },
   });
 
+/** Keep <html lang> in sync with the UI language so screen readers pick the right voice. */
+export function applyDocumentLang(lang: string | undefined) {
+  if (typeof document !== 'undefined' && lang) document.documentElement.lang = lang.slice(0, 2);
+}
+applyDocumentLang(i18n.language);
+i18n.on('languageChanged', applyDocumentLang);
+// Excalidraw rewrites <html lang> itself (fr-FR / en-EN only) after it mounts,
+// which would label German or Spanish UI text as English. Restore ours.
+if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined') {
+  new MutationObserver(() => {
+    const wanted = (i18n.language || '').slice(0, 2);
+    if (wanted && document.documentElement.lang !== wanted) document.documentElement.lang = wanted;
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+}
+
 export const setLanguage = (lang: LangCode) => {
   i18n.changeLanguage(lang);
   localStorage.setItem('pad-ws-lang', lang);

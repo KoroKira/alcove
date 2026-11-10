@@ -599,3 +599,9 @@
 
 /* Pads inside a folder are indented under their header. */
 .pad-sidebar__item--in-folder { padding-left: 24px; }
+
+/* Pad rows are keyboard-focusable: make the focus ring visible. */
+.pad-sidebar__item:focus-visible {
+  outline: 2px solid var(--ap-accent, #7c56ff);
+  outline-offset: -2px;
+}

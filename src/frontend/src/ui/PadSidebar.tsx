@@ -37,6 +37,7 @@ import { getDueCounts } from '../lib/reviewActivity';
 import type { Tab } from '../hooks/usePadTabs';
 import TabContextMenu from './TabContextMenu';
 import './PadSidebar.scss';
+import { pressable } from '../lib/a11y';
 
 interface PadSidebarProps {
   tabs: Tab[];
@@ -311,7 +312,7 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
   };
 
   // Click on a pad row: plain = open, Cmd/Ctrl = toggle, Shift = range-select.
-  const handleItemClick = (e: React.MouseEvent, tab: Tab, index: number) => {
+  const handleItemClick = (e: React.MouseEvent | React.KeyboardEvent, tab: Tab, index: number) => {
     if (e.metaKey || e.ctrlKey) {
       e.preventDefault();
       setSelectedIds(prev => {
@@ -360,6 +361,20 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
     e.stopPropagation();
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setContextMenu({ visible: true, x: rect.right + 4, y: rect.top, padId: tab.id, padName: tab.title });
+  };
+
+  // Keyboard access to a pad row: Enter/Space opens it (Ctrl/Shift keep their
+  // multi-select meaning), the Menu key or Shift+F10 opens its actions menu.
+  const handleItemKeyDown = (e: React.KeyboardEvent<HTMLElement>, tab: Tab, index: number) => {
+    if (e.target !== e.currentTarget) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      handleItemClick(e, tab, index);
+      e.preventDefault();
+    } else if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+      e.preventDefault();
+      const rect = e.currentTarget.getBoundingClientRect();
+      setContextMenu({ visible: true, x: rect.left + 24, y: rect.bottom, padId: tab.id, padName: tab.title });
+    }
   };
 
   const closeContextMenu = () => setContextMenu(prev => ({ ...prev, visible: false }));
@@ -523,7 +538,12 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
                   selectedIds.has(tab.id) ? 'pad-sidebar__item--multiselected' : '',
                   tab.isScratch ? 'pad-sidebar__item--scratch' : '',
                 ].filter(Boolean).join(' ')}
+                role="button"
+                tabIndex={0}
+                aria-label={tab.title}
+                aria-current={selectedTabId === tab.id ? 'true' : undefined}
                 onClick={e => handleItemClick(e, tab, flatIndex)}
+                onKeyDown={e => handleItemKeyDown(e, tab, flatIndex)}
                 onContextMenu={e => openContextMenu(e, tab)}
                 title={tab.title}
               >
@@ -564,6 +584,9 @@ const PadSidebar: React.FC<PadSidebarProps> = ({
                 key={tab.id}
                 className={`pad-sidebar__item${selectedTabId === tab.id ? ' pad-sidebar__item--active' : ''}`}
                 onClick={() => onSelectPad(tab.id)}
+                {...pressable(() => onSelectPad(tab.id))}
+                aria-label={tab.title}
+                aria-current={selectedTabId === tab.id ? 'true' : undefined}
                 onContextMenu={e => openContextMenu(e, tab)}
                 title={tab.title}
               >

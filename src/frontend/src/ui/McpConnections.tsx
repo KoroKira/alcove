@@ -136,8 +136,8 @@ export default function McpConnections() {
           <select id={`${id}-expiry`} value={expiresDays} onChange={e => setExpiresDays(e.target.value)}>
             <option value="7">7 jours</option><option value="30">30 jours</option><option value="90">90 jours</option><option value="365">1 an</option>
           </select>
-          <p>Lecture de vos pads incluse. Aucune suppression ni modification des pads existants par le MCP.</p>
-          <label className="mcp-connections__checkbox"><input type="checkbox" checked={allowWrite} onChange={e => setAllowWrite(e.target.checked)} />Autoriser aussi la création de nouvelles notes</label>
+          <p>Lecture de vos pads incluse. Le MCP ne peut ni supprimer ni réécrire vos pads.</p>
+          <label className="mcp-connections__checkbox"><input type="checkbox" checked={allowWrite} onChange={e => setAllowWrite(e.target.checked)} />Autoriser aussi la création de notes et l’ajout de texte à la fin d’un document existant</label>
           <button type="submit" disabled={!name.trim() || busy || Boolean(token)}>{busy ? 'En cours…' : 'Créer la clé'}</button>
         </fieldset>
       </form>
@@ -154,7 +154,7 @@ export default function McpConnections() {
       <h4 ref={connectionsTitleRef} tabIndex={-1}>Vos connexions</h4>
       {keys.length === 0 && <p>Aucune clé personnelle.</p>}
       <ul>{keys.map(key => <li key={key.public_id}>
-        <strong>{key.name}</strong> — {key.scopes.includes('write') ? 'Lecture et création' : 'Lecture seule'}
+        <strong>{key.name}</strong> — {key.scopes.includes('write') ? 'Lecture, création et ajout' : 'Lecture seule'}
         <span> {key.revoked_at ? 'Révoquée' : key.expires_at ? `Expire le ${new Date(key.expires_at).toLocaleDateString()}` : 'Sans expiration'}</span>
         {!key.revoked_at && (confirmRevoke === key.public_id ? <div className="mcp-connections__row" role="group" aria-label={`Révoquer ${key.name}`} onKeyDown={event => {
           if (event.key === 'Escape' && !busy) {

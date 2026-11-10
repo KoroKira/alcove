@@ -4,6 +4,7 @@ import type { Tab } from '../hooks/usePadTabs';
 import { FSRSCard, Rating, review, today, newCard, migrateFromSM2 } from '../lib/fsrs';
 import { logReview } from '../lib/reviewActivity';
 import './FlashcardStudio.scss';
+import { pressable } from '../lib/a11y';
 
 interface Card { q: string; a: string; padId?: string; padName?: string; }
 interface Deck { padId: string; padName: string; cards: Card[]; }
@@ -277,6 +278,7 @@ export default function FlashcardStudio({ tabs, onClose, onSelectPad }: Props) {
                 <div
                   className={`fc-studio__card${flipped ? ' fc-studio__card--flipped' : ''}`}
                   onClick={() => setFlipped(true)}
+                  {...pressable(() => setFlipped(true))}
                 >
                   <div className="fc-studio__card-inner">
                     <div className="fc-studio__card-front">
