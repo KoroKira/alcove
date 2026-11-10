@@ -398,7 +398,14 @@ async def websocket_endpoint(
 ):
     """WebSocket endpoint for pad collaboration."""
     origin = websocket.headers.get("origin")
-    if (not origin or origin not in ALLOWED_ORIGINS) and not PAD_DEV_MODE:
+    # Browsers always send Origin on a WebSocket handshake. Production also
+    # refuses a missing Origin; dev mode accepts non-browser clients without one
+    # but never a web page from an origin that is not on the allowlist.
+    if origin is None:
+        origin_ok = PAD_DEV_MODE
+    else:
+        origin_ok = origin in ALLOWED_ORIGINS
+    if not origin_ok:
         await websocket.close(code=4003, reason="Origin not allowed")
         return
     if not user:
@@ -407,6 +414,7 @@ async def websocket_endpoint(
 
     connection_id = None  # Initialize connection_id before try block
     redis_client = None  # Initialize redis_client before try block
+    auth_session = None  # dedicated session of the periodic access check
 
     try:
         # Create a database session for the WebSocket connection
@@ -509,8 +517,12 @@ async def websocket_endpoint(
             pointer_task = asyncio.create_task(
                 consume_pointer_updates(redis_client, pad_id, websocket, connection_id)
             )
+            # An AsyncSession must not be used by two tasks at once: the access
+            # re-check runs concurrently with the message handler, so it gets
+            # its own session.
+            auth_session = async_session()
             auth_task = asyncio.create_task(
-                periodic_auth_check(websocket, pad_id, user, redis_client, stream_key, connection_id, session)
+                periodic_auth_check(websocket, pad_id, user, redis_client, stream_key, connection_id, auth_session)
             )
             
             # Wait for any task to complete
@@ -531,6 +543,11 @@ async def websocket_endpoint(
         logger.exception("Error in WebSocket connection")
         
     finally:
+        if auth_session is not None:
+            try:
+                await auth_session.close()
+            except Exception:
+                logger.warning("Could not close the access-check session", exc_info=True)
         if connection_id:  # Only try to clean up if connection_id was set
             # Flush pad to DB immediately so no data is lost on disconnect
             try:

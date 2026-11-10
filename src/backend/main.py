@@ -21,6 +21,7 @@ from config import (
     PAD_BIND_HOST,
 )
 from cache import RedisClient
+from services.host_guard import DevHostGuard, build_allowed_hosts
 from dependencies import UserSession, optional_auth
 from routers.auth_router import auth_router
 from routers.users_router import users_router
@@ -141,6 +142,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+if PAD_DEV_MODE:
+    # Unauthenticated dev mode: only answer to the names the operator expects
+    # (loopback, FRONTEND_URL, configured origins, ALLOWED_HOSTS=a.example,b.example).
+    app.add_middleware(
+        DevHostGuard,
+        allowed=build_allowed_hosts(
+            [FRONTEND_URL, DEV_FRONTEND_URL, *ALLOWED_ORIGINS],
+            os.getenv("ALLOWED_HOSTS", ""),
+        ),
+    )
 
 
 @app.middleware("http")
