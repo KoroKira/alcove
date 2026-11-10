@@ -30,10 +30,24 @@ logger = logging.getLogger(__name__)
 EMBED_MODEL = os.getenv("RAG_EMBED_MODEL", "nomic-embed-text")
 CHUNK_SIZE = 400       # words, same window as the browser indexer (src/frontend/src/lib/rag.ts)
 CHUNK_OVERLAP = 60
-MAX_CHUNKS = 512       # same cap as /rag/index-chunks
+MAX_CHUNKS = 64        # bounded server work; override with RAG_SERVER_MAX_CHUNKS (max 512)
 ENABLED = os.getenv("RAG_SERVER_INDEXING", "true").strip().lower() != "false"
+MAX_CONCURRENT_INDEXES = 1  # Ollama shares CPU/RAM with the app and other local-model jobs
+_index_semaphore = asyncio.Semaphore(MAX_CONCURRENT_INDEXES)
 
 _background: set[asyncio.Task] = set()
+_in_flight: dict[UUID, asyncio.Task] = {}
+_dirty: set[UUID] = set()
+
+
+def _max_chunks() -> int:
+    """Allow tuning while keeping a hard ceiling on work per pad."""
+    try:
+        configured = int(os.getenv("RAG_SERVER_MAX_CHUNKS", str(MAX_CHUNKS)))
+    except (TypeError, ValueError):
+        logger.warning("Invalid RAG_SERVER_MAX_CHUNKS; using %d", MAX_CHUNKS)
+        return MAX_CHUNKS
+    return max(1, min(configured, 512))
 
 
 def chunk_text(text: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> List[str]:
@@ -83,7 +97,7 @@ async def index_pad(pad_id: UUID, session_factory: Any = None) -> str:
         if pad is None or pad.deleted_at is not None:
             return "skipped"
         text = extract_text_from_pad(SimpleNamespace(pad_type=pad.pad_type, data=pad.data))
-        chunks = chunk_text(text)[:MAX_CHUNKS]
+        chunks = chunk_text(text)[:_max_chunks()]
         if not chunks:
             await PadEmbedding.delete_for_pad(session, pad_id)
             await session.commit()
@@ -104,15 +118,39 @@ async def index_pad(pad_id: UUID, session_factory: Any = None) -> str:
 
 
 def schedule_pad_indexing(pad_id: UUID) -> None:
-    """Fire-and-forget reindex; never raises into the caller's request."""
+    """Fire-and-forget reindex; coalesce rewrites and never block the caller."""
     if not ENABLED:
         return
     try:
-        task = asyncio.get_running_loop().create_task(_safe_index(pad_id))
+        loop = asyncio.get_running_loop()
     except RuntimeError:
         return
+    current = _in_flight.get(pad_id)
+    if current is not None and not current.done():
+        # A write landed while this pad was being indexed. Re-read the latest
+        # DB state once the current pass finishes instead of starting another
+        # embedding job for every intermediate edit.
+        _dirty.add(pad_id)
+        return
+    task = loop.create_task(_safe_index_scheduled(pad_id))
+    _in_flight[pad_id] = task
     _background.add(task)
     task.add_done_callback(_background.discard)
+
+
+async def _safe_index_scheduled(pad_id: UUID) -> None:
+    task = asyncio.current_task()
+    try:
+        while True:
+            _dirty.discard(pad_id)
+            async with _index_semaphore:
+                await _safe_index(pad_id)
+            if pad_id not in _dirty:
+                break
+    finally:
+        _dirty.discard(pad_id)
+        if _in_flight.get(pad_id) is task:
+            _in_flight.pop(pad_id, None)
 
 
 async def _safe_index(pad_id: UUID) -> None:

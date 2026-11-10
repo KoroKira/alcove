@@ -68,7 +68,10 @@ indexées côté serveur pour la recherche sémantique, via l'Ollama configuré
 (`OLLAMA_URL`, modèle `RAG_EMBED_MODEL`, `nomic-embed-text` par défaut). Si
 Ollama est indisponible, l'écriture réussit quand même, l'ancien index est
 conservé et la recherche par mots-clés trouve la note immédiatement.
-`RAG_SERVER_INDEXING=false` désactive cette indexation serveur.
+Pour garder Ollama réactif sous charge, le serveur indexe un seul pad à la
+fois, fusionne les réécritures rapprochées du même pad et traite au plus 64
+chunks par pad par défaut. `RAG_SERVER_MAX_CHUNKS` peut régler cette limite
+entre 1 et 512. `RAG_SERVER_INDEXING=false` désactive l'indexation serveur.
 
 Isolation : une clé ne voit que les pads de son propriétaire (et ceux partagés
 avec lui selon ses droits); les pads de la corbeille sont invisibles.
