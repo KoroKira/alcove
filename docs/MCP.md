@@ -32,6 +32,34 @@ En mode `hybrid`, chaque résultat donne `score`, `semantic_score` et
 que lui, `folder`. Au démarrage, Alcove indexe en tâche de fond les pads qui
 n'ont encore aucun extrait sémantique (`RAG_SERVER_BACKFILL=false` pour
 désactiver) : il ajoute seulement des extraits, sans modifier ni supprimer de pad.
+Le dossier « Tests & Diagnostics » (sondes et pads de test des agents,
+conservés puisqu'Alcove ne supprime rien) est écarté par défaut de
+`search_pads`, sauf si on le cible avec `folder`. Variable
+`MCP_SEARCH_EXCLUDED_FOLDERS` (liste séparée par des virgules, vide pour
+désactiver) pour changer ce défaut.
+
+### Performances et piste pgvector (non implémentée)
+
+État au 2026-11-25 : environ 33 000 extraits ; une recherche prend environ 4 s,
+dont environ 3 s à décoder les vecteurs JSONB (768 flottants par extrait) et
+environ 1 s pour le classement (cosinus numpy + mots). Le temps croît
+linéairement avec la taille de l'index.
+
+Piste retenue pour plus tard :
+1. image PostgreSQL avec l'extension `pgvector` (par exemple
+   `pgvector/pgvector:pg16`, même version majeure, sauvegarde et restauration
+   vérifiées avant bascule) ;
+2. migration Alembic : colonne `embedding_vec vector(768)` remplie depuis la
+   colonne JSONB (sans la supprimer avant validation), index HNSW
+   `vector_cosine_ops` ;
+3. `search_pads` : présélection des 200 extraits les plus proches en SQL
+   (`ORDER BY embedding_vec <=> :q LIMIT 200`, avec les filtres de lecture et
+   de dossier), plus un index plein texte (`tsvector` sur titre, tags et
+   extraits) pour la partie lexicale, puis la même fusion qu'aujourd'hui ;
+4. les indexeurs (navigateur, serveur) écrivent les deux colonnes pendant la
+   transition.
+Gain attendu : moins de 300 ms par requête, indépendamment de la taille de
+l'index. À faire quand la latence gênera ou au-delà d'environ 100 000 extraits.
 
 ## Démarrage rapide pour un agent (Hermes, OpenBot, autre client MCP)
 

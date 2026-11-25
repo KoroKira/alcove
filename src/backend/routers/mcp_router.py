@@ -126,7 +126,7 @@ _TOOLS: List[Dict[str, Any]] = [
                 "folder": {"type": "string", "description": "Only pads in this exact folder."},
                 "tag": {"type": "string", "description": "Only pads carrying this exact tag."},
                 "exclude_folders": {"type": "array", "items": {"type": "string"}, "maxItems": 20,
-                                    "description": "Leave out pads in these folders."},
+                                    "description": "Leave out pads in these folders (\"Tests & Diagnostics\" is always left out unless targeted with folder)."},
                 "exclude_tags": {"type": "array", "items": {"type": "string"}, "maxItems": 20,
                                  "description": "Leave out pads carrying any of these tags."},
             },
@@ -438,6 +438,23 @@ def _pad_url(pad_id: Any) -> str:
     return f"{base}/pad/{pad_id}"
 
 
+def _default_excluded_folders() -> List[str]:
+    """Folders search_pads leaves out unless a caller targets them with `folder`.
+
+    Test and diagnostic pads written by agents are kept (Alcove never deletes)
+    but must not pollute answers. MCP_SEARCH_EXCLUDED_FOLDERS (comma-separated,
+    empty to disable) overrides the default.
+    """
+    import os
+    raw = os.getenv("MCP_SEARCH_EXCLUDED_FOLDERS")
+    if raw is None:
+        return list(_DEFAULT_EXCLUDED_FOLDERS)
+    return [name.strip() for name in raw.split(",") if name.strip()]
+
+
+_DEFAULT_EXCLUDED_FOLDERS = ("Tests & Diagnostics",)
+
+
 def _search_filters(args: Dict[str, Any]) -> List[Any]:
     """SQL conditions for search_pads' folder/tag/exclude arguments."""
     from sqlalchemy import String, cast, not_, or_
@@ -447,8 +464,10 @@ def _search_filters(args: Dict[str, Any]) -> List[Any]:
         conditions.append(PadStore.folder == args["folder"])
     if "tag" in args:
         conditions.append(PadStore.tags.any(args["tag"]))
-    if args.get("exclude_folders"):
-        conditions.append(or_(PadStore.folder.is_(None), PadStore.folder.notin_(args["exclude_folders"])))
+    excluded = list(dict.fromkeys([*args.get("exclude_folders", []), *_default_excluded_folders()]))
+    excluded = [name for name in excluded if name != args.get("folder")]
+    if excluded:
+        conditions.append(or_(PadStore.folder.is_(None), PadStore.folder.notin_(excluded)))
     if args.get("exclude_tags"):
         excluded = cast(list(args["exclude_tags"]), ARRAY(String(50)))
         conditions.append(or_(PadStore.tags.is_(None), not_(PadStore.tags.op("&&")(excluded))))

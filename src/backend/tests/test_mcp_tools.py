@@ -223,6 +223,25 @@ async def test_hybrid_search_surfaces_titled_notes_over_bulk_import_and_filters(
 
 
 @pytest.mark.integration
+async def test_test_and_diagnostic_pads_are_left_out_unless_targeted(integration_session, monkeypatch):
+    owner = await _user(integration_session, "o")
+    probe = await _pad(integration_session, owner, "probe WAAM", "document", {"content": "x"}, folder="Tests & Diagnostics")
+    real = await _pad(integration_session, owner, "Notes WAAM", "document", {"content": "x"})
+
+    async def no_embedding(*_a, **_k):
+        return None
+    monkeypatch.setattr(mcp, "_embed_query", no_embedding)
+    search = lambda **kw: mcp._tool_search_pads({"query": "WAAM", "top_k": 20, **kw}, owner, integration_session)
+    ids = lambda found: {r["pad_id"] for r in found["results"]}
+
+    assert str(real.id) in ids(await search()) and str(probe.id) not in ids(await search())
+    assert str(probe.id) not in ids(await search(exclude_folders=["Autre"]))
+    assert ids(await search(folder="Tests & Diagnostics")) == {str(probe.id)}
+    monkeypatch.setenv("MCP_SEARCH_EXCLUDED_FOLDERS", "")
+    assert str(probe.id) in ids(await search())
+
+
+@pytest.mark.integration
 async def test_append_to_pad_is_optimistic_permissioned_and_non_destructive(integration_session):
     from application.membership import MembershipService
     from application.principal import Principal
