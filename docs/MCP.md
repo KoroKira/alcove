@@ -7,7 +7,7 @@ La connexion donne accès aux pads du compte authentifié, jamais à ceux d'un a
 | Outil | Utilisation | Permission |
 |---|---|---|
 | `workspace_overview` | Comprendre l'organisation : types de pads, dossiers, tags | Lecture |
-| `search_pads` | Rechercher (sémantique si l'index IA existe, sinon mots-clés dans les titres **et** le contenu) | Lecture |
+| `search_pads` | Rechercher : hybride (sens + mots exacts des titres, tags, dossiers et contenu), un résultat par pad ; filtres `folder`, `tag`, `exclude_folders`, `exclude_tags` | Lecture |
 | `read_pad` | Lire un pad de n'importe quel type (texte, wikilinks résolus, dossier, tags) | Lecture |
 | `list_pads` | Lister par dossier, tag ou type, avec pagination | Lecture |
 | `list_recent` | Retrouver ses derniers pads | Lecture |
@@ -26,6 +26,12 @@ Une réponse du modèle n'est pas une validation de ses sources : chaque résult
 contient l'`url` du pad à citer, et `search_pads` indique `degraded: true`
 (avec un `notice`) quand Ollama est indisponible ou l'index absent : il s'agit
 alors de correspondances par mots-clés, pas de recherche sémantique.
+En mode `hybrid`, chaque résultat donne `score`, `semantic_score` et
+`matched_terms`. Pour écarter un gros import (par exemple le dossier
+« T.REX Field Manual Vault »), passer `exclude_folders` ; pour n'y chercher
+que lui, `folder`. Au démarrage, Alcove indexe en tâche de fond les pads qui
+n'ont encore aucun extrait sémantique (`RAG_SERVER_BACKFILL=false` pour
+désactiver) : il ajoute seulement des extraits, sans modifier ni supprimer de pad.
 
 ## Démarrage rapide pour un agent (Hermes, OpenBot, autre client MCP)
 

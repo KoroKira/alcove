@@ -97,3 +97,44 @@ async def test_index_pad_replaces_chunks_clears_empty_and_is_fail_safe(integrati
         row.deleted_at = func.now()
         await s.commit()
     assert await indexing.index_pad(pad.id, factory) == "skipped"
+
+
+@pytest.mark.integration
+async def test_backfill_indexes_only_pads_without_any_chunk(integration_session, integration_engine, monkeypatch):
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from database.models import PadStore, UserStore
+    from database.models.embedding_model import PadEmbedding
+
+    owner = uuid4()
+    integration_session.add(UserStore(id=owner, username=f"bf-{owner}", email=f"{owner}@example.test"))
+    await integration_session.flush()
+    missing = PadStore(id=uuid4(), owner_id=owner, display_name="Jamais indexé", pad_type="document",
+                       data={"content": "référentiel waam"}, sharing_policy="private", whitelist=[])
+    indexed = PadStore(id=uuid4(), owner_id=owner, display_name="Déjà indexé", pad_type="document",
+                       data={"content": "nouveau texte"}, sharing_policy="private", whitelist=[])
+    integration_session.add_all([missing, indexed])
+    await integration_session.flush()
+    integration_session.add(PadEmbedding(pad_id=indexed.id, chunk_index=0, chunk_text="ancien", embedding=[0.0, 1.0]))
+    await integration_session.commit()
+    factory = async_sessionmaker(integration_engine, expire_on_commit=False)
+
+    async def chunks(pad_id):
+        async with factory() as s:
+            return (await s.execute(select(PadEmbedding.chunk_text).where(PadEmbedding.pad_id == pad_id))).scalars().all()
+
+    async def down(text, client):
+        return None
+    monkeypatch.setattr(indexing, "embed", down)
+    counts = await indexing.backfill_unindexed(factory, limit=100000, owner_id=owner)
+    assert counts == {"unavailable": 1}    # stops at the first pad Ollama cannot embed
+    assert await chunks(missing.id) == []
+
+    async def fake_embed(text, client):
+        return [1.0, 0.0]
+    monkeypatch.setattr(indexing, "embed", fake_embed)
+    await indexing.backfill_unindexed(factory, limit=100000, owner_id=owner)
+    assert await chunks(missing.id) == ["référentiel waam"]
+    assert await chunks(indexed.id) == ["ancien"]          # existing index untouched
+    async with factory() as s:
+        assert (await s.get(PadStore, missing.id)).data == {"content": "référentiel waam"}   # pad unchanged

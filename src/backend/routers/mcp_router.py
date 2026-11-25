@@ -2,7 +2,7 @@
 to any MCP-capable client (Claude Desktop, Cursor, ChatGPT, custom agents).
 
 The user's KB becomes addressable from outside via these tools :
-  read  · search_pads(query, top_k)        — semantic (RAG) or keyword search
+  read  · search_pads(query, top_k, …)     — hybrid semantic + keyword search
         · read_pad(pad_id)                 — text of any pad type + wikilinks
         · list_recent(limit)               — recent pads with metadata
         · list_pads(folder, tag, ...)      — filtered, paginated listing
@@ -46,7 +46,6 @@ from database.database import async_session, get_session
 from database.models import PadStore
 from database.models.embedding_model import PadEmbedding
 from database.pad_serialization import serialize_pad
-from routers.ai.rag import rank_rows
 from services.rag_indexer import extract_text_from_pad
 from routers.auth_router import DEV_USER_ID
 from services.mcp_api_key_service import McpPrincipal, verify_api_key_principal
@@ -111,17 +110,25 @@ _TOOLS: List[Dict[str, Any]] = [
     {
         "name": "search_pads",
         "description": (
-            "Semantic search across the user's Alcove knowledge base. Returns "
-            "the top-K most relevant pads with excerpt chunks. Use this when "
-            "the user asks about anything in their notes, articles, videos, "
-            "or ingested content — it's fuzzy and multilingual, so a French "
-            "query can surface English notes and vice-versa."
+            "Hybrid search across the user's Alcove knowledge base: semantic "
+            "similarity fused with exact words in titles, tags, folders and "
+            "content. Returns the top-K most relevant pads (one entry per pad) "
+            "with the best excerpt. Use this when the user asks about anything "
+            "in their notes, articles, videos or ingested content. Narrow it "
+            "with folder/tag, or leave out bulk imports with exclude_folders / "
+            "exclude_tags (see workspace_overview for the names)."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Natural-language query."},
                 "top_k": {"type": "integer", "default": 5, "minimum": 1, "maximum": 20},
+                "folder": {"type": "string", "description": "Only pads in this exact folder."},
+                "tag": {"type": "string", "description": "Only pads carrying this exact tag."},
+                "exclude_folders": {"type": "array", "items": {"type": "string"}, "maxItems": 20,
+                                    "description": "Leave out pads in these folders."},
+                "exclude_tags": {"type": "array", "items": {"type": "string"}, "maxItems": 20,
+                                 "description": "Leave out pads carrying any of these tags."},
             },
             "required": ["query"],
         },
@@ -294,6 +301,12 @@ def _valid_tool_arguments(name: str, args: Any) -> bool:
             isinstance(args.get("query"), str)
             and len(args["query"]) <= 1000
             and ("top_k" not in args or (type(args["top_k"]) is int and 1 <= args["top_k"] <= 20))
+            and all(isinstance(args.get(k), str) and 1 <= len(args[k]) <= 80 for k in ("folder", "tag") if k in args)
+            and all(
+                isinstance(args[k], list) and len(args[k]) <= 20
+                and all(isinstance(v, str) and 1 <= len(v) <= 80 for v in args[k])
+                for k in ("exclude_folders", "exclude_tags") if k in args
+            )
         )
     if name == "read_pad":
         return isinstance(args.get("pad_id"), str) and len(args["pad_id"]) <= 64
@@ -425,6 +438,59 @@ def _pad_url(pad_id: Any) -> str:
     return f"{base}/pad/{pad_id}"
 
 
+def _search_filters(args: Dict[str, Any]) -> List[Any]:
+    """SQL conditions for search_pads' folder/tag/exclude arguments."""
+    from sqlalchemy import String, cast, not_, or_
+    from sqlalchemy.dialects.postgresql import ARRAY
+    conditions: List[Any] = []
+    if "folder" in args:
+        conditions.append(PadStore.folder == args["folder"])
+    if "tag" in args:
+        conditions.append(PadStore.tags.any(args["tag"]))
+    if args.get("exclude_folders"):
+        conditions.append(or_(PadStore.folder.is_(None), PadStore.folder.notin_(args["exclude_folders"])))
+    if args.get("exclude_tags"):
+        excluded = cast(list(args["exclude_tags"]), ARRAY(String(50)))
+        conditions.append(or_(PadStore.tags.is_(None), not_(PadStore.tags.op("&&")(excluded))))
+    return conditions
+
+
+async def _search_candidates(
+    user_id: UUID, session: AsyncSession, filters: List[Any], with_vectors: bool,
+):
+    """Every readable pad matching the filters, with its indexed chunks."""
+    from application.pads import PadQueryService
+    from services.hybrid_search import PadCandidate
+
+    readable = [PadQueryService.readable_filter(user_id), *filters]
+    pads = (await session.execute(
+        sa_select(PadStore.id, PadStore.display_name, PadStore.folder, PadStore.tags).where(*readable)
+    )).all()
+    by_id = {
+        row.id: PadCandidate(pad_id=row.id, title=row.display_name or "", folder=row.folder, tags=row.tags or ())
+        for row in pads
+    }
+    columns = [PadEmbedding.pad_id, PadEmbedding.chunk_text]
+    if with_vectors:
+        columns.append(PadEmbedding.embedding)
+    chunks = (await session.execute(
+        sa_select(*columns).join(PadStore, PadStore.id == PadEmbedding.pad_id).where(*readable)
+    )).all()
+    for row in chunks:
+        cand = by_id.get(row.pad_id)
+        if cand is not None:
+            cand.chunks.append((row.chunk_text, row.embedding if with_vectors else None))
+    return list(by_id.values())
+
+
+def _rank_candidates(query: str, emb: Optional[List[float]], candidates, top_k: int):
+    from services.hybrid_search import fuse, query_terms, score_lexical, score_semantic
+    if emb:
+        score_semantic(emb, candidates)
+    score_lexical(query_terms(query), candidates)
+    return fuse(candidates, top_k)
+
+
 async def _tool_search_pads(
     args: Dict[str, Any], user_id: UUID, session: AsyncSession,
 ) -> Dict[str, Any]:
@@ -434,43 +500,51 @@ async def _tool_search_pads(
     if not query:
         return {"results": [], "mode": "empty", "degraded": False, "notice": None}
 
-    # Semantic first. Any reason it cannot answer is reported to the caller
-    # instead of being swallowed, so an agent never presents keyword matches
-    # as semantic ones.
-    notice = None
+    # Hybrid: semantic similarity fused with exact words in titles, tags,
+    # folders and indexed content. Any reason the semantic half cannot answer
+    # is reported to the caller instead of being swallowed.
+    from fastapi.concurrency import run_in_threadpool
+    filters = _search_filters(args)
     emb = await _embed_query(query)
-    if emb:
-        rows = await PadEmbedding.get_all_for_owner(session, user_id)
-        if rows:
-            from fastapi.concurrency import run_in_threadpool
-            scored = await run_in_threadpool(rank_rows, emb, rows)
-            top = [(s, r) for s, r in scored[:top_k] if s > 0.3]
-            if top:
-                return {
-                    "mode": "semantic",
-                    "degraded": False,
-                    "notice": None,
-                    "results": [
-                        {
-                            "pad_id": str(r.pad_id),
-                            "pad_name": r.display_name,
-                            "url": _pad_url(r.pad_id),
-                            "score": round(s, 4),
-                            "chunk_text": r.chunk_text,
-                        }
-                        for s, r in top
-                    ],
-                }
-            notice = "No semantic match above the relevance threshold; showing keyword matches."
-        else:
-            notice = "The workspace has no semantic index yet (open pads in Alcove to index them); showing keyword matches."
-    else:
+    candidates = await _search_candidates(user_id, session, filters, with_vectors=bool(emb))
+    has_index = any(c.chunks for c in candidates)
+    notice = None
+    if not emb:
         notice = "Semantic search is unavailable (embedding service unreachable); showing keyword matches."
+    elif not has_index:
+        notice = "The workspace has no semantic index yet (open pads in Alcove to index them); showing keyword matches."
+    top = await run_in_threadpool(_rank_candidates, query, emb if has_index else None, candidates, top_k)
+    if top:
+        return {
+            "mode": "hybrid" if emb and has_index else "text",
+            "degraded": notice is not None,
+            "notice": notice,
+            "results": [
+                {
+                    "pad_id": str(c.pad_id),
+                    "pad_name": c.title,
+                    "url": _pad_url(c.pad_id),
+                    "folder": c.folder,
+                    "tags": list(c.tags or []),
+                    "score": round(c.score, 4),
+                    "semantic_score": round(c.semantic, 4),
+                    "matched_terms": c.matched_terms,
+                    "chunk_text": c.best_chunk,
+                }
+                for c in top
+            ],
+        }
+    if notice is None:
+        notice = "No semantic or keyword match above the relevance threshold; showing phrase matches."
 
-    # Keyword fallback over titles AND content of every pad type, using the
-    # same matcher as the in-app search and the same read boundary.
+    # Last resort: the in-app phrase matcher over the full content of every
+    # pad type (also reaches pads not indexed yet), same read boundary.
     from application.pads import PadQueryService
-    found = await PadQueryService(session).search(user_id, query, limit=top_k)
+    allowed = {str(c.pad_id) for c in candidates}
+    found = [
+        item for item in await PadQueryService(session).search(user_id, query, limit=200)
+        if item["pad_id"] in allowed
+    ][:top_k]
     return {
         "mode": "text",
         "degraded": True,

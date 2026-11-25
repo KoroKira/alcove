@@ -79,6 +79,11 @@ async def lifespan(app: FastAPI):
     await CanvasWorker.get_instance()
     logger.info("Canvas worker started")
 
+    # Pads never indexed (written before server-side indexing, or while
+    # Ollama was down) get their semantic chunks in the background.
+    from services.pad_indexing import schedule_backfill
+    schedule_backfill()
+
     yield
 
     await CanvasWorker.shutdown_instance()

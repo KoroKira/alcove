@@ -31,6 +31,11 @@ def test_no_tool_can_delete_and_only_edit_pad_changes_existing_text():
     ("list_pads", {"limit": True}, False),
     ("list_pads", {"folder": ""}, False),
     ("list_pads", {"unknown": 1}, False),
+    ("search_pads", {"query": "waam", "folder": "Projets", "tag": "ia", "exclude_folders": ["Vault"], "exclude_tags": ["x"]}, True),
+    ("search_pads", {"query": "waam", "exclude_folders": "Vault"}, False),
+    ("search_pads", {"query": "waam", "exclude_folders": [""]}, False),
+    ("search_pads", {"query": "waam", "exclude_tags": ["t"] * 21}, False),
+    ("search_pads", {"query": "waam", "folder": ""}, False),
     ("workspace_overview", {}, True),
     ("workspace_overview", {"x": 1}, False),
     ("append_to_pad", {"pad_id": str(uuid4()), "content": "hi", "expected_updated_at": "2026-01-01T00:00:00+00:00"}, True),
@@ -172,8 +177,49 @@ async def test_semantic_search_is_used_when_an_index_exists(integration_session,
         return [1.0, 0.0]
     monkeypatch.setattr(mcp, "_embed_query", embedding)
     found = await mcp._tool_search_pads({"query": "recherche"}, owner, integration_session)
-    assert found["mode"] == "semantic" and found["degraded"] is False
+    assert found["mode"] == "hybrid" and found["degraded"] is False
     assert found["results"][0]["pad_id"] == str(pad.id) and found["results"][0]["url"].endswith(f"/pad/{pad.id}")
+
+
+@pytest.mark.integration
+async def test_hybrid_search_surfaces_titled_notes_over_bulk_import_and_filters(integration_session, monkeypatch):
+    from database.models.embedding_model import PadEmbedding
+    owner, other = await _user(integration_session, "o"), await _user(integration_session, "x")
+    for i in range(30):
+        manual = await _pad(integration_session, owner, f"FM {i} — Field Manual", "document",
+                            {"content": "generic procedures"}, folder="Vault", tags=["field-manual-vault"])
+        integration_session.add(PadEmbedding(pad_id=manual.id, chunk_index=0,
+                                             chunk_text="generic maintenance procedures", embedding=[1.0, 0.0]))
+    ref = await _pad(integration_session, owner, "Référentiel DED/WAAM v2", "document",
+                     {"content": "dépôt direct"}, tags=["waam", "ded"])
+    integration_session.add(PadEmbedding(pad_id=ref.id, chunk_index=0,
+                                         chunk_text="Wire arc additive manufacturing", embedding=[0.6, 0.8]))
+    unindexed = await _pad(integration_session, owner, "WAAM — idées", "document", {"content": "x"})
+    secret = await _pad(integration_session, other, "Référentiel WAAM secret", "document", {"content": "x"})
+    integration_session.add(PadEmbedding(pad_id=secret.id, chunk_index=0, chunk_text="WAAM DED", embedding=[1.0, 0.0]))
+    await integration_session.commit()
+
+    async def embedding(*_a, **_k):
+        return [1.0, 0.0]
+    monkeypatch.setattr(mcp, "_embed_query", embedding)
+    search = lambda **kw: mcp._tool_search_pads({"query": "WAAM DED référentiel", **kw}, owner, integration_session)
+
+    found = await search(top_k=5)
+    ids = [r["pad_id"] for r in found["results"]]
+    assert found["mode"] == "hybrid" and ids[0] == str(ref.id)
+    assert str(secret.id) not in ids            # read boundary still applies
+    assert len(ids) == len(set(ids))            # one entry per pad
+    assert set(found["results"][0]["matched_terms"]) == {"waam", "ded", "referentiel"}
+
+    kept = await search(top_k=20, exclude_folders=["Vault"])
+    assert all(r["folder"] != "Vault" for r in kept["results"])
+    assert [r["pad_id"] for r in kept["results"]][:2] == [str(ref.id), str(unindexed.id)]  # title match reaches unindexed pads
+    only_vault = await search(top_k=20, folder="Vault")
+    assert only_vault["results"] and all(r["folder"] == "Vault" for r in only_vault["results"])
+    tagged = await search(tag="waam")
+    assert [r["pad_id"] for r in tagged["results"]] == [str(ref.id)]
+    no_manuals = await search(top_k=20, exclude_tags=["field-manual-vault"])
+    assert all("field-manual-vault" not in r["tags"] for r in no_manuals["results"])
 
 
 @pytest.mark.integration

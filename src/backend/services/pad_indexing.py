@@ -158,3 +158,70 @@ async def _safe_index(pad_id: UUID) -> None:
         await index_pad(pad_id)
     except Exception:
         logger.warning("Server-side indexing failed for pad %s", pad_id, exc_info=True)
+
+
+BACKFILL_ENABLED = os.getenv("RAG_SERVER_BACKFILL", "true").strip().lower() != "false"
+BACKFILL_LIMIT = 500   # pads per start; bounded so a huge import never pins Ollama
+
+
+async def backfill_unindexed(
+    session_factory: Any = None, limit: int = BACKFILL_LIMIT, owner_id: Optional[UUID] = None,
+) -> dict:
+    """Index live pads that have no semantic chunk at all.
+
+    Pads written before server-side indexing existed (or while Ollama was
+    down) were never indexed, so semantic search could not see them. This pass
+    only *adds* chunks for those pads: it never touches a pad that already has
+    an index, never modifies or deletes a pad, and stops at the first sign
+    Ollama is unavailable (the next start retries).
+    """
+    from sqlalchemy import exists, select
+    from database.database import async_session
+    from database.models import PadStore
+    from database.models.embedding_model import PadEmbedding
+
+    factory = session_factory or async_session
+    async with factory() as session:
+        stmt = select(PadStore.id).where(
+            PadStore.deleted_at.is_(None), ~exists().where(PadEmbedding.pad_id == PadStore.id),
+        )
+        if owner_id is not None:
+            stmt = stmt.where(PadStore.owner_id == owner_id)
+        pad_ids = (await session.execute(
+            stmt.order_by(PadStore.updated_at.desc()).limit(limit)
+        )).scalars().all()
+    counts: dict[str, int] = {}
+    for pad_id in pad_ids:
+        async with _index_semaphore:
+            try:
+                outcome = await index_pad(pad_id, session_factory=factory)
+            except Exception:
+                logger.warning("Backfill indexing failed for pad %s", pad_id, exc_info=True)
+                outcome = "failed"
+        counts[outcome] = counts.get(outcome, 0) + 1
+        if outcome == "unavailable":
+            break
+    if pad_ids:
+        logger.info("Semantic index backfill: %s", counts)
+    return counts
+
+
+def schedule_backfill() -> None:
+    """Start the backfill in the background at application start-up."""
+    if not (ENABLED and BACKFILL_ENABLED):
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+
+    async def _run() -> None:
+        await asyncio.sleep(15)   # let the app become healthy first
+        try:
+            await backfill_unindexed()
+        except Exception:
+            logger.warning("Semantic index backfill aborted", exc_info=True)
+
+    task = loop.create_task(_run())
+    _background.add(task)
+    task.add_done_callback(_background.discard)
