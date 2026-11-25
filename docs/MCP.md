@@ -11,8 +11,10 @@ La connexion donne accès aux pads du compte authentifié, jamais à ceux d'un a
 | `read_pad` | Lire un pad de n'importe quel type (texte, wikilinks résolus, dossier, tags) | Lecture |
 | `list_pads` | Lister par dossier, tag ou type, avec pagination | Lecture |
 | `list_recent` | Retrouver ses derniers pads | Lecture |
-| `write_note` | Créer un nouveau document | Écriture, opt-in |
+| `write_note` | Créer un nouveau document, avec tags et dossier (`folder`) facultatifs | Écriture, opt-in |
 | `append_to_pad` | Ajouter du texte à la fin d'un document existant | Écriture, opt-in |
+| `edit_pad` | Remplacements exacts et uniques, `confirm: true`, version précédente conservée | Écriture, opt-in |
+| `organize_pad` | Classer un pad : dossier et/ou ajout de tags (métadonnées seulement : jamais le contenu, aucun tag retiré ; contrôle `expected_updated_at`) | Écriture, opt-in |
 
 Il n'existe **aucun outil de suppression ni de réécriture** : un agent ne peut
 ni effacer ni remplacer du contenu. `append_to_pad` exige le `updated_at` obtenu

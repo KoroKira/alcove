@@ -19,7 +19,7 @@ def test_no_tool_can_delete_and_only_edit_pad_changes_existing_text():
     edit = next(tool for tool in mcp._TOOLS if tool["name"] == "edit_pad")
     assert {"confirm", "expected_updated_at"} <= set(edit["inputSchema"]["required"])
     assert edit["inputSchema"]["properties"]["confirm"]["const"] is True
-    assert mcp._READ_TOOLS.isdisjoint({"write_note", "append_to_pad", "edit_pad"})
+    assert mcp._READ_TOOLS.isdisjoint({"write_note", "append_to_pad", "edit_pad", "organize_pad"})
     assert set(mcp._TOOL_HANDLERS) == {tool["name"] for tool in mcp._TOOLS}  # no hidden handler
 
 
@@ -36,6 +36,14 @@ def test_no_tool_can_delete_and_only_edit_pad_changes_existing_text():
     ("search_pads", {"query": "waam", "exclude_folders": [""]}, False),
     ("search_pads", {"query": "waam", "exclude_tags": ["t"] * 21}, False),
     ("search_pads", {"query": "waam", "folder": ""}, False),
+    ("write_note", {"title": "T", "content": "x", "folder": "Projets"}, True),
+    ("write_note", {"title": "T", "content": "x", "folder": ""}, False),
+    ("organize_pad", {"pad_id": str(uuid4()), "expected_updated_at": "2026-01-01T00:00:00+00:00", "folder": "Projets"}, True),
+    ("organize_pad", {"pad_id": str(uuid4()), "expected_updated_at": "2026-01-01T00:00:00+00:00", "add_tags": ["projet:luciole"]}, True),
+    ("organize_pad", {"pad_id": str(uuid4()), "expected_updated_at": "2026-01-01T00:00:00+00:00"}, False),
+    ("organize_pad", {"pad_id": str(uuid4()), "folder": "Projets"}, False),
+    ("organize_pad", {"pad_id": str(uuid4()), "expected_updated_at": "2026-01-01T00:00:00+00:00", "add_tags": [""]}, False),
+    ("organize_pad", {"pad_id": str(uuid4()), "expected_updated_at": "2026-01-01T00:00:00+00:00", "content": "x"}, False),
     ("workspace_overview", {}, True),
     ("workspace_overview", {"x": 1}, False),
     ("append_to_pad", {"pad_id": str(uuid4()), "content": "hi", "expected_updated_at": "2026-01-01T00:00:00+00:00"}, True),
@@ -356,3 +364,42 @@ async def test_versions_saved_before_mcp_edits_are_never_pruned(integration_sess
     assert with_edit.count("mcp_edit_pad") == 1        # the protected snapshot survives 56 later versions
     assert "mcpXauto" not in with_edit                 # `_` is not a LIKE wildcard: ordinary reasons stay prunable
     assert with_edit.count("auto") == control.count("auto")  # ordinary retention is unchanged
+
+
+@pytest.mark.integration
+async def test_write_note_files_in_a_folder_and_organize_pad_never_touches_content(integration_session, monkeypatch):
+    import services.pad_indexing as pad_indexing
+    owner, stranger = await _user(integration_session, "o"), await _user(integration_session, "x")
+
+    class _Worker:
+        async def stop_processing_pad(self, *_a, **_k):
+            return None
+
+    async def _instance():
+        return _Worker()
+
+    import workers.canvas_worker as cw
+    monkeypatch.setattr(cw.CanvasWorker, "get_instance", staticmethod(_instance))
+    monkeypatch.setattr(pad_indexing, "ENABLED", False)
+
+    created = await mcp._tool_write_note({"title": "Fiche Luciole", "content": "# Luciole\nJeu Godot.",
+                                          "tags": ["projet:luciole"], "folder": "Projets"}, owner, integration_session)
+    assert created["folder"] == "Projets"
+    listing = await mcp._tool_list_pads({"folder": "Projets", "tag": "projet:luciole"}, owner, integration_session)
+    assert [p["pad_id"] for p in listing["pads"]] == [created["pad_id"]]
+    pad = listing["pads"][0]
+
+    doc = await mcp._tool_read_pad({"pad_id": created["pad_id"]}, owner, integration_session)
+    moved = await mcp._tool_organize_pad({"pad_id": created["pad_id"], "expected_updated_at": pad["updated_at"],
+                                          "folder": "Projets/Jeux", "add_tags": ["jeu", "projet:luciole"]},
+                                         owner, integration_session)
+    assert moved["folder"] == "Projets/Jeux" and moved["tags"] == ["projet:luciole", "jeu"]  # no duplicate, none removed
+    after = await mcp._tool_read_pad({"pad_id": created["pad_id"]}, owner, integration_session)
+    assert after["content"] == doc["content"]                                               # content untouched
+
+    with pytest.raises(ValueError, match="conflict"):                                      # stale updated_at refused
+        await mcp._tool_organize_pad({"pad_id": created["pad_id"], "expected_updated_at": pad["updated_at"],
+                                      "folder": "Ailleurs"}, owner, integration_session)
+    with pytest.raises(ValueError, match="not found or access denied"):                    # read boundary
+        await mcp._tool_organize_pad({"pad_id": created["pad_id"], "expected_updated_at": moved["updated_at"],
+                                      "folder": "Ailleurs"}, stranger, integration_session)

@@ -3,6 +3,7 @@ to any MCP-capable client (Claude Desktop, Cursor, ChatGPT, custom agents).
 
 The user's KB becomes addressable from outside via these tools :
   read  · search_pads(query, top_k, …)     — hybrid semantic + keyword search
+  write · organize_pad(pad_id, folder, add_tags) — file a pad (metadata only)
         · read_pad(pad_id)                 — text of any pad type + wikilinks
         · list_recent(limit)               — recent pads with metadata
         · list_pads(folder, tag, ...)      — filtered, paginated listing
@@ -165,8 +166,10 @@ _TOOLS: List[Dict[str, Any]] = [
         "name": "write_note",
         "description": (
             "Create a new document pad in the user's KB with the given title "
-            "and Markdown content. Optionally attach tags. Use when the user "
-            "asks you to save something to Alcove."
+            "and Markdown content. Optionally attach tags and file it in a "
+            "folder (see workspace_overview for existing folders). Search "
+            "first: update an existing pad (append_to_pad / edit_pad) rather "
+            "than creating a duplicate."
         ),
         "inputSchema": {
             "type": "object",
@@ -174,6 +177,7 @@ _TOOLS: List[Dict[str, Any]] = [
                 "title": {"type": "string"},
                 "content": {"type": "string", "description": "Markdown body."},
                 "tags": {"type": "array", "items": {"type": "string"}, "default": []},
+                "folder": {"type": "string", "description": "Folder to file the new pad in (created if new)."},
             },
             "required": ["title", "content"],
         },
@@ -272,6 +276,25 @@ _TOOLS.extend([
         },
     },
 ])
+_TOOLS.append({
+    "name": "organize_pad",
+    "description": (
+        "File an existing pad: move it to a folder and/or add tags. Never "
+        "changes the content and never removes a tag. Requires the "
+        "updated_at returned by read_pad or list_pads (optimistic check)."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "pad_id": {"type": "string"},
+            "expected_updated_at": {"type": "string", "description": "updated_at from read_pad/list_pads."},
+            "folder": {"type": "string", "description": "Destination folder (created if new)."},
+            "add_tags": {"type": "array", "items": {"type": "string"}, "maxItems": 20},
+        },
+        "required": ["pad_id", "expected_updated_at"],
+    },
+})
+
 _READ_TOOLS = frozenset({"search_pads", "read_pad", "list_recent", "list_pads", "workspace_overview"})
 # Tools that change existing text. Each one must be versioned and confirmed (see
 # test_no_tool_can_delete_and_only_edit_pad_changes_existing_text).
@@ -356,8 +379,24 @@ def _valid_tool_arguments(name: str, args: Any) -> bool:
             and isinstance(tags, list)
             and len(tags) <= 20
             and all(isinstance(tag, str) and len(tag.strip()) <= 50 for tag in tags)
+            and ("folder" not in args or _valid_folder(args["folder"]))
+        )
+    if name == "organize_pad":
+        tags = args.get("add_tags", [])
+        return (
+            isinstance(args.get("pad_id"), str) and len(args["pad_id"]) <= 64
+            and isinstance(args.get("expected_updated_at"), str)
+            and len(args["expected_updated_at"]) <= 64
+            and ("folder" in args or "add_tags" in args)
+            and ("folder" not in args or _valid_folder(args["folder"]))
+            and isinstance(tags, list) and len(tags) <= 20
+            and all(isinstance(tag, str) and 1 <= len(tag.strip()) <= 50 for tag in tags)
         )
     return False
+
+
+def _valid_folder(value: Any) -> bool:
+    return isinstance(value, str) and 1 <= len(value.strip()) <= 80
 
 
 # ── Auth resolution ────────────────────────────────────────────────────────
@@ -891,6 +930,7 @@ async def _tool_write_note(
             pad_type="document",
             data={"content": content, "format": "markdown"},
             tags=[t.strip()[:50] for t in tags if isinstance(t, str) and t.strip()][:20],
+            folder=(args.get("folder") or "").strip()[:80] or None,
         )
     )
     await session.execute(stmt)
@@ -921,7 +961,58 @@ async def _tool_write_note(
         "pad_id": str(pad.id),
         "title": title,
         "url": _pad_url(pad.id),
+        "folder": (args.get("folder") or "").strip()[:80] or None,
         "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+async def _tool_organize_pad(
+    args: Dict[str, Any], user_id: UUID, session: AsyncSession,
+) -> Dict[str, Any]:
+    """Move a pad to a folder and/or add tags — metadata only, never content."""
+    from application.errors import ApplicationError, ConflictError
+    from application.pad_writes import PadWriteService
+    from application.pads import PadQueryService
+    from application.principal import Principal
+
+    try:
+        pid = UUID(args["pad_id"])
+        expected = datetime.fromisoformat(args["expected_updated_at"])
+    except (ValueError, TypeError):
+        raise ValueError("invalid pad_id or expected_updated_at (use the ISO value returned by read_pad)")
+    if expected.tzinfo is None:
+        raise ValueError("expected_updated_at must include a timezone, as returned by read_pad")
+    pad = (await session.execute(
+        sa_select(PadStore).where(PadStore.id == pid, PadQueryService.readable_filter(user_id))
+    )).scalar_one_or_none()
+    if pad is None:
+        raise ValueError("pad not found or access denied")
+
+    changes: Dict[str, Any] = {}
+    if "folder" in args:
+        changes["folder"] = args["folder"].strip()[:80]
+    if args.get("add_tags"):
+        current = list(pad.tags or [])
+        merged = current + [t.strip()[:50] for t in args["add_tags"] if t.strip() and t.strip()[:50] not in current]
+        if len(merged) > 20:
+            raise ValueError("a pad keeps at most 20 tags; this would exceed it")
+        changes["tags"] = merged
+    if not changes:
+        raise ValueError("nothing to change: pass folder and/or add_tags")
+
+    principal = Principal(id=user_id, auth_type="api_token", scopes=frozenset({"pads:write"}))
+    try:
+        response, _ = await PadWriteService(session).update_metadata(principal, pid, changes, expected)
+    except ConflictError:
+        raise ValueError("conflict: the pad changed since your last read; read it again and retry with the new updated_at")
+    except ApplicationError as exc:
+        raise ValueError(exc.message)
+    return {
+        "pad_id": str(pid),
+        "url": _pad_url(pid),
+        "folder": response.get("folder", pad.folder),
+        "tags": response.get("tags", list(pad.tags or [])),
+        "updated_at": response["updated_at"],
     }
 
 
@@ -932,6 +1023,7 @@ _TOOL_HANDLERS = {
     "list_pads": _tool_list_pads,
     "workspace_overview": _tool_workspace_overview,
     "write_note": _tool_write_note,
+    "organize_pad": _tool_organize_pad,
     "append_to_pad": _tool_append_to_pad,
     "edit_pad": _tool_edit_pad,
 }
