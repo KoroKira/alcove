@@ -180,7 +180,7 @@ def test_tools_list_works_without_auth_in_prod_mode(monkeypatch):
     names = {t["name"] for t in body["result"]["tools"]}
     assert names == {
         "search_pads", "read_pad", "list_recent", "list_pads", "workspace_overview",
-        "write_note", "append_to_pad",
+        "write_note", "append_to_pad", "edit_pad",
     }
 
 
@@ -191,7 +191,7 @@ def test_tools_list_unaffected_by_dev_mode_either(monkeypatch):
     response = _run(mcp_router.mcp_endpoint(request))
     body = json.loads(response.body)
 
-    assert len(body["result"]["tools"]) == 7
+    assert len(body["result"]["tools"]) == 8
 
 
 # ── endpoint dispatch : tools/call requires and uses auth ───────────────────
@@ -295,7 +295,7 @@ def test_write_only_key_catalog_exposes_only_write_tool(monkeypatch):
         {"authorization": "Bearer synthetic-writeonly"},
     )))
     tools = json.loads(response.body)["result"]["tools"]
-    assert {tool["name"] for tool in tools} == {"write_note", "append_to_pad"}
+    assert {tool["name"] for tool in tools} == {"write_note", "append_to_pad", "edit_pad"}
     assert tools[0]["annotations"]["readOnlyHint"] is False
 
 

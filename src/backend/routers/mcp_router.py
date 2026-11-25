@@ -9,9 +9,12 @@ The user's KB becomes addressable from outside via these tools :
         · workspace_overview()             — folders, tags, pad-type counts
   write · write_note(title, content)       — create a new document pad
         · append_to_pad(pad_id, ...)       — append to a document (optimistic lock)
+        · edit_pad(pad_id, edits, ...)     — targeted, versioned text edits (confirm)
 
-There is deliberately no delete / overwrite tool. If one is ever added it must
-require the `write` scope AND an explicit `confirm` argument.
+There is deliberately no delete tool. edit_pad is the only tool that changes
+existing text: it requires the `write` scope AND `confirm: true`, saves the
+previous content first as a protected pad version (never pruned, restorable from
+the pad history) and refuses to leave a pad empty, so nothing is ever lost.
 
 Transport : JSON-RPC 2.0 over HTTP POST at /mcp/ — the Streamable HTTP
 transport spec'd by the MCP SDK. Single endpoint handles the whole
@@ -86,8 +89,10 @@ _SERVER_INSTRUCTIONS = (
     "returned. Results with `degraded: true` are keyword matches: say so. Write "
     "only when the user asks: write_note creates a document, append_to_pad "
     "adds to an existing one and needs the `updated_at` you got from read_pad; "
-    "on a conflict, read the pad again instead of retrying blindly. This server "
-    "has no delete or overwrite tool."
+    "on a conflict, read the pad again instead of retrying blindly. edit_pad "
+    "changes existing text through exact, unique replacements: use it only when "
+    "the user asks, pass confirm=true; the previous version is always kept. "
+    "This server has no delete tool."
 )
 _SERVER_CAPABILITIES = {
     "tools": {},
@@ -100,6 +105,7 @@ _SERVER_CAPABILITIES = {
 _PAD_TYPES = frozenset({"canvas", "document", "kanban", "gantt", "latex", "database"})
 _MAX_APPEND_BYTES = 256_000
 _MAX_READ_CHARS = 200_000
+_MAX_EDITS = 50
 
 _TOOLS: List[Dict[str, Any]] = [
     {
@@ -215,13 +221,59 @@ _TOOLS.extend([
             "required": ["pad_id", "content", "expected_updated_at"],
         },
     },
+    {
+        "name": "edit_pad",
+        "description": (
+            "Make targeted text edits to an existing DOCUMENT pad. Each edit "
+            "replaces one exact `old_text` (it must occur exactly once — copy it "
+            "from read_pad, with enough context to be unique) by `new_text`. "
+            "Alcove first saves the current content as a protected version "
+            "(restorable from the pad history), refuses to leave the pad empty "
+            "and never deletes a pad. Requires `confirm: true` and the "
+            "`updated_at` returned by read_pad: if the pad changed since, the "
+            "call fails with a conflict and you must read it again."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pad_id": {"type": "string", "description": "The pad UUID."},
+                "edits": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": _MAX_EDITS,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "old_text": {"type": "string", "description": "Exact text to replace; must occur exactly once."},
+                            "new_text": {"type": "string", "description": "Replacement text."},
+                        },
+                        "required": ["old_text", "new_text"],
+                        "additionalProperties": False,
+                    },
+                },
+                "expected_updated_at": {
+                    "type": "string",
+                    "description": "The `updated_at` value from your latest read_pad of this pad.",
+                },
+                "confirm": {
+                    "type": "boolean",
+                    "const": True,
+                    "description": "Must be true: you confirm the user asked to change existing text (the previous version is kept).",
+                },
+            },
+            "required": ["pad_id", "edits", "expected_updated_at", "confirm"],
+        },
+    },
 ])
 _READ_TOOLS = frozenset({"search_pads", "read_pad", "list_recent", "list_pads", "workspace_overview"})
+# Tools that change existing text. Each one must be versioned and confirmed (see
+# test_no_tool_can_delete_and_only_edit_pad_changes_existing_text).
+_VERSIONED_EDIT_TOOLS = frozenset({"edit_pad"})
 for _tool in _TOOLS:
     _tool["inputSchema"]["additionalProperties"] = False
     _tool["annotations"] = {
         "readOnlyHint": _tool["name"] in _READ_TOOLS,
-        "destructiveHint": False,
+        "destructiveHint": _tool["name"] in _VERSIONED_EDIT_TOOLS,
         "idempotentHint": _tool["name"] in _READ_TOOLS,
         "openWorldHint": False,
     }
@@ -264,6 +316,22 @@ def _valid_tool_arguments(name: str, args: Any) -> bool:
             and len(args["content"].encode("utf-8")) <= _MAX_APPEND_BYTES
             and isinstance(args.get("expected_updated_at"), str)
             and len(args["expected_updated_at"]) <= 64
+        )
+    if name == "edit_pad":
+        edits = args.get("edits")
+        return (
+            isinstance(args.get("pad_id"), str) and len(args["pad_id"]) <= 64
+            and args.get("confirm") is True
+            and isinstance(args.get("expected_updated_at"), str)
+            and len(args["expected_updated_at"]) <= 64
+            and isinstance(edits, list) and 1 <= len(edits) <= _MAX_EDITS
+            and all(
+                isinstance(e, dict) and set(e) == {"old_text", "new_text"}
+                and isinstance(e["old_text"], str) and isinstance(e["new_text"], str)
+                and len(e["old_text"]) >= 1
+                and len(e["old_text"].encode("utf-8")) + len(e["new_text"].encode("utf-8")) <= _MAX_APPEND_BYTES
+                for e in edits
+            )
         )
     if name == "write_note":
         tags = args.get("tags", [])
@@ -630,6 +698,82 @@ async def _tool_append_to_pad(
     }
 
 
+async def _tool_edit_pad(
+    args: Dict[str, Any], user_id: UUID, session: AsyncSession,
+) -> Dict[str, Any]:
+    """Targeted, confirmed, versioned edits of a document pad.
+
+    Never deletes a pad and never leaves it empty. The previous data is saved
+    first as a PadVersion whose reason starts with PROTECTED_REASON_PREFIX, which
+    version pruning never removes, so every agent edit stays recoverable.
+    """
+    from application.authorization import PadAction, authorize
+    from application.errors import ApplicationError, ConflictError
+    from application.pad_writes import PadWriteService
+    from application.pads import PadQueryService
+    from application.principal import Principal
+    from database.models.version_model import PadVersion
+
+    if args.get("confirm") is not True:
+        raise ValueError("edit_pad changes existing text: pass confirm=true once the user asked for it")
+    try:
+        pid = UUID(args["pad_id"])
+        expected = datetime.fromisoformat(args["expected_updated_at"])
+    except (ValueError, TypeError):
+        raise ValueError("invalid pad_id or expected_updated_at (use the ISO value returned by read_pad)")
+    if expected.tzinfo is None:
+        raise ValueError("expected_updated_at must include a timezone, as returned by read_pad")
+
+    pad = (await session.execute(
+        sa_select(PadStore).where(PadStore.id == pid, PadQueryService.readable_filter(user_id))
+    )).scalar_one_or_none()
+    if pad is None:
+        raise ValueError("pad not found or access denied")
+    if (pad.pad_type or "canvas") != "document":
+        raise ValueError("edit_pad only supports document pads")
+    conflict = "conflict: the pad changed since your last read_pad; read it again and retry with the new updated_at"
+    if pad.updated_at != expected:  # cheap pre-check; update_data re-checks atomically
+        raise ValueError(conflict)
+
+    principal = Principal(id=user_id, auth_type="api_token", scopes=frozenset({"pads:write"}))
+    if not await authorize(session, principal, pad, PadAction.WRITE):
+        raise ValueError("Not authorized to write this pad")
+
+    previous = dict(pad.data) if isinstance(pad.data, dict) else {}
+    content = previous.get("content") or ""
+    for number, edit in enumerate(args["edits"], 1):
+        old, new = edit["old_text"], edit["new_text"]
+        found = content.count(old)
+        if found == 0:
+            raise ValueError(f"edit {number}: old_text not found; read_pad again and copy the exact text")
+        if found > 1:
+            raise ValueError(f"edit {number}: old_text occurs {found} times; add surrounding text so it is unique")
+        content = content.replace(old, new, 1)
+    if not content.strip():
+        raise ValueError("refused: these edits would leave the pad empty (removing a whole document is not allowed)")
+
+    data = dict(previous)
+    data["content"] = content
+    data.setdefault("format", "markdown")
+    version = await PadVersion.create(
+        session, pad.id, previous, pad_type=pad.pad_type or "document",
+        reason=f"{PadVersion.PROTECTED_REASON_PREFIX}edit_pad",
+    )
+    try:
+        response, _ = await PadWriteService(session).update_data(principal, pid, data, expected)
+    except ConflictError:
+        raise ValueError(conflict)
+    except ApplicationError as exc:
+        raise ValueError(exc.message)
+    return {
+        "pad_id": str(pid),
+        "url": _pad_url(pid),
+        "edits_applied": len(args["edits"]),
+        "previous_version_id": str(version.id),
+        "updated_at": response["updated_at"],
+    }
+
+
 async def _tool_write_note(
     args: Dict[str, Any], user_id: UUID, session: AsyncSession,
 ) -> Dict[str, Any]:
@@ -696,6 +840,7 @@ _TOOL_HANDLERS = {
     "workspace_overview": _tool_workspace_overview,
     "write_note": _tool_write_note,
     "append_to_pad": _tool_append_to_pad,
+    "edit_pad": _tool_edit_pad,
 }
 
 

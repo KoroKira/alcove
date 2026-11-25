@@ -5,6 +5,10 @@ from .base_model import Base
 
 
 class PadVersion(Base):
+    # Versions saved before an MCP edit (reason ``mcp_...``) are never pruned:
+    # they are what makes agent edits recoverable.
+    PROTECTED_REASON_PREFIX = 'mcp_'
+
     __tablename__ = 'pad_versions'
     __table_args__ = {'schema': 'pad_ws'}
 
@@ -22,12 +26,14 @@ class PadVersion(Base):
         session.add(version)
         # Keep only the last 50 versions per pad. The pending version is
         # autoflushed by the count query below, so prune only rows above 50.
-        count_stmt = select(sa_func.count()).where(cls.pad_id == pad_id)
+        prunable = (cls.pad_id == pad_id) & ~cls.snapshot_reason.startswith(
+            cls.PROTECTED_REASON_PREFIX, autoescape=True)
+        count_stmt = select(sa_func.count()).where(prunable)
         count = (await session.execute(count_stmt)).scalar()
         if count > 50:
             oldest_stmt = (
                 select(cls.id)
-                .where(cls.pad_id == pad_id)
+                .where(prunable)
                 .order_by(cls.created_at.asc())
                 .limit(count - 50)
             )

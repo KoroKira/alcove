@@ -11,11 +11,16 @@ import routers.mcp_router as mcp
 
 # ── catalogue / policy (no database) ────────────────────────────────────────
 
-def test_no_tool_can_delete_or_overwrite():
+def test_no_tool_can_delete_and_only_edit_pad_changes_existing_text():
     for tool in mcp._TOOLS:
-        assert not any(word in tool["name"] for word in ("delete", "remove", "overwrite", "update", "replace"))
-        assert tool["annotations"]["destructiveHint"] is False
-    assert mcp._READ_TOOLS.isdisjoint({"write_note", "append_to_pad"})
+        assert not any(word in tool["name"] for word in ("delete", "remove", "destroy", "purge", "clear", "overwrite"))
+        assert tool["annotations"]["destructiveHint"] is (tool["name"] in mcp._VERSIONED_EDIT_TOOLS)
+    assert mcp._VERSIONED_EDIT_TOOLS == {"edit_pad"}
+    edit = next(tool for tool in mcp._TOOLS if tool["name"] == "edit_pad")
+    assert {"confirm", "expected_updated_at"} <= set(edit["inputSchema"]["required"])
+    assert edit["inputSchema"]["properties"]["confirm"]["const"] is True
+    assert mcp._READ_TOOLS.isdisjoint({"write_note", "append_to_pad", "edit_pad"})
+    assert set(mcp._TOOL_HANDLERS) == {tool["name"] for tool in mcp._TOOLS}  # no hidden handler
 
 
 @pytest.mark.parametrize("name,args,ok", [
@@ -32,6 +37,17 @@ def test_no_tool_can_delete_or_overwrite():
     ("append_to_pad", {"pad_id": str(uuid4()), "content": "hi"}, False),
     ("append_to_pad", {"pad_id": str(uuid4()), "content": "   ", "expected_updated_at": "2026-01-01T00:00:00+00:00"}, False),
     ("append_to_pad", {"pad_id": str(uuid4()), "content": "x" * 300_000, "expected_updated_at": "2026-01-01T00:00:00+00:00"}, False),
+    ("edit_pad", {"pad_id": str(uuid4()), "edits": [{"old_text": "a", "new_text": "b"}], "expected_updated_at": "2026-01-01T00:00:00+00:00", "confirm": True}, True),
+    ("edit_pad", {"pad_id": str(uuid4()), "edits": [{"old_text": "a", "new_text": ""}], "expected_updated_at": "2026-01-01T00:00:00+00:00", "confirm": True}, True),
+    ("edit_pad", {"pad_id": str(uuid4()), "edits": [{"old_text": "a", "new_text": "b"}], "expected_updated_at": "2026-01-01T00:00:00+00:00"}, False),
+    ("edit_pad", {"pad_id": str(uuid4()), "edits": [{"old_text": "a", "new_text": "b"}], "expected_updated_at": "2026-01-01T00:00:00+00:00", "confirm": False}, False),
+    ("edit_pad", {"pad_id": str(uuid4()), "edits": [{"old_text": "a", "new_text": "b"}], "expected_updated_at": "2026-01-01T00:00:00+00:00", "confirm": "true"}, False),
+    ("edit_pad", {"pad_id": str(uuid4()), "edits": [], "expected_updated_at": "2026-01-01T00:00:00+00:00", "confirm": True}, False),
+    ("edit_pad", {"pad_id": str(uuid4()), "edits": [{"old_text": "", "new_text": "b"}], "expected_updated_at": "2026-01-01T00:00:00+00:00", "confirm": True}, False),
+    ("edit_pad", {"pad_id": str(uuid4()), "edits": [{"old_text": "a"}], "expected_updated_at": "2026-01-01T00:00:00+00:00", "confirm": True}, False),
+    ("edit_pad", {"pad_id": str(uuid4()), "edits": [{"old_text": "a", "new_text": "b", "x": 1}], "expected_updated_at": "2026-01-01T00:00:00+00:00", "confirm": True}, False),
+    ("edit_pad", {"pad_id": str(uuid4()), "edits": [{"old_text": "a", "new_text": "b"}] * 51, "expected_updated_at": "2026-01-01T00:00:00+00:00", "confirm": True}, False),
+    ("edit_pad", {"pad_id": str(uuid4()), "edits": [{"old_text": "a", "new_text": "x" * 300_000}], "expected_updated_at": "2026-01-01T00:00:00+00:00", "confirm": True}, False),
 ])
 def test_new_tool_argument_validation(name, args, ok):
     assert mcp._valid_tool_arguments(name, args) is ok
@@ -195,3 +211,83 @@ async def test_append_to_pad_is_optimistic_permissioned_and_non_destructive(inte
     with pytest.raises(ValueError, match="timezone"):
         await mcp._tool_append_to_pad(
             {"pad_id": str(pad.id), "content": "x", "expected_updated_at": "2026-01-01T00:00:00"}, owner, integration_session)
+
+
+@pytest.mark.integration
+async def test_edit_pad_is_confirmed_versioned_and_never_empties_or_deletes(integration_session):
+    from sqlalchemy import select
+    from database.models import PadMemberStore
+    from database.models.version_model import PadVersion
+    owner, viewer = await _user(integration_session, "o"), await _user(integration_session, "v")
+    pad = await _pad(integration_session, owner, "Plan", "document",
+                     {"content": "Titre\n\nÉtape A puis étape B.\n", "format": "markdown"})
+    integration_session.add(PadMemberStore(pad_id=pad.id, user_id=viewer, role="viewer"))
+    await integration_session.commit()
+
+    def edit(args, user=owner):
+        return mcp._tool_edit_pad({"pad_id": str(pad.id), "confirm": True, **args}, user, integration_session)
+
+    async def versions():
+        rows = (await integration_session.execute(
+            select(PadVersion).where(PadVersion.pad_id == pad.id))).scalars().all()
+        return [(row.snapshot_reason, (row.data or {}).get("content")) for row in rows]
+
+    first = await mcp._tool_read_pad({"pad_id": str(pad.id)}, owner, integration_session)
+    done = await edit({"edits": [{"old_text": "Étape A", "new_text": "Étape A1"}],
+                       "expected_updated_at": first["updated_at"]})
+    after = await mcp._tool_read_pad({"pad_id": str(pad.id)}, owner, integration_session)
+    assert after["content"] == "Titre\n\nÉtape A1 puis étape B.\n"
+    assert after["updated_at"] == done["updated_at"] != first["updated_at"]
+    assert await versions() == [("mcp_edit_pad", "Titre\n\nÉtape A puis étape B.\n")]
+
+    # stale updated_at -> conflict, nothing written, no new snapshot
+    with pytest.raises(ValueError, match="conflict"):
+        await edit({"edits": [{"old_text": "Titre", "new_text": "X"}], "expected_updated_at": first["updated_at"]})
+    # text must exist and be unique
+    with pytest.raises(ValueError, match="not found"):
+        await edit({"edits": [{"old_text": "absent", "new_text": "x"}], "expected_updated_at": after["updated_at"]})
+    with pytest.raises(ValueError, match="occurs 2 times"):
+        await edit({"edits": [{"old_text": "tape", "new_text": "x"}], "expected_updated_at": after["updated_at"]})
+    # a pad can never be emptied
+    with pytest.raises(ValueError, match="empty"):
+        await edit({"edits": [{"old_text": after["content"], "new_text": "  "}], "expected_updated_at": after["updated_at"]})
+    # confirm is enforced by the handler itself, not only by argument validation
+    with pytest.raises(ValueError, match="confirm"):
+        await mcp._tool_edit_pad({"pad_id": str(pad.id), "edits": [{"old_text": "Titre", "new_text": "T"}],
+                                  "expected_updated_at": after["updated_at"], "confirm": False}, owner, integration_session)
+    # a read-only member cannot edit and leaves no trace
+    with pytest.raises(ValueError, match="Not authorized"):
+        await edit({"edits": [{"old_text": "Titre", "new_text": "T"}], "expected_updated_at": after["updated_at"]}, viewer)
+    # only documents
+    board = await _pad(integration_session, owner, "Board", "kanban", {"columns": []})
+    with pytest.raises(ValueError, match="only supports document"):
+        await mcp._tool_edit_pad({"pad_id": str(board.id), "edits": [{"old_text": "a", "new_text": "b"}], "confirm": True,
+                                  "expected_updated_at": datetime.now(timezone.utc).isoformat()}, owner, integration_session)
+
+    assert len(await versions()) == 1
+    final = await mcp._tool_read_pad({"pad_id": str(pad.id)}, owner, integration_session)
+    assert final["content"] == after["content"] and final["updated_at"] == after["updated_at"]
+
+
+@pytest.mark.integration
+async def test_versions_saved_before_mcp_edits_are_never_pruned(integration_session):
+    from sqlalchemy import select
+    from database.models.version_model import PadVersion
+    owner = await _user(integration_session, "o")
+
+    async def history(protected):
+        pad = await _pad(integration_session, owner, "Historique", "document", {"content": "x"})
+        if protected:
+            await PadVersion.create(integration_session, pad.id, {"content": "avant édition"},
+                                    pad_type="document", reason="mcp_edit_pad")
+        await PadVersion.create(integration_session, pad.id, {"content": "piège LIKE"},
+                                pad_type="document", reason="mcpXauto")
+        for index in range(55):
+            await PadVersion.create(integration_session, pad.id, {"content": str(index)}, pad_type="document", reason="auto")
+        return [row.snapshot_reason for row in (await integration_session.execute(
+            select(PadVersion).where(PadVersion.pad_id == pad.id))).scalars().all()]
+
+    with_edit, control = await history(protected=True), await history(protected=False)
+    assert with_edit.count("mcp_edit_pad") == 1        # the protected snapshot survives 56 later versions
+    assert "mcpXauto" not in with_edit                 # `_` is not a LIKE wildcard: ordinary reasons stay prunable
+    assert with_edit.count("auto") == control.count("auto")  # ordinary retention is unchanged
